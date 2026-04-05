@@ -1,0 +1,547 @@
+import Link from "next/link";
+import { useRouter } from "next/router";
+import { useEffect, useMemo, useState } from "react";
+
+import HeaderMessagesLink from "../../components/HeaderMessagesLink";
+import HeaderProfileLink from "../../components/HeaderProfileLink";
+import RequestConfirmModal from "../../components/RequestConfirmModal";
+import { clearToken } from "../../lib/auth";
+import { mediaSrc } from "../../lib/media";
+import { canCreateListings, isAdminRole, isStaffRole } from "../../lib/roles";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const DEFAULT_REQUEST_COMMENT =
+  "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
+
+function formatRubInt(n) {
+  if (n == null || Number.isNaN(Number(n))) return "—";
+  return Math.round(Number(n)).toLocaleString("ru-RU");
+}
+
+function formatRuDate(iso) {
+  if (!iso) return null;
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
+export default function CarDetailsPage() {
+  const router = useRouter();
+  const { id } = router.query;
+  const [car, setCar] = useState(null);
+  const [error, setError] = useState("");
+  const [activePhoto, setActivePhoto] = useState(0);
+  const [authError, setAuthError] = useState("");
+  const [token, setToken] = useState("");
+  const [me, setMe] = useState(null);
+  const [profileReady, setProfileReady] = useState(false);
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [requestModalComment, setRequestModalComment] = useState("");
+  const [requestModalBusy, setRequestModalBusy] = useState(false);
+  const [requestOkMessage, setRequestOkMessage] = useState("");
+
+  const isListingOwner =
+    car != null &&
+    me != null &&
+    car.created_by_user_id != null &&
+    Number(car.created_by_user_id) === Number(me.id);
+  const canEditThisListing =
+    me != null &&
+    (isAdminRole(me.role) || (canCreateListings(me.role) && isListingOwner));
+
+  const sortedPhotos = useMemo(() => {
+    if (!car?.photos) return [];
+    return [...car.photos].sort((a, b) => a.sort_order - b.sort_order);
+  }, [car]);
+
+  const nPhotos = sortedPhotos.length;
+  const safeIndex = nPhotos ? Math.min(activePhoto, nPhotos - 1) : 0;
+  const hero = sortedPhotos[safeIndex];
+
+  async function loadCarDetails(carId) {
+    setError("");
+    const res = await fetch(`${API_URL}/cars/${carId}`);
+    if (!res.ok) {
+      setError("Не удалось загрузить карточку автомобиля.");
+      return;
+    }
+    const data = await res.json();
+    setCar(data);
+  }
+
+  async function loadMe(accessToken) {
+    if (!accessToken) return;
+    const res = await fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setMe(data);
+  }
+
+  async function deleteListing() {
+    setAuthError("");
+    if (!token) {
+      setAuthError("Нужно войти под администратором.");
+      return;
+    }
+    if (!id) return;
+    if (!confirm("Удалить это объявление из каталога?")) return;
+    const res = await fetch(`${API_URL}/admin/cars/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      setAuthError("Не удалось удалить (нужны права администратора или модератора).");
+      return;
+    }
+    router.push("/");
+  }
+
+  function openRequestModal() {
+    setAuthError("");
+    setRequestOkMessage("");
+    if (!token) {
+      router.push(
+        `/request-quote?car_id=${id}&next=${encodeURIComponent(`/cars/${id}`)}`
+      );
+      return;
+    }
+    setRequestModalOpen(true);
+    setRequestModalComment(DEFAULT_REQUEST_COMMENT);
+  }
+
+  function closeRequestModal() {
+    if (requestModalBusy) return;
+    setRequestModalOpen(false);
+  }
+
+  async function confirmRequestFromModal() {
+    setAuthError("");
+    setRequestOkMessage("");
+    if (!token || !id || !car) return;
+    const comment = requestModalComment.trim() || DEFAULT_REQUEST_COMMENT;
+    setRequestModalBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/requests`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          car_id: Number(id),
+          comment,
+        }),
+      });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          clearToken();
+          setToken("");
+          setMe(null);
+          setRequestModalOpen(false);
+          router.push(
+            `/request-quote?car_id=${id}&next=${encodeURIComponent(`/cars/${id}`)}`
+          );
+          return;
+        }
+        setAuthError("Не удалось отправить заявку. Попробуйте еще раз.");
+        return;
+      }
+      setRequestModalOpen(false);
+      setRequestOkMessage(
+        "Заявка отправлена. Отклики — в разделе «Мои заявки на расчёт» в профиле; переписка с дилером — в «Сообщения» в шапке."
+      );
+    } finally {
+      setRequestModalBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!id) return;
+    loadCarDetails(id);
+  }, [id]);
+
+  useEffect(() => {
+    setActivePhoto(0);
+  }, [car?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const stored = localStorage.getItem("avt_token");
+      if (stored) {
+        setToken(stored);
+        await loadMe(stored);
+      }
+      if (!cancelled) setProfileReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (nPhotos <= 1) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setActivePhoto((i) => Math.max(0, i - 1));
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setActivePhoto((i) => Math.min(nPhotos - 1, i + 1));
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [nPhotos]);
+
+  if (error) {
+    return (
+      <div className="layout">
+        <main className="site-main">
+          <div className="container">
+            <Link href="/" className="detail-back">
+              ← Назад в каталог
+            </Link>
+            <p>
+              <strong>{error}</strong>
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!car) {
+    return (
+      <div className="layout">
+        <main className="site-main">
+          <div className="container">
+            <Link href="/" className="detail-back">
+              ← Назад в каталог
+            </Link>
+            <p className="muted">Загрузка…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="layout">
+      <header className="site-header">
+        <div className="container site-header__inner">
+          <div className="site-header__brand">
+            <Link href="/" className="site-logo">
+              avtovozom
+            </Link>
+            <span className="site-brand-divider" aria-hidden="true" />
+            <span className="site-tagline">Каталог и подбор автомобилей из Китая</span>
+          </div>
+          <div className="auth-bar">
+            {!token ? (
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
+                Войти
+              </button>
+            ) : (
+              <>
+                <HeaderMessagesLink token={token} />
+                <HeaderProfileLink token={token} userRole={me?.role} />
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    clearToken();
+                    setToken("");
+                    setMe(null);
+                  }}
+                >
+                  Выйти
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <main className="site-main">
+        <div className="container">
+          <Link href="/" className="detail-back">
+            ← Назад в каталог
+          </Link>
+
+          <div className="detail-hero">
+            <h1 className="detail-title">{car.title}</h1>
+            <p className="detail-subtitle">
+              {car.brand} · модель <strong>{car.model}</strong>
+            </p>
+            {car.has_public_dealer_profile && car.created_by_user_id ? (
+              <p className="muted" style={{ marginTop: 10 }}>
+                <Link href={`/dealers/${car.created_by_user_id}`}>Профиль дилера</Link>
+              </p>
+            ) : null}
+            {car.rub_china != null ? (
+              <>
+                <p className="detail-price">
+                  {formatRubInt(car.rub_china)} ₽
+                  <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem", marginLeft: 10 }}>
+                    в Китае по курсу ЦБ
+                  </span>
+                </p>
+                <p className="muted" style={{ marginTop: 8, fontSize: 15 }}>
+                  {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
+                  {car.pricing_guide ? (
+                    <>
+                      {" "}
+                      · курс на {car.pricing_guide.cbr_date}: 1 ¥ ={" "}
+                      <strong>{car.pricing_guide.cbr_rub_per_cny.toFixed(2)} ₽</strong>
+                    </>
+                  ) : null}
+                </p>
+              </>
+            ) : (
+              <p className="detail-price">
+                {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥{" "}
+                <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem" }}>
+                  CNY
+                </span>
+                <span className="muted" style={{ display: "block", fontSize: 14, marginTop: 8, fontWeight: 500 }}>
+                  Пересчёт в ₽ по ЦБ сейчас недоступен.
+                </span>
+              </p>
+            )}
+          </div>
+
+          {profileReady && token && me && isStaffRole(me?.role) && (
+            <div className="alert alert--danger">
+              <span style={{ fontWeight: 700, display: "block", marginBottom: 8 }}>
+                Управление объявлением
+              </span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                {canEditThisListing && id != null && (
+                  <Link href={`/staff/edit-listing?id=${id}`} className="btn btn-secondary">
+                    Редактировать объявление
+                  </Link>
+                )}
+                <button type="button" className="btn btn-danger" onClick={deleteListing}>
+                  Удалить из каталога
+                </button>
+              </div>
+            </div>
+          )}
+
+          {profileReady && token && me && canCreateListings(me.role) && isListingOwner && !isStaffRole(me.role) && (
+            <div className="alert alert--success">
+              <span style={{ fontWeight: 700, display: "block", marginBottom: 8 }}>Ваше объявление</span>
+              <Link href={`/staff/edit-listing?id=${id}`} className="btn btn-secondary">
+                Редактировать объявление
+              </Link>
+            </div>
+          )}
+
+          <div className="photo-gallery">
+            {hero?.storage_url ? (
+              <div className="photo-gallery__stage-wrap">
+                <img
+                  className="photo-gallery__stage"
+                  src={mediaSrc(hero.storage_url)}
+                  alt={`${car.title} — фото ${safeIndex + 1}`}
+                />
+                {nPhotos > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className="photo-gallery__nav photo-gallery__nav--prev"
+                      aria-label="Предыдущее фото"
+                      disabled={safeIndex <= 0}
+                      onClick={() => setActivePhoto((i) => Math.max(0, i - 1))}
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      className="photo-gallery__nav photo-gallery__nav--next"
+                      aria-label="Следующее фото"
+                      disabled={safeIndex >= nPhotos - 1}
+                      onClick={() => setActivePhoto((i) => Math.min(nPhotos - 1, i + 1))}
+                    >
+                      ›
+                    </button>
+                    <div className="photo-gallery__counter">
+                      {safeIndex + 1} / {nPhotos}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div
+                className="photo-gallery__stage-wrap"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#e2e8f0",
+                  minHeight: 200,
+                }}
+              >
+                <span className="muted">Нет фотографий</span>
+              </div>
+            )}
+            {nPhotos > 1 && (
+              <p className="photo-gallery__hint">Листайте стрелками на клавиатуре (← →) или кнопками по бокам</p>
+            )}
+            {nPhotos > 0 && (
+              <div className="photo-gallery__thumbs">
+                {sortedPhotos.map((photo, idx) => (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    className={`photo-gallery__thumb ${idx === safeIndex ? "photo-gallery__thumb--active" : ""}`}
+                    onClick={() => setActivePhoto(idx)}
+                    aria-label={`Миниатюра ${idx + 1}`}
+                  >
+                    <img src={mediaSrc(photo.storage_url)} alt="" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {car.pricing_guide && (
+            <section className="panel" style={{ marginTop: 20 }}>
+              <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
+                Таможня: параметры для расчёта
+              </h2>
+              <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>
+                Автоматический расчёт платежей на сайте не выполняется — не используем платные API. Ниже — данные из
+                карточки, которые можно перенести в калькулятор ТКС (личное использование и коммерция задаются в форме на
+                сайте ТКС).
+              </p>
+              <ul className="pricing-guide-params" style={{ margin: "12px 0", paddingLeft: "1.25rem", lineHeight: 1.55 }}>
+                {car.pricing_guide.params_lines.map((line) => (
+                  <li key={line} style={{ marginBottom: 6 }}>
+                    {line}
+                  </li>
+                ))}
+              </ul>
+              <h3 className="section-title" style={{ fontSize: "1.05rem", marginTop: 18, marginBottom: 8 }}>
+                Справочный калькулятор
+              </h3>
+              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                {car.pricing_guide.calculator_links.map((link) => (
+                  <li
+                    key={link.url}
+                    style={{
+                      marginBottom: 12,
+                      padding: "10px 12px",
+                      background: "var(--color-bg)",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    <a href={link.url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
+                      {link.title}
+                    </a>
+                    {link.description ? (
+                      <p className="muted" style={{ margin: "6px 0 0 0", fontSize: 13 }}>
+                        {link.description}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              <p className="muted" style={{ fontSize: 12, marginTop: 16, marginBottom: 0 }}>
+                {car.pricing_guide.disclaimer}
+              </p>
+            </section>
+          )}
+
+          <section className="panel">
+            <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
+              Характеристики
+            </h2>
+            <dl className="spec-grid">
+              <div className="spec-item">
+                <dt>Год</dt>
+                <dd>{car.year}</dd>
+              </div>
+              <div className="spec-item">
+                <dt>Пробег</dt>
+                <dd>{car.mileage_km ? `${car.mileage_km.toLocaleString("ru-RU")} км` : "—"}</dd>
+              </div>
+              <div className="spec-item">
+                <dt>Двигатель</dt>
+                <dd>{car.engine_volume_cc ? `${car.engine_volume_cc.toLocaleString("ru-RU")} см³` : "—"}</dd>
+              </div>
+              <div className="spec-item">
+                <dt>Мощность</dt>
+                <dd>
+                  {car.horsepower != null && car.horsepower > 0
+                    ? `${car.horsepower.toLocaleString("ru-RU")} л.с.`
+                    : "—"}
+                </dd>
+              </div>
+              <div className="spec-item">
+                <dt>Регистрация</dt>
+                <dd>{formatRuDate(car.registration_date) || "—"}</dd>
+              </div>
+              <div className="spec-item">
+                <dt>Производство</dt>
+                <dd>{formatRuDate(car.production_date) || "—"}</dd>
+              </div>
+              <div className="spec-item">
+                <dt>Топливо</dt>
+                <dd>{car.fuel_type || "—"}</dd>
+              </div>
+              <div className="spec-item">
+                <dt>КПП</dt>
+                <dd>{car.transmission || "—"}</dd>
+              </div>
+              <div className="spec-item">
+                <dt>Город</dt>
+                <dd>{car.location_city || "—"}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="panel">
+            <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
+              Описание
+            </h2>
+            <p className="description-text">{car.description || "Описание отсутствует."}</p>
+          </section>
+
+          {me?.role !== "dealer" && (
+            <section style={{ marginTop: 24 }}>
+              <button type="button" className="btn btn-primary" onClick={openRequestModal}>
+                Подать заявку на расчёт
+              </button>
+              {requestOkMessage ? (
+                <div className="alert alert--success" style={{ marginTop: 12 }}>
+                  {requestOkMessage}
+                </div>
+              ) : null}
+              {authError ? (
+                <p className="muted" style={{ marginTop: 12 }}>
+                  {authError}
+                </p>
+              ) : null}
+            </section>
+          )}
+
+          <RequestConfirmModal
+            open={requestModalOpen && !!car}
+            onClose={closeRequestModal}
+            onConfirm={confirmRequestFromModal}
+            busy={requestModalBusy}
+            car={car}
+            comment={requestModalComment}
+            onCommentChange={setRequestModalComment}
+          />
+        </div>
+      </main>
+    </div>
+  );
+}

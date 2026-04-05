@@ -1,0 +1,16 @@
+# Пример для avtovozom.com: скопируйте на сервер (например /etc/caddy/Caddyfile) и подставьте свой email для ACME.
+# Перед запуском: DNS A-записи @, www, api → IP сервера; порты 80/443 открыты; docker compose.prod.yml запущен.
+
+{
+	email you@example.com
+}
+
+avtovozom.com, www.avtovozom.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}
+
+api.avtovozom.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+}

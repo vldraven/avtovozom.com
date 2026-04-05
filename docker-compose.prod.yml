@@ -1,0 +1,80 @@
+# Продакшен: только localhost-порты для web/backend (за Caddy/nginx), БД и Redis без публикации наружу.
+# Запуск: docker compose -f docker-compose.prod.yml up -d --build
+# Переменные: см. .env.example (POSTGRES_*, CORS_ORIGINS, NEXT_PUBLIC_API_URL, SMTP_*, …)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: avtovozom_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-avtovozom}
+      POSTGRES_USER: ${POSTGRES_USER:-avtovozom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: avtovozom_redis
+
+  backend:
+    build:
+      context: ./backend
+    container_name: avtovozom_backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-avtovozom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-avtovozom}
+      PARSER_INTERVAL_HOURS: "24"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:3000}
+      CHE168_MAX_LINKS_PER_MODEL: "40"
+      CHE168_NEW_PER_RUN: "5"
+      MEDIA_ROOT: /app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./media:/app/media
+
+  parser:
+    build:
+      context: ./backend
+    container_name: avtovozom_parser
+    command: python -m app.parser_worker
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-avtovozom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-avtovozom}
+      PARSER_POLL_SECONDS: "10"
+      CHE168_MAX_LINKS_PER_MODEL: "40"
+      CHE168_NEW_PER_RUN: "5"
+      MEDIA_ROOT: /app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./media:/app/media
+
+  web:
+    build:
+      context: ./web
+    container_name: avtovozom_web
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  postgres_data:

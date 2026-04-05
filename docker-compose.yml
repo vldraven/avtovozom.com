@@ -1,0 +1,87 @@
+# Локальная разработка: открытые порты БД/Redis, web через web/Dockerfile.dev (next dev).
+# Продакшен: docker-compose.prod.yml (Next build + start, БД без публикации наружу, web/api только на 127.0.0.1).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: avtovozom_postgres
+    environment:
+      POSTGRES_DB: avtovozom
+      POSTGRES_USER: avtovozom
+      POSTGRES_PASSWORD: avtovozom
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avtovozom -d avtovozom"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: avtovozom_redis
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+    container_name: avtovozom_backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg2://avtovozom:avtovozom@postgres:5432/avtovozom
+      PARSER_INTERVAL_HOURS: "24"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:3000}
+      CHE168_MAX_LINKS_PER_MODEL: "40"
+      CHE168_NEW_PER_RUN: "5"
+      MEDIA_ROOT: /app/media
+      # SMTP_* задайте в .env (скопируйте из .env.example). Без SMTP_HOST — коды только в логах backend.
+      # При captcha: CHE168_FORCE_DETAIL_URLS: "https://i.che168.com/car/ID1,https://i.che168.com/car/ID2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./media:/app/media
+
+  parser:
+    build:
+      context: ./backend
+    container_name: avtovozom_parser
+    command: python -m app.parser_worker
+    environment:
+      DATABASE_URL: postgresql+psycopg2://avtovozom:avtovozom@postgres:5432/avtovozom
+      PARSER_POLL_SECONDS: "10"
+      CHE168_MAX_LINKS_PER_MODEL: "40"
+      CHE168_NEW_PER_RUN: "5"
+      MEDIA_ROOT: /app/media
+      # При captcha: CHE168_FORCE_DETAIL_URLS: "https://i.che168.com/car/ID1,https://i.che168.com/car/ID2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./media:/app/media
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: avtovozom_web
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
