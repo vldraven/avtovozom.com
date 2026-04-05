@@ -99,7 +99,8 @@ export default function MobileBottomNav() {
 
   if (router.pathname === "/auth") return null;
 
-  const isHome = router.pathname === "/";
+  const isCatalogNav =
+    router.pathname === "/catalog" || router.pathname.startsWith("/catalog/");
   const showAdd = Boolean(token && canCreateListings(me?.role));
   const colCount = !token ? 2 : 4 + (showAdd ? 1 : 0);
   const staffListingActive =
@@ -121,9 +122,9 @@ export default function MobileBottomNav() {
         style={{ "--mobile-dock-cols": String(colCount) }}
       >
         <Link
-          href="/"
-          className={`mobile-dock__item${isHome ? " mobile-dock__item--active" : ""}`}
-          aria-current={isHome ? "page" : undefined}
+          href="/catalog"
+          className={`mobile-dock__item${isCatalogNav ? " mobile-dock__item--active" : ""}`}
+          aria-current={isCatalogNav ? "page" : undefined}
         >
           <span className="mobile-dock__icon">
             <CatalogIcon />

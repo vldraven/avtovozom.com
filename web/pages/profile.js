@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import { clearToken, getStoredToken } from "../lib/auth";
+import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 import { canCreateListings, isStaffRole } from "../lib/roles";
 
@@ -493,7 +494,7 @@ export default function ProfilePage() {
                               />
                             )}
                             <div className="profile-staff-list__body">
-                              <Link href={`/cars/${c.id}`}>
+                              <Link href={publicCarHref(c)}>
                                 #{c.id} · {c.brand} {c.model} · {c.year}
                               </Link>
                               <div className="muted profile-staff-list__meta">{c.title}</div>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
+import { publicCarHref } from "../../lib/carRoutes";
 import { mediaSrc } from "../../lib/media";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -108,7 +109,7 @@ export default function DealerPublicPage() {
                     const ph = [...(c.photos || [])].sort((a, b) => a.sort_order - b.sort_order)[0];
                     return (
                       <li key={c.id} className="dealer-public-card">
-                        <Link href={`/cars/${c.id}`} className="dealer-public-card__link">
+                        <Link href={publicCarHref(c)} className="dealer-public-card__link">
                           {ph ? (
                             <img
                               className="dealer-public-card__img"

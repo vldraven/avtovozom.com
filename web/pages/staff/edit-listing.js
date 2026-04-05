@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import { clearToken, getStoredToken } from "../../lib/auth";
+import { publicCarHref } from "../../lib/carRoutes";
 import { mediaSrc } from "../../lib/media";
 import { canCreateListings, isAdminRole } from "../../lib/roles";
 
@@ -38,6 +39,7 @@ export default function StaffEditListingPage() {
   const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [cardPublicHref, setCardPublicHref] = useState("");
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -86,6 +88,7 @@ export default function StaffEditListingPage() {
         return;
       }
       const c = await res.json();
+      setCardPublicHref(publicCarHref(c));
       setBrandId(String(c.brand_id));
       setModelId(String(c.model_id));
       setTitle(c.title || "");
@@ -168,7 +171,7 @@ export default function StaffEditListingPage() {
         setError(msg);
         return;
       }
-      router.push(`/cars/${body.id}`);
+      router.push(publicCarHref(body));
     } finally {
       setSubmitting(false);
     }
@@ -199,7 +202,10 @@ export default function StaffEditListingPage() {
             avtovozom
           </Link>
           <div className="auth-bar" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <Link href={`/cars/${carId}`} className="btn btn-ghost btn-sm">
+            <Link
+              href={cardPublicHref || `/cars/${carId}`}
+              className="btn btn-ghost btn-sm"
+            >
               К карточке
             </Link>
             <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
+import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -141,7 +142,7 @@ export default function RequestQuotePage() {
     );
   }
 
-  const backHref = nextUrl || (car ? `/cars/${carId}` : "/");
+  const backHref = nextUrl || (car ? publicCarHref(car) : "/");
 
   return (
     <div className="layout">
@@ -243,7 +244,12 @@ export default function RequestQuotePage() {
               </button>
               <p className="muted request-quote-footnote">
                 Уже есть аккаунт?{" "}
-                <Link href={`/auth?next=${encodeURIComponent(nextUrl || `/cars/${carId}`)}`}>Войдите</Link> и
+                <Link
+                  href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`))}`}
+                >
+                  Войдите
+                </Link>{" "}
+                и
                 отправьте заявку в один клик.
               </p>
             </form>
@@ -270,10 +276,13 @@ export default function RequestQuotePage() {
 
           {step === "done" && (
             <div className="panel form-stack">
-              <Link href={`/auth?next=${encodeURIComponent(nextUrl || `/cars/${carId}`)}`} className="btn btn-primary">
+              <Link
+                href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`))}`}
+                className="btn btn-primary"
+              >
                 Перейти ко входу
               </Link>
-              <Link href={nextUrl || `/cars/${carId}`} className="btn btn-secondary">
+              <Link href={nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`)} className="btn btn-secondary">
                 Вернуться к объявлению
               </Link>
             </div>

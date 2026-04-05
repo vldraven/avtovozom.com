@@ -7,6 +7,7 @@ import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import HeaderProfileLink from "../components/HeaderProfileLink";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { clearToken } from "../lib/auth";
+import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 import { canCreateListings, isStaffRole } from "../lib/roles";
 
@@ -99,6 +100,11 @@ export default function Home() {
   }, [router.isReady, router.asPath]);
 
   function onSelectBrand(brandId) {
+    const row = catalogBrands.find((b) => b.id === brandId);
+    if (row?.slug) {
+      router.push(`/catalog/${row.slug}`);
+      return;
+    }
     const qq = q.trim();
     const query = {};
     if (qq) query.q = qq;
@@ -107,10 +113,16 @@ export default function Home() {
   }
 
   function onSelectModel(modelId) {
-    const qq = q.trim();
     const rawB = router.query.brand;
-    const brand = Array.isArray(rawB) ? rawB[0] : rawB;
-    const bid = brand || selectedBrandId;
+    const qb = Array.isArray(rawB) ? rawB[0] : rawB;
+    const bid = qb || selectedBrandId;
+    const brandRow = catalogBrands.find((b) => b.id === Number(bid));
+    const modelRow = catalogModels.find((m) => m.id === modelId);
+    if (brandRow?.slug && modelRow?.slug) {
+      router.push(`/catalog/${brandRow.slug}/${modelRow.slug}`);
+      return;
+    }
+    const qq = q.trim();
     const query = {};
     if (qq) query.q = qq;
     if (bid) query.brand = String(bid);
@@ -184,7 +196,8 @@ export default function Home() {
 
   function openRequestForModal(car) {
     if (!token) {
-      router.push(`/request-quote?car_id=${car.id}&next=${encodeURIComponent("/")}`);
+      const next = publicCarHref(car);
+      router.push(`/request-quote?car_id=${car.id}&next=${encodeURIComponent(next)}`);
       return;
     }
     setRequestModalCar(car);
@@ -218,7 +231,9 @@ export default function Home() {
         setToken("");
         setMe(null);
         setRequestModalCar(null);
-        router.push(`/request-quote?car_id=${cid}&next=${encodeURIComponent("/")}`);
+        router.push(
+          `/request-quote?car_id=${cid}&next=${encodeURIComponent(publicCarHref(requestModalCar))}`
+        );
         return;
       }
       if (!res.ok) {
@@ -448,7 +463,13 @@ export default function Home() {
               avtovozom
             </Link>
             <span className="site-brand-divider" aria-hidden="true" />
-            <span className="site-tagline">Каталог и подбор автомобилей из Китая</span>
+            <Link href="/catalog" className="site-header-catalog-link">
+              Каталог с деревом
+            </Link>
+            <span className="site-brand-divider site-brand-divider--hide-sm" aria-hidden="true" />
+            <span className="site-tagline site-tagline--hide-sm">
+              Каталог и подбор автомобилей из Китая
+            </span>
           </div>
           <div className="auth-bar">
             {!token ? (
@@ -780,7 +801,7 @@ export default function Home() {
         <div className="catalog-grid">
           {cars.map((car) => (
             <article key={car.id} className="catalog-card">
-              <Link href={`/cars/${car.id}`} className="catalog-card__main">
+              <Link href={publicCarHref(car)} className="catalog-card__main">
                 <div className="catalog-card__image-wrap">
                   {car.photos?.[0]?.storage_url ? (
                     <img
@@ -841,7 +862,7 @@ export default function Home() {
                 >
                   Заявка на расчёт
                 </button>
-                <Link href={`/cars/${car.id}`} className="btn btn-secondary btn-sm">
+                <Link href={publicCarHref(car)} className="btn btn-secondary btn-sm">
                   Подробнее
                 </Link>
                 {profileReady && isStaffRole(me?.role) && (

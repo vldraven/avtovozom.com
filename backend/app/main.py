@@ -49,6 +49,7 @@ from .translator_ru import translate_to_ru
 from .email_utils import send_email
 from .media_storage import save_chat_attachment, save_uploaded_car_photos
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
+from .catalog_slug import build_catalog_slug_maps, slugs_for_car
 from .schemas import (
     CalculationRequestDealerOut,
     CalculationRequestMyOut,
@@ -59,6 +60,8 @@ from .schemas import (
     CarModelBriefOut,
     CatalogBrandOut,
     CatalogModelOut,
+    CatalogTreeBrandOut,
+    CatalogTreeModelOut,
     CbrSnapshot,
     CarOut,
     CarsListOut,
@@ -106,13 +109,17 @@ def _car_to_out(
     cbr: CbrSnapshot | None,
     full_import: bool = False,
     has_public_dealer_profile: bool = False,
+    slug_maps: tuple[dict[int, str], dict[tuple[int, int], str]],
 ) -> CarOut:
     rub = round(rub_china_for_car(car, cbr), 2) if cbr is not None else None
     guide = build_pricing_guide(car, cbr) if full_import and cbr is not None else None
+    brand_slug, model_slug = slugs_for_car(car, slug_maps[0], slug_maps[1])
     return CarOut(
         id=car.id,
         brand_id=car.brand_id,
         model_id=car.model_id,
+        brand_slug=brand_slug,
+        model_slug=model_slug,
         title=car.title,
         description=car.description,
         year=car.year,
@@ -276,6 +283,7 @@ def health():
 def public_catalog_brands(db: Session = Depends(get_db)):
     """Публичный список марок с числом объявлений (главная страница, сценарий как на auto.ru)."""
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
+    bmap, _ = build_catalog_slug_maps(db)
     car_counts = {
         row[0]: row[1]
         for row in db.execute(
@@ -296,6 +304,7 @@ def public_catalog_brands(db: Session = Depends(get_db)):
         CatalogBrandOut(
             id=b.id,
             name=b.name,
+            slug=bmap.get(b.id, ""),
             listings_count=car_counts.get(b.id, 0),
             models_with_listings=model_counts.get(b.id, 0),
         )
@@ -319,6 +328,7 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
         .scalars()
         .all()
     )
+    _, mmap = build_catalog_slug_maps(db)
     counts = {
         row[0]: row[1]
         for row in db.execute(
@@ -332,10 +342,74 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
             id=m.id,
             brand_id=m.brand_id,
             name=m.name,
+            slug=mmap.get((brand_id, m.id), ""),
             listings_count=counts.get(m.id, 0),
         )
         for m in models
     ]
+
+
+@app.get("/catalog/tree", response_model=list[CatalogTreeBrandOut])
+def public_catalog_tree(db: Session = Depends(get_db)):
+    """Дерево марок и моделей с ЧПУ-слагами для навигации /catalog/…"""
+    brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
+    bmap, mmap = build_catalog_slug_maps(db)
+    car_counts = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(Car.brand_id, func.count(Car.id))
+            .where(Car.is_active.is_(True))
+            .group_by(Car.brand_id)
+        ).all()
+    }
+    model_distinct = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(Car.brand_id, func.count(distinct(Car.model_id)))
+            .where(Car.is_active.is_(True))
+            .group_by(Car.brand_id)
+        ).all()
+    }
+    listing_per_model = {
+        (row[0], row[1]): row[2]
+        for row in db.execute(
+            select(Car.brand_id, Car.model_id, func.count(Car.id))
+            .where(Car.is_active.is_(True))
+            .group_by(Car.brand_id, Car.model_id)
+        ).all()
+    }
+    out: list[CatalogTreeBrandOut] = []
+    for b in brands:
+        models = (
+            db.execute(
+                select(CarModel)
+                .where(CarModel.brand_id == b.id)
+                .order_by(CarModel.name)
+            )
+            .scalars()
+            .all()
+        )
+        model_items = [
+            CatalogTreeModelOut(
+                id=m.id,
+                name=m.name,
+                slug=mmap.get((b.id, m.id), ""),
+                listings_count=listing_per_model.get((b.id, m.id), 0),
+            )
+            for m in models
+        ]
+        out.append(
+            CatalogTreeBrandOut(
+                id=b.id,
+                name=b.name,
+                slug=bmap.get(b.id, ""),
+                listings_count=car_counts.get(b.id, 0),
+                models_with_listings=model_distinct.get(b.id, 0),
+                models=model_items,
+            )
+        )
+    out.sort(key=lambda x: (-x.listings_count, x.name.lower()))
+    return out
 
 
 def get_current_user(
@@ -668,7 +742,10 @@ def list_cars(
     ).unique().scalars().all()
 
     snap, cbr_err = build_cbr_snapshot()
-    items = [_car_to_out(car, cbr=snap, full_import=False) for car in cars]
+    slug_maps = build_catalog_slug_maps(db)
+    items = [
+        _car_to_out(car, cbr=snap, full_import=False, slug_maps=slug_maps) for car in cars
+    ]
     return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
 
 
@@ -694,7 +771,14 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
         )
         has_pub = bool(seller and seller.role and seller.role.code == "dealer")
     snap, _ = build_cbr_snapshot()
-    return _car_to_out(car, cbr=snap, full_import=bool(snap), has_public_dealer_profile=has_pub)
+    slug_maps = build_catalog_slug_maps(db)
+    return _car_to_out(
+        car,
+        cbr=snap,
+        full_import=bool(snap),
+        has_public_dealer_profile=has_pub,
+        slug_maps=slug_maps,
+    )
 
 
 @app.get("/public/dealers/{user_id}", response_model=DealerPublicProfileOut)
@@ -716,7 +800,10 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
     )
     cars = db.execute(stmt).unique().scalars().all()
     snap, _ = build_cbr_snapshot()
-    items = [_car_to_out(c, cbr=snap, full_import=False) for c in cars]
+    slug_maps = build_catalog_slug_maps(db)
+    items = [
+        _car_to_out(c, cbr=snap, full_import=False, slug_maps=slug_maps) for c in cars
+    ]
     co = (user.company_name or "").strip()
     dn = (user.display_name or "").strip()
     fn = (user.full_name or "").strip()
@@ -840,7 +927,8 @@ async def _update_car_from_multipart(
         .scalar_one()
     )
     snap, _ = build_cbr_snapshot()
-    return _car_to_out(car, cbr=snap, full_import=bool(snap))
+    slug_maps = build_catalog_slug_maps(db)
+    return _car_to_out(car, cbr=snap, full_import=bool(snap), slug_maps=slug_maps)
 
 
 @app.get("/staff/catalog/brands", response_model=list[CarBrandBriefOut])
@@ -892,7 +980,10 @@ def staff_my_posted_cars(
         .all()
     )
     snap, _ = build_cbr_snapshot()
-    return [_car_to_out(c, cbr=snap, full_import=False) for c in cars]
+    slug_maps = build_catalog_slug_maps(db)
+    return [
+        _car_to_out(c, cbr=snap, full_import=False, slug_maps=slug_maps) for c in cars
+    ]
 
 
 @app.post("/staff/cars", response_model=CarOut)
@@ -1000,7 +1091,8 @@ async def staff_create_car(
         .scalar_one()
     )
     snap, _ = build_cbr_snapshot()
-    return _car_to_out(car, cbr=snap, full_import=False)
+    slug_maps = build_catalog_slug_maps(db)
+    return _car_to_out(car, cbr=snap, full_import=False, slug_maps=slug_maps)
 
 
 @app.get("/staff/cars/{car_id}", response_model=CarOut)
@@ -1030,7 +1122,8 @@ def staff_get_own_car(
     if not car:
         raise HTTPException(status_code=404, detail="Car not found")
     snap, _ = build_cbr_snapshot()
-    return _car_to_out(car, cbr=snap, full_import=bool(snap))
+    slug_maps = build_catalog_slug_maps(db)
+    return _car_to_out(car, cbr=snap, full_import=bool(snap), slug_maps=slug_maps)
 
 
 @app.put("/staff/cars/{car_id}", response_model=CarOut)
@@ -1320,7 +1413,8 @@ def admin_get_car(
     if not car:
         raise HTTPException(status_code=404, detail="Car not found")
     snap, _ = build_cbr_snapshot()
-    return _car_to_out(car, cbr=snap, full_import=bool(snap))
+    slug_maps = build_catalog_slug_maps(db)
+    return _car_to_out(car, cbr=snap, full_import=bool(snap), slug_maps=slug_maps)
 
 
 @app.put("/admin/cars/{car_id}", response_model=CarOut)
@@ -1652,17 +1746,33 @@ def _public_web_origin() -> str:
     return (os.getenv("PUBLIC_WEB_ORIGIN") or "http://localhost:3000").rstrip("/")
 
 
-def _public_car_page_url(car_id: int) -> str:
-    return f"{_public_web_origin()}/cars/{car_id}"
+def _public_car_page_url(db: Session, car_id: int) -> str:
+    origin = _public_web_origin()
+    car = (
+        db.execute(
+            select(Car)
+            .options(joinedload(Car.brand), joinedload(Car.model))
+            .where(Car.id == car_id)
+        )
+        .unique()
+        .scalar_one_or_none()
+    )
+    if not car or car.brand is None or car.model is None:
+        return f"{origin}/cars/{car_id}"
+    slug_maps = build_catalog_slug_maps(db)
+    bs, ms = slugs_for_car(car, slug_maps[0], slug_maps[1])
+    return f"{origin}/catalog/{bs}/{ms}/{car_id}"
 
 
-def _format_offer_seed_message(request: CalculationRequest, offer: DealerOffer) -> str:
+def _format_offer_seed_message(
+    db: Session, request: CalculationRequest, offer: DealerOffer
+) -> str:
     price = offer.total_price
     try:
         price_s = f"{float(price):,.0f}".replace(",", " ")
     except (TypeError, ValueError):
         price_s = str(price)
-    car_url = _public_car_page_url(request.car_id)
+    car_url = _public_car_page_url(db, request.car_id)
     lines = [
         f"Предварительный расчёт по заявке №{request.id}",
         "",
@@ -1696,7 +1806,7 @@ def _ensure_chat_with_seed(db: Session, request: CalculationRequest, offer: Deal
     )
     db.add(chat)
     db.flush()
-    seed = _format_offer_seed_message(request, offer)
+    seed = _format_offer_seed_message(db, request, offer)
     msg = ChatMessage(
         chat_id=chat.id,
         sender_user_id=offer.dealer_user_id,

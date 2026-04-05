@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import { clearToken, getStoredToken } from "../../lib/auth";
+import { publicCarHref } from "../../lib/carRoutes";
 import { canCreateListings } from "../../lib/roles";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -124,7 +125,7 @@ export default function StaffNewListingPage() {
         return;
       }
       setMessage("Объявление опубликовано");
-      router.push(`/cars/${body.id}`);
+      router.push(publicCarHref(body));
     } finally {
       setSubmitting(false);
     }

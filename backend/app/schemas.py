@@ -43,6 +43,10 @@ class CarOut(BaseModel):
     id: int
     brand_id: int
     model_id: int
+    brand_slug: str = ""
+    """Сегмент URL каталога для марки (совпадает с /catalog/tree)."""
+    model_slug: str = ""
+    """Сегмент URL каталога для модели внутри марки."""
     created_by_user_id: int | None = None
     """Автор ручного объявления; null у карточек с парсера."""
     has_public_dealer_profile: bool = False
@@ -97,6 +101,7 @@ class CatalogBrandOut(BaseModel):
 
     id: int
     name: str
+    slug: str = ""
     listings_count: int = 0
     models_with_listings: int = 0
 
@@ -105,7 +110,24 @@ class CatalogModelOut(BaseModel):
     id: int
     brand_id: int
     name: str
+    slug: str = ""
     listings_count: int = 0
+
+
+class CatalogTreeModelOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    listings_count: int = 0
+
+
+class CatalogTreeBrandOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    listings_count: int = 0
+    models_with_listings: int = 0
+    models: list[CatalogTreeModelOut]
 
 
 class CreateRequestIn(BaseModel):

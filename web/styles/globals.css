@@ -115,6 +115,27 @@ a:hover {
   background: rgba(248, 250, 252, 0.35);
 }
 
+.site-header-catalog-link {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.95);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.site-header-catalog-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .site-brand-divider--hide-sm,
+  .site-tagline--hide-sm {
+    display: none;
+  }
+}
+
 .site-tagline {
   font-size: 0.8rem;
   opacity: 0.85;
@@ -2413,4 +2434,188 @@ code {
     transform: none;
     box-shadow: var(--shadow);
   }
+}
+
+/* Хлебные крошки (карточка авто, каталог) */
+.breadcrumbs {
+  margin-bottom: 1rem;
+}
+
+.breadcrumbs__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.15rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.breadcrumbs__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.breadcrumbs__sep {
+  color: var(--color-muted);
+  margin-left: 0.2rem;
+  user-select: none;
+}
+
+.breadcrumbs__link {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.breadcrumbs__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.breadcrumbs__current {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.breadcrumbs__text {
+  color: var(--color-muted);
+}
+
+/* Дерево каталога /catalog */
+.catalog-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .catalog-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.catalog-tree-panel {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow);
+  padding: 0.75rem 0.5rem;
+  position: sticky;
+  top: 0.75rem;
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .catalog-tree-panel {
+    position: static;
+    max-height: none;
+  }
+}
+
+.catalog-tree-panel__title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  padding: 0.35rem 0.65rem 0.5rem;
+  margin: 0;
+}
+
+.catalog-tree-brand {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.catalog-tree-brand:last-child {
+  border-bottom: none;
+}
+
+.catalog-tree-brand__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  list-style: none;
+}
+
+.catalog-tree-brand__summary::-webkit-details-marker {
+  display: none;
+}
+
+.catalog-tree-brand__summary::after {
+  content: "▾";
+  font-size: 0.65rem;
+  color: var(--color-muted);
+  transition: transform 0.15s;
+}
+
+.catalog-tree-brand[open] > .catalog-tree-brand__summary::after {
+  transform: rotate(-180deg);
+}
+
+.catalog-tree-brand__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.catalog-tree-brand__count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.catalog-tree-models {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0.4rem 0.35rem;
+}
+
+.catalog-tree-model-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.65rem 0.35rem 1.25rem;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.catalog-tree-model-link:hover {
+  background: var(--color-bg);
+  text-decoration: none;
+}
+
+.catalog-tree-model-link--active {
+  background: rgba(14, 165, 233, 0.12);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.catalog-tree-model-link__count {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.catalog-main-panel {
+  min-width: 0;
+}
+
+.catalog-page-intro {
+  margin: 0 0 1rem;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
