@@ -23,6 +23,8 @@ export default function StaffEditListingPage() {
   const [models, setModels] = useState([]);
   const [brandId, setBrandId] = useState("");
   const [modelId, setModelId] = useState("");
+  const [generations, setGenerations] = useState([]);
+  const [generationId, setGenerationId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [year, setYear] = useState("");
@@ -91,6 +93,7 @@ export default function StaffEditListingPage() {
       setCardPublicHref(publicCarHref(c));
       setBrandId(String(c.brand_id));
       setModelId(String(c.model_id));
+      setGenerationId(c.generation_id != null ? String(c.generation_id) : "");
       setTitle(c.title || "");
       setDescription(c.description || "");
       setYear(String(c.year ?? ""));
@@ -124,6 +127,19 @@ export default function StaffEditListingPage() {
     })();
   }, [token, brandId]);
 
+  useEffect(() => {
+    if (!token || !modelId) {
+      setGenerations([]);
+      return;
+    }
+    (async () => {
+      const r = await fetch(`${API_URL}/staff/catalog/generations?model_id=${modelId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) setGenerations(await r.json());
+    })();
+  }, [token, modelId]);
+
   async function submit(e) {
     e.preventDefault();
     setError("");
@@ -138,6 +154,7 @@ export default function StaffEditListingPage() {
     const fd = new FormData();
     fd.append("brand_id", brandId);
     fd.append("model_id", modelId);
+    fd.append("generation_id", generationId || "");
     fd.append("title", title.trim() || "Автомобиль");
     fd.append("description", description);
     fd.append("year", year);
@@ -218,12 +235,6 @@ export default function StaffEditListingPage() {
       <main className="site-main">
         <div className="container" style={{ maxWidth: 640 }}>
           <h1 className="section-title">Редактирование объявления</h1>
-          <p className="muted" style={{ marginTop: -8 }}>
-            {isAdminRole(me?.role)
-              ? "Администратор может править любое объявление."
-              : "Доступно для объявлений, которые вы создали сами."}{" "}
-            Новые фото заменяют текущую галерею; если не выбирать файлы — фото не меняются.
-          </p>
           {error && <div className="alert alert--danger">{error}</div>}
           {loadError && <div className="alert alert--danger">{loadError}</div>}
           {!me ? (
@@ -236,7 +247,10 @@ export default function StaffEditListingPage() {
                   className="input"
                   value={brandId}
                   required
-                  onChange={(e) => setBrandId(e.target.value)}
+                  onChange={(e) => {
+                    setBrandId(e.target.value);
+                    setGenerationId("");
+                  }}
                 >
                   <option value="">—</option>
                   {brands.map((b) => (
@@ -253,7 +267,10 @@ export default function StaffEditListingPage() {
                   value={modelId}
                   required
                   disabled={!brandId}
-                  onChange={(e) => setModelId(e.target.value)}
+                  onChange={(e) => {
+                    setModelId(e.target.value);
+                    setGenerationId("");
+                  }}
                 >
                   <option value="">—</option>
                   {models.map((m) => (
@@ -263,6 +280,23 @@ export default function StaffEditListingPage() {
                   ))}
                 </select>
               </label>
+              {generations.length > 0 ? (
+                <label className="muted" style={{ display: "grid", gap: 4 }}>
+                  Поколение (необязательно)
+                  <select
+                    className="input"
+                    value={generationId}
+                    onChange={(e) => setGenerationId(e.target.value)}
+                  >
+                    <option value="">— не выбрано —</option>
+                    {generations.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Заголовок
                 <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />

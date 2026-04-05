@@ -43,10 +43,16 @@ class CarOut(BaseModel):
     id: int
     brand_id: int
     model_id: int
+    generation_id: int | None = None
+    """Поколение в справочнике; null — не привязано к поколению."""
     brand_slug: str = ""
     """Сегмент URL каталога для марки (совпадает с /catalog/tree)."""
     model_slug: str = ""
     """Сегмент URL каталога для модели внутри марки."""
+    generation_slug: str = ""
+    """Сегмент URL для страницы поколения (/catalog/марка/модель/поколение)."""
+    generation: str | None = None
+    """Название поколения для отображения."""
     created_by_user_id: int | None = None
     """Автор ручного объявления; null у карточек с парсера."""
     has_public_dealer_profile: bool = False
@@ -114,11 +120,19 @@ class CatalogModelOut(BaseModel):
     listings_count: int = 0
 
 
+class CatalogTreeGenerationOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    listings_count: int = 0
+
+
 class CatalogTreeModelOut(BaseModel):
     id: int
     name: str
     slug: str
     listings_count: int = 0
+    generations: list[CatalogTreeGenerationOut] = Field(default_factory=list)
 
 
 class CatalogTreeBrandOut(BaseModel):
@@ -128,6 +142,10 @@ class CatalogTreeBrandOut(BaseModel):
     listings_count: int = 0
     models_with_listings: int = 0
     models: list[CatalogTreeModelOut]
+
+
+class CarGenerationCreateIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=160)
 
 
 class CreateRequestIn(BaseModel):

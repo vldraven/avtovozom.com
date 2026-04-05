@@ -1,17 +1,62 @@
 import json
+import logging
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from .models import CarBrand, CarModel, ModelWhitelist, Role, User
+from .models import Car, CarBrand, CarGeneration, CarModel, ModelWhitelist, Role, User
 from .security import hash_password
+
+log = logging.getLogger(__name__)
 
 # Справочник марок/моделей: matthlavacka/car-list (JSON, ~39 марок / ~900 моделей).
 _CAR_LIST_PATH = Path(__file__).resolve().parent / "data" / "car_list.json"
 # Китайские марки и линейки моделей (дополняет основной список; см. Wikipedia «List of automobile manufacturers of China»).
 _CHINESE_CAR_LIST_PATH = Path(__file__).resolve().parent / "data" / "chinese_car_list.json"
 _MODEL_CATALOG_THRESHOLD = 80  # при меньшем числе моделей — догружаем справочник из JSON
+
+_DEFAULT_GENERATION_NAME = "Поколение не указано"
+_DEFAULT_GENERATION_SLUG = "ne-ukazano"
+
+
+def _ensure_default_generations_and_backfill(db: Session) -> None:
+    """
+    У моделей с активными объявлениями, но без записей в car_generations, создаётся одно поколение
+    по умолчанию; старые карточки с пустым generation_id привязываются к нему — в дереве каталога
+    появляются ссылки на поколения.
+    """
+    try:
+        model_ids = (
+            db.execute(select(Car.model_id).where(Car.is_active.is_(True)).distinct())
+            .scalars()
+            .all()
+        )
+    except Exception:
+        return
+    for mid in model_ids:
+        exists = db.execute(
+            select(CarGeneration.id).where(CarGeneration.model_id == mid).limit(1)
+        ).scalar_one_or_none()
+        if exists:
+            continue
+        g = CarGeneration(
+            model_id=mid,
+            name=_DEFAULT_GENERATION_NAME,
+            slug=_DEFAULT_GENERATION_SLUG,
+        )
+        db.add(g)
+        db.flush()
+        db.execute(
+            update(Car)
+            .where(
+                Car.model_id == mid,
+                Car.is_active.is_(True),
+                Car.generation_id.is_(None),
+            )
+            .values(generation_id=g.id)
+        )
+    db.commit()
 
 
 def _seed_brand_models_from_json(
@@ -181,3 +226,10 @@ def seed_initial_data(db: Session) -> None:
     ensure_whitelist(honda_civic, True)
 
     db.commit()
+    try:
+        from .apply_generations_reference import apply_generations_reference_file
+
+        apply_generations_reference_file(db)
+    except Exception as e:
+        log.warning("Справочник поколений (JSON) не применён: %s", e)
+    _ensure_default_generations_and_backfill(db)

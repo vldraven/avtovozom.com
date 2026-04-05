@@ -127,11 +127,6 @@ export default function DealerOpenRequests({ token, onOpenChat, onChatsUpdated }
   return (
     <section className="panel dealer-open-requests">
       <h2 className="section-title dealer-open-requests__title">Заявки на расчёт</h2>
-      <p className="muted dealer-open-requests__intro">
-        Заполните предварительный расчёт и комментарий. Клиент увидит предложение в заявке и сам откроет чат,
-        если заинтересуется — так дилеры не получают доступ к переписке без согласия клиента. Первое сообщение
-        в чате будет содержать ссылку на карточку авто и ваш расчёт.
-      </p>
       {error ? (
         <div className="alert alert--danger alert--mb-sm">
           {error}

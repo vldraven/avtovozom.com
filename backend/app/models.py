@@ -61,7 +61,25 @@ class CarModel(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     brand = relationship("CarBrand")
+    generations = relationship("CarGeneration", back_populates="model")
     __table_args__ = (UniqueConstraint("brand_id", "name", name="uq_brand_model"),)
+
+
+class CarGeneration(Base):
+    """Поколение внутри модели (кузов / рестайлинг)."""
+
+    __tablename__ = "car_generations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    model_id: Mapped[int] = mapped_column(ForeignKey("car_models.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    slug: Mapped[str] = mapped_column(String(192), nullable=False)
+    year_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    year_to: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    """Диапазон лет выпуска для автопривязки объявлений (включительно); null — без ограничения с этой стороны."""
+
+    model = relationship("CarModel", back_populates="generations")
+    __table_args__ = (UniqueConstraint("model_id", "slug", name="uq_model_generation_slug"),)
 
 
 class ModelWhitelist(Base):
@@ -85,6 +103,9 @@ class Car(Base):
     source_listing_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("car_brands.id"), nullable=False)
     model_id: Mapped[int] = mapped_column(ForeignKey("car_models.id"), nullable=False)
+    generation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("car_generations.id"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     year: Mapped[int] = mapped_column(Integer)
@@ -108,6 +129,7 @@ class Car(Base):
 
     brand = relationship("CarBrand")
     model = relationship("CarModel")
+    generation = relationship("CarGeneration")
     photos = relationship("CarPhoto", back_populates="car", cascade="all,delete-orphan")
 
 

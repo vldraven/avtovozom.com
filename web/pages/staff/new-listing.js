@@ -17,6 +17,8 @@ export default function StaffNewListingPage() {
   const [models, setModels] = useState([]);
   const [brandId, setBrandId] = useState("");
   const [modelId, setModelId] = useState("");
+  const [generations, setGenerations] = useState([]);
+  const [generationId, setGenerationId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [year, setYear] = useState("");
@@ -65,6 +67,8 @@ export default function StaffNewListingPage() {
     if (!token || !brandId) {
       setModels([]);
       setModelId("");
+      setGenerations([]);
+      setGenerationId("");
       return;
     }
     (async () => {
@@ -75,9 +79,26 @@ export default function StaffNewListingPage() {
         const list = await r.json();
         setModels(list);
         setModelId(list[0]?.id ? String(list[0].id) : "");
+        setGenerations([]);
+        setGenerationId("");
       }
     })();
   }, [token, brandId]);
+
+  useEffect(() => {
+    if (!token || !modelId) {
+      setGenerations([]);
+      setGenerationId("");
+      return;
+    }
+    setGenerationId("");
+    (async () => {
+      const r = await fetch(`${API_URL}/staff/catalog/generations?model_id=${modelId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) setGenerations(await r.json());
+    })();
+  }, [token, modelId]);
 
   async function submit(e) {
     e.preventDefault();
@@ -94,6 +115,7 @@ export default function StaffNewListingPage() {
     const fd = new FormData();
     fd.append("brand_id", brandId);
     fd.append("model_id", modelId);
+    if (generationId) fd.append("generation_id", generationId);
     fd.append("title", title.trim() || "Автомобиль");
     fd.append("description", description);
     fd.append("year", year);
@@ -154,9 +176,6 @@ export default function StaffNewListingPage() {
       <main className="site-main">
         <div className="container" style={{ maxWidth: 640 }}>
           <h1 className="section-title">Новое объявление</h1>
-          <p className="muted" style={{ marginTop: -8 }}>
-            Доступно для администраторов, модераторов и дилеров. Фото сохраняются на сервере.
-          </p>
           {message && <div className="alert alert--success">{message}</div>}
           {error && <div className="alert alert--danger">{error}</div>}
           {!me ? (
@@ -196,6 +215,23 @@ export default function StaffNewListingPage() {
                   ))}
                 </select>
               </label>
+              {generations.length > 0 ? (
+                <label className="muted" style={{ display: "grid", gap: 4 }}>
+                  Поколение (необязательно)
+                  <select
+                    className="input"
+                    value={generationId}
+                    onChange={(e) => setGenerationId(e.target.value)}
+                  >
+                    <option value="">— не выбрано —</option>
+                    {generations.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Заголовок
                 <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />

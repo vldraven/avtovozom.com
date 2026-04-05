@@ -36,9 +36,6 @@ export default function RequestConfirmModal({
         <h2 id="request-modal-title" className="section-title" style={{ fontSize: "1.2rem", marginTop: 0 }}>
           Подтвердите заявку
         </h2>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Проверьте автомобиль. При необходимости уточните запрос в комментарии — его увидят менеджер и дилеры.
-        </p>
         <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "flex-start" }}>
           {thumb ? (
             <img

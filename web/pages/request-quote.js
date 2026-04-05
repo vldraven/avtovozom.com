@@ -152,7 +152,6 @@ export default function RequestQuotePage() {
             <Link href="/" className="site-logo">
               avtovozom
             </Link>
-            <span className="site-brand-divider" aria-hidden="true" />
             <span className="site-tagline">Заявка на расчёт</span>
           </div>
           <div className="auth-bar">
@@ -168,10 +167,6 @@ export default function RequestQuotePage() {
       <main className="site-main">
         <div className="container page-narrow">
           <h1 className="section-title">Заявка на расчёт</h1>
-          <p className="muted section-lead-tight">
-            Оставьте контакты — мы создадим для вас аккаунт и пришлём код на email. Подтвердите адрес, затем войдите
-            (временный пароль придёт в письме).
-          </p>
 
           {loadError && <div className="alert alert--danger">{loadError}</div>}
           {error && <div className="alert alert--danger">{error}</div>}

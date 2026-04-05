@@ -263,8 +263,7 @@ export default function CarDetailView({
             <Link href="/" className="site-logo">
               avtovozom
             </Link>
-            <span className="site-brand-divider" aria-hidden="true" />
-            <span className="site-tagline">Каталог и подбор автомобилей из Китая</span>
+            <span className="site-tagline">Каталог и подбор автомобилей</span>
           </div>
           <div className="auth-bar">
             {!token ? (
@@ -298,12 +297,19 @@ export default function CarDetailView({
             <Breadcrumbs
               items={[
                 { label: "Главная", href: "/" },
-                { label: "Каталог", href: "/catalog" },
                 { label: car.brand, href: `/catalog/${car.brand_slug}` },
                 {
                   label: car.model,
                   href: `/catalog/${car.brand_slug}/${car.model_slug}`,
                 },
+                ...(car.generation && car.generation_slug
+                  ? [
+                      {
+                        label: car.generation,
+                        href: `/catalog/${car.brand_slug}/${car.model_slug}/${car.generation_slug}`,
+                      },
+                    ]
+                  : []),
                 { label: car.title || `Объявление №${car.id}` },
               ]}
             />
@@ -311,19 +317,24 @@ export default function CarDetailView({
             <Breadcrumbs
               items={[
                 { label: "Главная", href: "/" },
-                { label: "Каталог", href: "/catalog" },
                 { label: car.title || `Объявление №${car.id}` },
               ]}
             />
           )}
           <Link href="/catalog" className="detail-back">
-            ← Каталог с деревом
+            ← Каталог
           </Link>
 
           <div className="detail-hero">
             <h1 className="detail-title">{car.title}</h1>
             <p className="detail-subtitle">
               {car.brand} · модель <strong>{car.model}</strong>
+              {car.generation ? (
+                <>
+                  {" "}
+                  · поколение <strong>{car.generation}</strong>
+                </>
+              ) : null}
             </p>
             {car.has_public_dealer_profile && car.created_by_user_id ? (
               <p className="muted" style={{ marginTop: 10 }}>
@@ -437,9 +448,6 @@ export default function CarDetailView({
                 <span className="muted">Нет фотографий</span>
               </div>
             )}
-            {nPhotos > 1 && (
-              <p className="photo-gallery__hint">Листайте стрелками на клавиатуре (← →) или кнопками по бокам</p>
-            )}
             {nPhotos > 0 && (
               <div className="photo-gallery__thumbs">
                 {sortedPhotos.map((photo, idx) => (
@@ -460,13 +468,8 @@ export default function CarDetailView({
           {car.pricing_guide && (
             <section className="panel" style={{ marginTop: 20 }}>
               <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
-                Таможня: параметры для расчёта
+                Таможня
               </h2>
-              <p className="muted" style={{ fontSize: 14, marginTop: 0 }}>
-                Автоматический расчёт платежей на сайте не выполняется — не используем платные API. Ниже — данные из
-                карточки, которые можно перенести в калькулятор ТКС (личное использование и коммерция задаются в форме на
-                сайте ТКС).
-              </p>
               <ul className="pricing-guide-params" style={{ margin: "12px 0", paddingLeft: "1.25rem", lineHeight: 1.55 }}>
                 {car.pricing_guide.params_lines.map((line) => (
                   <li key={line} style={{ marginBottom: 6 }}>

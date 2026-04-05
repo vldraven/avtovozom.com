@@ -91,13 +91,20 @@ export default function Home() {
       const n = Number(model);
       if (!Number.isNaN(n)) params.set("model_id", String(n));
     }
-    const res = await fetch(`${API_URL}/cars?${params.toString()}`);
-    const data = await res.json();
-    setCars(data.items || []);
-    setTotal(data.total || 0);
-    setCatalogCbr(data.cbr || null);
-    setCatalogCbrError(data.cbr_error || null);
-  }, [router.isReady, router.asPath]);
+    try {
+      const res = await fetch(`${API_URL}/cars?${params.toString()}`);
+      const data = await res.json();
+      setCars(data.items || []);
+      setTotal(data.total || 0);
+      setCatalogCbr(data.cbr || null);
+      setCatalogCbrError(data.cbr_error || null);
+    } catch {
+      setCars([]);
+      setTotal(0);
+      setCatalogCbr(null);
+      setCatalogCbrError("network");
+    }
+  }, [router.isReady, router.query.brand, router.query.model, router.query.q]);
 
   function onSelectBrand(brandId) {
     const row = catalogBrands.find((b) => b.id === brandId);
@@ -462,14 +469,7 @@ export default function Home() {
             <Link href="/" className="site-logo">
               avtovozom
             </Link>
-            <span className="site-brand-divider" aria-hidden="true" />
-            <Link href="/catalog" className="site-header-catalog-link">
-              Каталог с деревом
-            </Link>
-            <span className="site-brand-divider site-brand-divider--hide-sm" aria-hidden="true" />
-            <span className="site-tagline site-tagline--hide-sm">
-              Каталог и подбор автомобилей из Китая
-            </span>
+            <span className="site-tagline">Каталог и подбор автомобилей</span>
           </div>
           <div className="auth-bar">
             {!token ? (
@@ -601,32 +601,18 @@ export default function Home() {
           </div>
 
           <h2 className="section-title section-title--flush-top">
-            Объявления{" "}
-            <span className="text-muted">
-              · {total}{" "}
-              {selectedBrandId || selectedModelId || q.trim()
-                ? "по выбранным условиям"
-                : "в каталоге"}
-            </span>
+            Объявления <span className="text-muted">· {total}</span>
           </h2>
 
       {profileReady && isStaffRole(me?.role) && (
         <div className="alert alert--success">
-          <b>Режим администратора:</b> у каждой карточки ниже есть кнопка «Удалить это объявление» — она
-          скрывает объявление из каталога.
+          <b>Администратор:</b> у объявлений ниже доступно удаление из каталога.
         </div>
       )}
 
       {token && isStaffRole(me?.role) && whitelistCatalog.length > 0 && (
         <section className="panel admin-parser-panel">
           <h2 className="section-title panel-heading-sm">Каталог парсера (админ)</h2>
-          <p className="admin-parser-intro">
-            Выберите марку и модель, включите <b>«Участвует в парсинге»</b>, затем вставьте URL: можно
-            страницу <b>серии</b> (список объявлений) или прямую ссылку на <b>одно объявление</b>{" "}
-            <code>…/dealer/…/….html</code>. Без галочки whitelist парсер модель не обрабатывает. За один
-            запуск — до <b>5 новых</b> карточек, которых ещё нет в базе. Обновление витрины — кнопкой
-            «Обновить каталог (парсер)» выше.
-          </p>
           <p className="admin-parser-meta-line">
             В справочнике <b>{whitelistCatalog.length}</b> моделей ·{" "}
             <b>{parserAdminBrandNames.length}</b> марок
@@ -685,12 +671,7 @@ export default function Home() {
                       saveParserModelWhitelist(parserAdminSelectedRow.model_id, e.target.checked)
                     }
                   />
-                  <span>
-                    Участвует в парсинге (whitelist)
-                    {!parserAdminSelectedRow.enabled ? (
-                      <span className="admin-parser-muted"> — пока выключено, парсер эту модель пропустит</span>
-                    ) : null}
-                  </span>
+                  <span>Участвует в парсинге (whitelist)</span>
                 </label>
                 <label className="admin-parser-label">
                   <span className="admin-parser-label__text">3. Ссылка на серию che168</span>
@@ -718,8 +699,6 @@ export default function Home() {
                   </button>
                 </div>
               </>
-            ) : parserAdminBrand ? (
-              <p className="admin-parser-hint">Выберите модель, чтобы ввести ссылку.</p>
             ) : null}
           </div>
         </section>
@@ -773,13 +752,6 @@ export default function Home() {
               </>
             ) : null}
           </p>
-          {(latestParserJob.status === "queued" || latestParserJob.status === "running") && (
-            <p className="parser-job-note">
-              {(latestParserJob.total_processed ?? 0) === 0 && latestParserJob.status === "running"
-                ? "Открывается сайт che168 и ищутся ссылки — счётчики обновятся после первой карточки."
-                : "Полоса заполняется по числу обработанных объявлений; текст статуса — из сервера."}
-            </p>
-          )}
         </div>
       )}
       {parserJobMessage && <div className="muted parser-job-message">{parserJobMessage}</div>}
@@ -788,11 +760,10 @@ export default function Home() {
         <p className="muted catalog-cbr-line">
           {catalogCbr ? (
             <>
-              Курс ЦБ на {catalogCbr.rate_date}: <b>1 ¥ = {catalogCbr.rub_per_cny.toFixed(2)} ₽</b> · цены в
-              каталоге — ориентировочно, «в Китае» в рублях.
+              Курс ЦБ на {catalogCbr.rate_date}: <b>1 ¥ = {catalogCbr.rub_per_cny.toFixed(2)} ₽</b>
             </>
           ) : (
-            <>Курс юаня ЦБ сейчас недоступен ({catalogCbrError || "ошибка"}). Показаны только цены в ¥.</>
+            <>Курс ЦБ недоступен ({catalogCbrError || "ошибка"}).</>
           )}
         </p>
       )}
@@ -818,6 +789,12 @@ export default function Home() {
                   <p className="catalog-card__meta">
                     <span className="catalog-card__model-line">
                       {car.brand} · <strong>{car.model}</strong>
+                      {car.generation ? (
+                        <>
+                          {" "}
+                          · {car.generation}
+                        </>
+                      ) : null}
                     </span>
                     <span className="catalog-card__meta-rest">
                       {" "}

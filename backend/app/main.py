@@ -31,6 +31,7 @@ from .models import (
     CalculationRequest,
     Car,
     CarBrand,
+    CarGeneration,
     CarModel,
     CarPhoto,
     Chat,
@@ -49,7 +50,7 @@ from .translator_ru import translate_to_ru
 from .email_utils import send_email
 from .media_storage import save_chat_attachment, save_uploaded_car_photos
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
-from .catalog_slug import build_catalog_slug_maps, slugs_for_car
+from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
 from .schemas import (
     CalculationRequestDealerOut,
     CalculationRequestMyOut,
@@ -61,7 +62,9 @@ from .schemas import (
     CatalogBrandOut,
     CatalogModelOut,
     CatalogTreeBrandOut,
+    CatalogTreeGenerationOut,
     CatalogTreeModelOut,
+    CarGenerationCreateIn,
     CbrSnapshot,
     CarOut,
     CarsListOut,
@@ -114,12 +117,17 @@ def _car_to_out(
     rub = round(rub_china_for_car(car, cbr), 2) if cbr is not None else None
     guide = build_pricing_guide(car, cbr) if full_import and cbr is not None else None
     brand_slug, model_slug = slugs_for_car(car, slug_maps[0], slug_maps[1])
+    gen = getattr(car, "generation", None)
+    gen_slug = (gen.slug if gen is not None else "") or ""
     return CarOut(
         id=car.id,
         brand_id=car.brand_id,
         model_id=car.model_id,
+        generation_id=car.generation_id,
         brand_slug=brand_slug,
         model_slug=model_slug,
+        generation_slug=gen_slug,
+        generation=(gen.name if gen is not None else None),
         title=car.title,
         description=car.description,
         year=car.year,
@@ -267,6 +275,8 @@ def startup() -> None:
                 """
             )
         )
+        conn.execute(text("ALTER TABLE car_generations ADD COLUMN IF NOT EXISTS year_from INTEGER"))
+        conn.execute(text("ALTER TABLE car_generations ADD COLUMN IF NOT EXISTS year_to INTEGER"))
     db = next(get_db())
     try:
         seed_initial_data(db)
@@ -378,6 +388,14 @@ def public_catalog_tree(db: Session = Depends(get_db)):
             .group_by(Car.brand_id, Car.model_id)
         ).all()
     }
+    listing_per_generation = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(Car.generation_id, func.count(Car.id))
+            .where(Car.is_active.is_(True), Car.generation_id.isnot(None))
+            .group_by(Car.generation_id)
+        ).all()
+    }
     out: list[CatalogTreeBrandOut] = []
     for b in brands:
         models = (
@@ -389,15 +407,35 @@ def public_catalog_tree(db: Session = Depends(get_db)):
             .scalars()
             .all()
         )
-        model_items = [
-            CatalogTreeModelOut(
-                id=m.id,
-                name=m.name,
-                slug=mmap.get((b.id, m.id), ""),
-                listings_count=listing_per_model.get((b.id, m.id), 0),
+        model_items: list[CatalogTreeModelOut] = []
+        for m in models:
+            gens = (
+                db.execute(
+                    select(CarGeneration)
+                    .where(CarGeneration.model_id == m.id)
+                    .order_by(CarGeneration.name)
+                )
+                .scalars()
+                .all()
             )
-            for m in models
-        ]
+            gen_items = [
+                CatalogTreeGenerationOut(
+                    id=g.id,
+                    name=g.name,
+                    slug=g.slug,
+                    listings_count=listing_per_generation.get(g.id, 0),
+                )
+                for g in gens
+            ]
+            model_items.append(
+                CatalogTreeModelOut(
+                    id=m.id,
+                    name=m.name,
+                    slug=mmap.get((b.id, m.id), ""),
+                    listings_count=listing_per_model.get((b.id, m.id), 0),
+                    generations=gen_items,
+                )
+            )
         out.append(
             CatalogTreeBrandOut(
                 id=b.id,
@@ -680,6 +718,7 @@ def list_cars(
     q: str | None = Query(default=None),
     brand_id: int | None = None,
     model_id: int | None = None,
+    generation_id: int | None = None,
     year_from: int | None = None,
     year_to: int | None = None,
     engine_from: int | None = None,
@@ -693,7 +732,12 @@ def list_cars(
 ):
     stmt = (
         select(Car)
-        .options(joinedload(Car.brand), joinedload(Car.model), joinedload(Car.photos))
+        .options(
+            joinedload(Car.brand),
+            joinedload(Car.model),
+            joinedload(Car.generation),
+            joinedload(Car.photos),
+        )
         .where(Car.is_active.is_(True))
     )
     qs = (q or "").strip()
@@ -706,6 +750,7 @@ def list_cars(
             .where(
                 or_(
                     Car.title.ilike(f"%{qs}%"),
+                    Car.description.ilike(f"%{qs}%"),
                     CarBrand.name.ilike(f"%{qs}%"),
                     CarModel.name.ilike(f"%{qs}%"),
                 )
@@ -720,6 +765,8 @@ def list_cars(
         stmt = stmt.where(Car.brand_id == brand_id)
     if model_id is not None:
         stmt = stmt.where(Car.model_id == model_id)
+    if generation_id is not None:
+        stmt = stmt.where(Car.generation_id == generation_id)
 
     if year_from is not None:
         stmt = stmt.where(Car.year >= year_from)
@@ -753,7 +800,12 @@ def list_cars(
 def get_car(car_id: int, db: Session = Depends(get_db)):
     car = db.execute(
         select(Car)
-        .options(joinedload(Car.brand), joinedload(Car.model), joinedload(Car.photos))
+        .options(
+            joinedload(Car.brand),
+            joinedload(Car.model),
+            joinedload(Car.generation),
+            joinedload(Car.photos),
+        )
         .where(Car.id == car_id, Car.is_active.is_(True))
     ).unique().scalar_one_or_none()
     if not car:
@@ -793,7 +845,12 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
 
     stmt = (
         select(Car)
-        .options(joinedload(Car.brand), joinedload(Car.model), joinedload(Car.photos))
+        .options(
+            joinedload(Car.brand),
+            joinedload(Car.model),
+            joinedload(Car.generation),
+            joinedload(Car.photos),
+        )
         .where(Car.created_by_user_id == user_id, Car.is_active.is_(True))
         .order_by(Car.updated_at.desc())
         .limit(100)
@@ -835,6 +892,49 @@ def _optional_mileage(mileage_km_raw: str | None) -> int | None:
         ) from None
 
 
+def _optional_generation_id_form(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        return int(s)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="generation_id must be an integer"
+        ) from None
+
+
+def _assert_generation_belongs_to_model(
+    db: Session, generation_id: int | None, model_id: int
+) -> None:
+    if generation_id is None:
+        return
+    g = db.execute(
+        select(CarGeneration).where(CarGeneration.id == generation_id)
+    ).scalar_one_or_none()
+    if not g or g.model_id != model_id:
+        raise HTTPException(
+            status_code=400, detail="generation_id does not match model_id"
+        )
+
+
+def _allocate_generation_slug(db: Session, model_id: int, display_name: str) -> str:
+    base = slug_for_generation_url(display_name)
+    used = set(
+        db.execute(
+            select(CarGeneration.slug).where(CarGeneration.model_id == model_id)
+        ).scalars().all()
+    )
+    cand = base
+    n = 0
+    while cand in used:
+        n += 1
+        cand = f"{base}-{n}"
+    return cand
+
+
 async def _update_car_from_multipart(
     db: Session,
     car: Car,
@@ -842,6 +942,7 @@ async def _update_car_from_multipart(
     *,
     brand_id: int,
     model_id: int,
+    generation_id: int | None,
     title: str,
     description: str,
     year: int,
@@ -863,6 +964,7 @@ async def _update_car_from_multipart(
         raise HTTPException(
             status_code=400, detail="model_id does not match brand_id"
         )
+    _assert_generation_belongs_to_model(db, generation_id, model_id)
 
     upload_list = list(photos or [])
     if len(upload_list) > 15:
@@ -879,6 +981,7 @@ async def _update_car_from_multipart(
 
     car.brand_id = brand_id
     car.model_id = model_id
+    car.generation_id = generation_id
     car.title = title.strip() or "Без названия"
     car.description = (description or "").strip()
     car.year = year
@@ -919,6 +1022,7 @@ async def _update_car_from_multipart(
             .options(
                 joinedload(Car.brand),
                 joinedload(Car.model),
+                joinedload(Car.generation),
                 joinedload(Car.photos),
             )
             .where(Car.id == car_id)
@@ -956,6 +1060,69 @@ def staff_catalog_models(
     )
 
 
+@app.get(
+    "/staff/catalog/generations",
+    response_model=list[CatalogTreeGenerationOut],
+)
+def staff_catalog_generations(
+    model_id: int = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator", "dealer")),
+):
+    listing_per_generation = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(Car.generation_id, func.count(Car.id))
+            .where(Car.is_active.is_(True), Car.generation_id.isnot(None))
+            .group_by(Car.generation_id)
+        ).all()
+    }
+    gens = (
+        db.execute(
+            select(CarGeneration)
+            .where(CarGeneration.model_id == model_id)
+            .order_by(CarGeneration.name)
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        CatalogTreeGenerationOut(
+            id=g.id,
+            name=g.name,
+            slug=g.slug,
+            listings_count=listing_per_generation.get(g.id, 0),
+        )
+        for g in gens
+    ]
+
+
+@app.post(
+    "/admin/car-models/{model_id}/generations",
+    response_model=CatalogTreeGenerationOut,
+)
+def admin_create_car_generation(
+    model_id: int,
+    payload: CarGenerationCreateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    m = db.execute(select(CarModel).where(CarModel.id == model_id)).scalar_one_or_none()
+    if not m:
+        raise HTTPException(status_code=404, detail="Model not found")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    slug = _allocate_generation_slug(db, model_id, name)
+    g = CarGeneration(model_id=model_id, name=name, slug=slug)
+    db.add(g)
+    db.commit()
+    db.refresh(g)
+    return CatalogTreeGenerationOut(
+        id=g.id, name=g.name, slug=g.slug, listings_count=0
+    )
+
+
 @app.get("/staff/my-cars", response_model=list[CarOut])
 def staff_my_posted_cars(
     db: Session = Depends(get_db),
@@ -967,6 +1134,7 @@ def staff_my_posted_cars(
             .options(
                 joinedload(Car.brand),
                 joinedload(Car.model),
+                joinedload(Car.generation),
                 joinedload(Car.photos),
             )
             .where(
@@ -990,6 +1158,7 @@ def staff_my_posted_cars(
 async def staff_create_car(
     brand_id: int = Form(),
     model_id: int = Form(),
+    generation_id: str | None = Form(None),
     title: str = Form(),
     description: str = Form(""),
     year: int = Form(),
@@ -1013,6 +1182,8 @@ async def staff_create_car(
         raise HTTPException(
             status_code=400, detail="model_id does not match brand_id"
         )
+    gid = _optional_generation_id_form(generation_id)
+    _assert_generation_belongs_to_model(db, gid, model_id)
 
     upload_list = list(photos or [])
     if len(upload_list) > 15:
@@ -1040,6 +1211,7 @@ async def staff_create_car(
         source_listing_id=listing_id,
         brand_id=brand_id,
         model_id=model_id,
+        generation_id=gid,
         title=title.strip() or "Без названия",
         description=(description or "").strip(),
         year=year,
@@ -1083,6 +1255,7 @@ async def staff_create_car(
             .options(
                 joinedload(Car.brand),
                 joinedload(Car.model),
+                joinedload(Car.generation),
                 joinedload(Car.photos),
             )
             .where(Car.id == car.id)
@@ -1108,6 +1281,7 @@ def staff_get_own_car(
             .options(
                 joinedload(Car.brand),
                 joinedload(Car.model),
+                joinedload(Car.generation),
                 joinedload(Car.photos),
             )
             .where(
@@ -1131,6 +1305,7 @@ async def staff_update_own_car(
     car_id: int,
     brand_id: int = Form(),
     model_id: int = Form(),
+    generation_id: str | None = Form(None),
     title: str = Form(),
     description: str = Form(""),
     year: int = Form(),
@@ -1166,12 +1341,14 @@ async def staff_update_own_car(
     )
     if not car:
         raise HTTPException(status_code=404, detail="Car not found")
+    gid = _optional_generation_id_form(generation_id)
     return await _update_car_from_multipart(
         db,
         car,
         car_id,
         brand_id=brand_id,
         model_id=model_id,
+        generation_id=gid,
         title=title,
         description=description,
         year=year,
@@ -1403,6 +1580,7 @@ def admin_get_car(
             .options(
                 joinedload(Car.brand),
                 joinedload(Car.model),
+                joinedload(Car.generation),
                 joinedload(Car.photos),
             )
             .where(Car.id == car_id)
@@ -1422,6 +1600,7 @@ async def admin_update_car(
     car_id: int,
     brand_id: int = Form(),
     model_id: int = Form(),
+    generation_id: str | None = Form(None),
     title: str = Form(),
     description: str = Form(""),
     year: int = Form(),
@@ -1453,12 +1632,14 @@ async def admin_update_car(
     )
     if not car:
         raise HTTPException(status_code=404, detail="Car not found")
+    gid = _optional_generation_id_form(generation_id)
     return await _update_car_from_multipart(
         db,
         car,
         car_id,
         brand_id=brand_id,
         model_id=model_id,
+        generation_id=gid,
         title=title,
         description=description,
         year=year,

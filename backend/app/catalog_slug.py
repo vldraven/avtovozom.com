@@ -10,24 +10,60 @@ from sqlalchemy.orm import Session
 
 from .models import CarBrand, CarModel
 
-_RU_LOWER = str.maketrans(
-    "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
-    "abvgdeejzijklmnoprstufhchshsch_y_eua",
-)
-_RU_UPPER = str.maketrans(
-    "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ",
-    "ABVGDEEJZIJKLMNOPRSTUFHCHSHSCH_Y_EUA",
-)
+# По одному символу Unicode → один латинский (maketrans не подходит при разной длине строк).
+_RU_TO_LAT: dict[str, str] = {
+    "а": "a",
+    "б": "b",
+    "в": "v",
+    "г": "g",
+    "д": "d",
+    "е": "e",
+    "ё": "e",
+    "ж": "j",
+    "з": "z",
+    "и": "i",
+    "й": "j",
+    "к": "k",
+    "л": "l",
+    "м": "m",
+    "н": "n",
+    "о": "o",
+    "п": "p",
+    "р": "r",
+    "с": "s",
+    "т": "t",
+    "у": "u",
+    "ф": "f",
+    "х": "h",
+    "ц": "c",
+    "ч": "c",
+    "ш": "s",
+    "щ": "s",
+    "ъ": "",
+    "ы": "y",
+    "ь": "",
+    "э": "e",
+    "ю": "u",
+    "я": "a",
+}
 
 
 def slugify_label(raw: str) -> str:
     if not raw or not str(raw).strip():
         return "x"
     s = str(raw).strip().lower()
-    s = s.translate(_RU_LOWER).translate(_RU_UPPER)
+    s = "".join(_RU_TO_LAT.get(ch, ch) for ch in s)
     s = re.sub(r"[^a-z0-9]+", "-", s)
     s = re.sub(r"-+", "-", s).strip("-")
     return s or "x"
+
+
+def slug_for_generation_url(raw_name: str) -> str:
+    """ЧПУ поколения; чисто цифровой слаг отличаем от id объявления в URL."""
+    base = slugify_label(raw_name)
+    if re.fullmatch(r"\d+", base):
+        return f"gen-{base}"
+    return base
 
 
 def _assign_unique_slug_map(rows: list[tuple[int, str]]) -> dict[int, str]:

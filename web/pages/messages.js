@@ -219,7 +219,6 @@ export default function MessagesPage() {
             <Link href="/" className="site-logo">
               avtovozom
             </Link>
-            <span className="site-brand-divider" aria-hidden="true" />
             <span className="site-tagline">Сообщения</span>
           </div>
           <div className="auth-bar">
@@ -413,9 +412,6 @@ export default function MessagesPage() {
                         </svg>
                       </button>
                     </div>
-                    <p className="muted messenger__composer-hint" style={{ margin: "8px 0 0", fontSize: 13 }}>
-                      До 15 МБ: фото, PDF, документы. Можно отправить текст, вложение или оба сразу.
-                    </p>
                   </form>
                 </>
               )}

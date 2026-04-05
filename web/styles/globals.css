@@ -107,14 +107,6 @@ a:hover {
   flex-shrink: 0;
 }
 
-/* Вертикальная черта между названием и слоганом (не полагаемся на margin у inline). */
-.site-brand-divider {
-  flex: 0 0 auto;
-  width: 1px;
-  height: 1.35rem;
-  background: rgba(248, 250, 252, 0.35);
-}
-
 .site-header-catalog-link {
   font-size: 0.85rem;
   font-weight: 600;
@@ -127,13 +119,6 @@ a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
   opacity: 1;
-}
-
-@media (max-width: 640px) {
-  .site-brand-divider--hide-sm,
-  .site-tagline--hide-sm {
-    display: none;
-  }
 }
 
 .site-tagline {
@@ -2090,10 +2075,6 @@ code {
     font-size: 1.1rem;
   }
 
-  .site-brand-divider {
-    height: 1.15rem;
-  }
-
   .site-tagline {
     font-size: 0.7rem;
     line-height: 1.35;
@@ -2609,13 +2590,265 @@ code {
   font-weight: 500;
 }
 
+.catalog-tree-generations {
+  list-style: none;
+  margin: 0.15rem 0 0.35rem;
+  padding: 0 0 0 0.65rem;
+  border-left: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.catalog-tree-generation-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.28rem 0.5rem 0.28rem 0.6rem;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.catalog-tree-generation-link:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.catalog-tree-generation-link--active {
+  background: rgba(14, 165, 233, 0.1);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
 .catalog-main-panel {
   min-width: 0;
 }
 
-.catalog-page-intro {
-  margin: 0 0 1rem;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.catalog-layout--brand-focus {
+  margin-top: 0.25rem;
+}
+
+.catalog-tree-panel--focused {
+  border-color: rgba(14, 165, 233, 0.35);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+}
+
+.catalog-tree-back-link {
+  display: inline-flex;
+  align-items: center;
+  margin: 0.15rem 0.65rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.catalog-tree-back-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.catalog-tree-focused-brand {
+  margin: 0 0.65rem 0.85rem;
+  padding: 0 0.65rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+  line-height: 1.25;
+}
+
+.catalog-tree-models--focused {
+  padding-left: 0.25rem;
+}
+
+.catalog-tree-models--focused .catalog-tree-model-link {
+  padding-left: 0.65rem;
+}
+
+/* Компактный выбор: нативный select = одно поле с текущим значением и списком */
+.catalog-tree-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0.5rem 0.85rem;
+}
+
+.catalog-tree-field--tight {
+  margin-bottom: 0.4rem;
+}
+
+.catalog-tree-field__label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  padding-left: 0.1rem;
+  line-height: 1.3;
+}
+
+.catalog-tree-native-select {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.65rem 2.35rem 0.65rem 0.75rem;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%23666' stroke-width='1.5' stroke-linecap='round' d='M1 1.5L6 6l5-4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 0.7rem auto;
+}
+
+.catalog-tree-native-select:hover {
+  border-color: var(--color-muted);
+}
+
+.catalog-tree-native-select:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-color: var(--color-accent);
+}
+
+.catalog-tree-model-picker {
+  margin: 0 0.5rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.catalog-tree-model-picker__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+  list-style: none;
+  user-select: none;
+}
+
+.catalog-tree-model-picker__summary::-webkit-details-marker {
+  display: none;
+}
+
+.catalog-tree-model-picker__summary-text {
+  color: var(--color-accent);
+}
+
+.catalog-tree-model-picker__chev {
+  font-size: 0.65rem;
+  color: var(--color-muted);
+  transition: transform 0.15s ease;
+}
+
+.catalog-tree-model-picker[open] .catalog-tree-model-picker__chev {
+  transform: rotate(-180deg);
+}
+
+.catalog-tree-model-picker__summary:hover {
+  background: var(--color-bg);
+}
+
+.catalog-tree-models--in-picker {
+  padding: 0.25rem 0 0.5rem;
+  border-top: 1px solid var(--color-border);
+  max-height: min(55vh, 22rem);
+  overflow-y: auto;
+}
+
+.catalog-tree-models--in-picker .catalog-tree-model-link {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.catalog-tree-generation-step {
+  margin: 0.35rem 0 0;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.catalog-focus-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem 0.75rem;
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.catalog-focus-filters__label {
+  flex: 0 0 100%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted);
+  margin: 0;
+}
+
+@media (min-width: 640px) {
+  .catalog-focus-filters__label {
+    flex: 0 0 auto;
+    align-self: center;
+    margin-right: 0.25rem;
+  }
+}
+
+.catalog-focus-filters__input {
+  flex: 1 1 200px;
+  min-width: 160px;
+  max-width: 320px;
+}
+
+.catalog-focus-filters__years {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.catalog-focus-filters__year {
+  width: 5.5rem;
+  min-width: 0;
+}
+
+.catalog-focus-filters__year-label {
+  margin: 0;
+}
+
+.catalog-focus-filters__dash {
   color: var(--color-muted);
   font-size: 0.9rem;
-  line-height: 1.45;
 }

@@ -1,0 +1,281 @@
+{
+  "meta": {
+    "sources": [
+      "Wikipedia (English): BMW 3 Series, BMW 5 Series, BMW X3, BMW X5; Mercedes-Benz C-Class, E-Class; Audi A4, A6, Q5; Toyota Camry, Corolla, RAV4; Honda Accord, Civic, CR-V; Tesla Model 3; Lexus ES; Volkswagen Passat, Tiguan, Golf.",
+      "Годы — ориентир по календарным годам выпуска для Европы/Китая; на объявлении che168 год может быть регистрации — возможны пограничные случаи."
+    ]
+  },
+  "entries": [
+    {
+      "brand": "BMW",
+      "models": ["3 Series", "Rad 3", "Rad 3 Touring", "Rad 3 Coupé", "Rad 3 Cabrio", "Rad 3 Compact", "Rad 3 GT"],
+      "generations": [
+        {"name": "E36", "slug": "e36", "year_from": 1990, "year_to": 1997},
+        {"name": "E46", "slug": "e46", "year_from": 1998, "year_to": 2004},
+        {"name": "E90 / E91 / E92 / E93", "slug": "e90", "year_from": 2005, "year_to": 2011},
+        {"name": "F30 / F31 / F34", "slug": "f30", "year_from": 2012, "year_to": 2018},
+        {"name": "G20 / G21 / G28", "slug": "g20", "year_from": 2019, "year_to": null}
+      ]
+    },
+    {
+      "brand": "BMW",
+      "models": ["5 Series", "Rad 5", "Rad 5 Touring", "Rad 5 GT"],
+      "generations": [
+        {"name": "E39", "slug": "e39", "year_from": 1995, "year_to": 2003},
+        {"name": "E60 / E61", "slug": "e60", "year_from": 2003, "year_to": 2010},
+        {"name": "F10 / F11 / F07", "slug": "f10", "year_from": 2010, "year_to": 2017},
+        {"name": "G30 / G31", "slug": "g30", "year_from": 2017, "year_to": null}
+      ]
+    },
+    {
+      "brand": "BMW",
+      "models": ["X3"],
+      "generations": [
+        {"name": "E83", "slug": "e83", "year_from": 2003, "year_to": 2010},
+        {"name": "F25", "slug": "f25", "year_from": 2010, "year_to": 2017},
+        {"name": "G01", "slug": "g01", "year_from": 2017, "year_to": null}
+      ]
+    },
+    {
+      "brand": "BMW",
+      "models": ["X5"],
+      "generations": [
+        {"name": "E53", "slug": "e53", "year_from": 1999, "year_to": 2006},
+        {"name": "E70", "slug": "e70", "year_from": 2006, "year_to": 2013},
+        {"name": "F15", "slug": "f15", "year_from": 2013, "year_to": 2018},
+        {"name": "G05", "slug": "g05", "year_from": 2018, "year_to": null}
+      ]
+    },
+    {
+      "brand": "BMW",
+      "models": ["M3"],
+      "generations": [
+        {"name": "E36 M3", "slug": "e36-m3", "year_from": 1992, "year_to": 1999},
+        {"name": "E46 M3", "slug": "e46-m3", "year_from": 2000, "year_to": 2006},
+        {"name": "E90/E92 M3", "slug": "e9x-m3", "year_from": 2007, "year_to": 2013},
+        {"name": "F80 M3", "slug": "f80-m3", "year_from": 2014, "year_to": 2018},
+        {"name": "G80 M3", "slug": "g80-m3", "year_from": 2021, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Mercedes-Benz",
+      "models": ["C", "Trieda C", "C Sportcoupé", "C T", "CLC"],
+      "generations": [
+        {"name": "W202", "slug": "w202", "year_from": 1993, "year_to": 2000},
+        {"name": "W203", "slug": "w203", "year_from": 2000, "year_to": 2007},
+        {"name": "W204", "slug": "w204", "year_from": 2007, "year_to": 2014},
+        {"name": "W205", "slug": "w205", "year_from": 2014, "year_to": 2021},
+        {"name": "W206", "slug": "w206", "year_from": 2021, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Mercedes-Benz",
+      "models": ["E", "Trieda E", "E Cabrio", "E Coupé", "E T"],
+      "generations": [
+        {"name": "W210", "slug": "w210", "year_from": 1995, "year_to": 2002},
+        {"name": "W211", "slug": "w211", "year_from": 2002, "year_to": 2009},
+        {"name": "W212", "slug": "w212", "year_from": 2009, "year_to": 2016},
+        {"name": "W213", "slug": "w213", "year_from": 2016, "year_to": 2023},
+        {"name": "W214", "slug": "w214", "year_from": 2023, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Mercedes-Benz",
+      "models": ["GLC"],
+      "generations": [
+        {"name": "X253", "slug": "x253", "year_from": 2015, "year_to": 2022},
+        {"name": "X254", "slug": "x254", "year_from": 2022, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Audi",
+      "models": ["A4", "A4 Avant", "A4 Allroad", "A4 Cabriolet"],
+      "generations": [
+        {"name": "B5", "slug": "b5", "year_from": 1994, "year_to": 2001},
+        {"name": "B6 / B7", "slug": "b6-b7", "year_from": 2000, "year_to": 2008},
+        {"name": "B8", "slug": "b8", "year_from": 2008, "year_to": 2015},
+        {"name": "B9", "slug": "b9", "year_from": 2015, "year_to": 2023},
+        {"name": "B10", "slug": "b10", "year_from": 2024, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Audi",
+      "models": ["A6", "A6 Avant", "A6 Allroad"],
+      "generations": [
+        {"name": "C5", "slug": "c5", "year_from": 1997, "year_to": 2004},
+        {"name": "C6", "slug": "c6", "year_from": 2004, "year_to": 2011},
+        {"name": "C7", "slug": "c7", "year_from": 2011, "year_to": 2018},
+        {"name": "C8", "slug": "c8", "year_from": 2018, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Audi",
+      "models": ["Q5"],
+      "generations": [
+        {"name": "8R", "slug": "8r", "year_from": 2008, "year_to": 2017},
+        {"name": "FY", "slug": "fy", "year_from": 2017, "year_to": 2024},
+        {"name": "80A (новый кузов)", "slug": "80a", "year_from": 2024, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Toyota",
+      "models": ["Camry"],
+      "generations": [
+        {"name": "XV10", "slug": "xv10", "year_from": 1991, "year_to": 1996},
+        {"name": "XV20", "slug": "xv20", "year_from": 1996, "year_to": 2001},
+        {"name": "XV30", "slug": "xv30", "year_from": 2001, "year_to": 2006},
+        {"name": "XV40", "slug": "xv40", "year_from": 2006, "year_to": 2011},
+        {"name": "XV50", "slug": "xv50", "year_from": 2011, "year_to": 2017},
+        {"name": "XV70", "slug": "xv70", "year_from": 2017, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Toyota",
+      "models": ["Corolla", "Corolla sedan", "Corolla Combi", "Corolla Verso"],
+      "generations": [
+        {"name": "E110/E120", "slug": "e120", "year_from": 1995, "year_to": 2007},
+        {"name": "E140/E150", "slug": "e140", "year_from": 2006, "year_to": 2013},
+        {"name": "E170/E180", "slug": "e170", "year_from": 2013, "year_to": 2018},
+        {"name": "E210", "slug": "e210", "year_from": 2018, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Toyota",
+      "models": ["RAV4"],
+      "generations": [
+        {"name": "XA10", "slug": "xa10", "year_from": 1994, "year_to": 2000},
+        {"name": "XA20", "slug": "xa20", "year_from": 2000, "year_to": 2005},
+        {"name": "XA30", "slug": "xa30", "year_from": 2005, "year_to": 2012},
+        {"name": "XA40", "slug": "xa40", "year_from": 2012, "year_to": 2018},
+        {"name": "XA50", "slug": "xa50", "year_from": 2018, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Toyota",
+      "models": ["Highlander"],
+      "generations": [
+        {"name": "XU20", "slug": "xu20", "year_from": 2000, "year_to": 2007},
+        {"name": "XU40", "slug": "xu40", "year_from": 2007, "year_to": 2013},
+        {"name": "XU50", "slug": "xu50", "year_from": 2013, "year_to": 2019},
+        {"name": "XU70", "slug": "xu70", "year_from": 2019, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Honda",
+      "models": ["Accord"],
+      "generations": [
+        {"name": "6 поколение", "slug": "cd5-cf8", "year_from": 1997, "year_to": 2002},
+        {"name": "7 поколение", "slug": "uc", "year_from": 2002, "year_to": 2008},
+        {"name": "8 поколение", "slug": "cp-cu", "year_from": 2008, "year_to": 2013},
+        {"name": "9 поколение", "slug": "cr", "year_from": 2013, "year_to": 2017},
+        {"name": "10 поколение", "slug": "cv", "year_from": 2017, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Honda",
+      "models": ["Civic", "Civic Coupé", "Civic Tourer", "Civic Type R"],
+      "generations": [
+        {"name": "7 (ES/EP/EU)", "slug": "ep3", "year_from": 2000, "year_to": 2005},
+        {"name": "8 (FD/FG/FN)", "slug": "fd", "year_from": 2005, "year_to": 2011},
+        {"name": "9 (FB/FG)", "slug": "fb", "year_from": 2011, "year_to": 2015},
+        {"name": "10 (FC/FK)", "slug": "fc", "year_from": 2015, "year_to": 2021},
+        {"name": "11", "slug": "fl", "year_from": 2021, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Honda",
+      "models": ["CR-V"],
+      "generations": [
+        {"name": "RD1–RD3", "slug": "rd", "year_from": 1995, "year_to": 2001},
+        {"name": "RD4–RD7", "slug": "rd4", "year_from": 2001, "year_to": 2006},
+        {"name": "RE", "slug": "re", "year_from": 2006, "year_to": 2011},
+        {"name": "RM", "slug": "rm", "year_from": 2012, "year_to": 2016},
+        {"name": "RW", "slug": "rw", "year_from": 2016, "year_to": 2022},
+        {"name": "RS (6 покол.)", "slug": "rs6", "year_from": 2023, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Lexus",
+      "models": ["RX", "RX 300", "RX 400h", "RX 450h"],
+      "generations": [
+        {"name": "XU10", "slug": "rx-xu10", "year_from": 1998, "year_to": 2003},
+        {"name": "XU30", "slug": "rx-xu30", "year_from": 2003, "year_to": 2008},
+        {"name": "AL10", "slug": "rx-al10", "year_from": 2008, "year_to": 2015},
+        {"name": "AL20", "slug": "rx-al20", "year_from": 2015, "year_to": 2022},
+        {"name": "ALA10 (новый RX)", "slug": "rx-ala10", "year_from": 2022, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Tesla",
+      "models": ["Model 3"],
+      "generations": [
+        {"name": "До рестайлинга", "slug": "pre-refresh", "year_from": 2017, "year_to": 2023},
+        {"name": "Рестайлинг ( Highland )", "slug": "highland", "year_from": 2023, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Volkswagen",
+      "models": ["Passat", "Passat CC"],
+      "generations": [
+        {"name": "B5", "slug": "b5", "year_from": 1996, "year_to": 2005},
+        {"name": "B6", "slug": "b6", "year_from": 2005, "year_to": 2010},
+        {"name": "B7", "slug": "b7", "year_from": 2010, "year_to": 2014},
+        {"name": "B8", "slug": "b8", "year_from": 2014, "year_to": 2023},
+        {"name": "B9 (новый Passat/CN)", "slug": "b9", "year_from": 2024, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Volkswagen",
+      "models": ["Tiguan"],
+      "generations": [
+        {"name": "5N", "slug": "5n", "year_from": 2007, "year_to": 2016},
+        {"name": "AD / BW", "slug": "ad", "year_from": 2016, "year_to": 2024},
+        {"name": "Tayron (LWB CN)", "slug": "tayron", "year_from": 2024, "year_to": null}
+      ]
+    },
+    {
+      "brand": "BYD",
+      "models": ["Han"],
+      "generations": [
+        {"name": "Первое поколение (EV/DM-i)", "slug": "han-1", "year_from": 2020, "year_to": null}
+      ]
+    },
+    {
+      "brand": "BYD",
+      "models": ["Seal"],
+      "generations": [
+        {"name": "Первое поколение", "slug": "seal-1", "year_from": 2022, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Zeekr",
+      "models": ["001"],
+      "generations": [
+        {"name": "2021–2024", "slug": "001-a", "year_from": 2021, "year_to": 2024},
+        {"name": "Обновление 2024+", "slug": "001-b", "year_from": 2024, "year_to": null}
+      ]
+    },
+    {
+      "brand": "NIO",
+      "models": ["ES6"],
+      "generations": [
+        {"name": "Первое поколение", "slug": "es6-g1", "year_from": 2018, "year_to": 2023},
+        {"name": "NT2.0", "slug": "es6-g2", "year_from": 2023, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Li Auto",
+      "models": ["L9"],
+      "generations": [
+        {"name": "L9", "slug": "l9-1", "year_from": 2022, "year_to": null}
+      ]
+    },
+    {
+      "brand": "Li Auto",
+      "models": ["L7", "L8"],
+      "generations": [
+        {"name": "Первое поколение", "slug": "l78-1", "year_from": 2023, "year_to": null}
+      ]
+    }
+  ]
+}

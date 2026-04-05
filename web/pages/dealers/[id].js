@@ -56,7 +56,6 @@ export default function DealerPublicPage() {
             <Link href="/" className="site-logo">
               avtovozom
             </Link>
-            <span className="site-brand-divider" aria-hidden="true" />
             <span className="site-tagline">Дилер</span>
           </div>
           <div className="auth-bar">
