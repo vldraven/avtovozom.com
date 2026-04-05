@@ -114,7 +114,7 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-Сайт: `https://avtovozom.com`, API: `https://api.avtovozom.com`. В `.env` на сервере должны быть `NEXT_PUBLIC_API_URL`, `CORS_ORIGINS`, `PUBLIC_WEB_ORIGIN` под эти URL (см. [deploy/env.production.example](env.production.example)).
+Сайт: `https://avtovozom.com`, API: `https://api.avtovozom.com`. В `.env` на сервере должны быть `NEXT_PUBLIC_API_URL`, `CORS_ORIGINS`, `PUBLIC_WEB_ORIGIN` под эти URL (см. [deploy/env.production.example](./env.production.example)).
 
 ### 3. Firewall
 
