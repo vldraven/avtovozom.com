@@ -1,5 +1,7 @@
 # Как выкатывать изменения в прод
 
+**Для неразработчиков — пошаговая инструкция простым языком:** [INSTRUKCIYA_DEPLOY_PROSTYM_YAZYKOM.md](INSTRUKCIYA_DEPLOY_PROSTYM_YAZYKOM.md) (в т.ч. почему падает GitHub Actions с exit code 255).
+
 Цель: один предсказуемый способ обновить код на VPS и пересобрать контейнеры, не затирая секреты и пользовательские данные.
 
 **Рекомендуемый поток:** пуш в ветку `main` на GitHub → workflow [Deploy production](../.github/workflows/deploy-production.yml) (нужны секреты, см. [GITHUB_AND_DOMAIN.md](GITHUB_AND_DOMAIN.md)).

@@ -1,6 +1,6 @@
 # Git + автодеплой + домен avtovozom.com
 
-**Если вы не разработчик** — откройте пошаговую инструкцию: [POLNYJ_PLAN_DLYA_STARTA.md](POLNYJ_PLAN_DLYA_STARTA.md).
+**Если вы не разработчик** — откройте пошаговую инструкцию: [POLNYJ_PLAN_DLYA_STARTA.md](POLNYJ_PLAN_DLYA_STARTA.md). Отдельно про выкладку на прод: [INSTRUKCIYA_DEPLOY_PROSTYM_YAZYKOM.md](INSTRUKCIYA_DEPLOY_PROSTYM_YAZYKOM.md).
 
 Ассистент **не может** сам зайти на ваш VPS: деплой делается **вы** (один раз сервер) и **GitHub Actions** (после настройки секретов).
 
