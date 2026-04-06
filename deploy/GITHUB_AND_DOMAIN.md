@@ -123,6 +123,24 @@ mkdir -p /opt/avtovozom/media
 
 Первый раз можно залить код вручную (`rsync`) или дождаться успешного GitHub Action после пуша.
 
+### Postgres: `password authentication failed for user "avtovozom"`
+
+Пароль в **томе данных** PostgreSQL задаётся **только при первом** создании контейнера. Если позже вы поменяли `POSTGRES_PASSWORD` в `.env`, приложение будет слать новый пароль, а сервер БД — по-прежнему ждать старый.
+
+**Вариант A — выровнять пароль в БД под текущий `.env`** (данные сохраняются):
+
+```bash
+cd /opt/avtovozom
+# Подставьте тот же пароль, что в POSTGRES_PASSWORD в .env (при спецсимволах удобнее через переменную):
+docker compose -f docker-compose.prod.yml exec postgres \
+  psql -U avtovozom -d postgres -c "ALTER USER avtovozom PASSWORD 'ВАШ_ПАРОЛЬ_ИЗ_ENV';"
+docker compose -f docker-compose.prod.yml up -d backend parser
+```
+
+**Вариант B** — вернуть в `.env` старый пароль (как при первом запуске), перезапустить `backend` и `parser`.
+
+В образе backend URL к БД собирается с кодированием пароля; спецсимволы в пароле больше не ломают подключение.
+
 ---
 
 ## Часть D. Домен avtovozom.com

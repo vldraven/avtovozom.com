@@ -30,7 +30,11 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-avtovozom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-avtovozom}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-avtovozom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-avtovozom}
       PARSER_INTERVAL_HOURS: "24"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:3000}
@@ -51,7 +55,11 @@ services:
     container_name: avtovozom_parser
     command: python -m app.parser_worker
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-avtovozom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-avtovozom}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-avtovozom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-avtovozom}
       PARSER_POLL_SECONDS: "10"
       CHE168_MAX_LINKS_PER_MODEL: "40"
       CHE168_NEW_PER_RUN: "5"
