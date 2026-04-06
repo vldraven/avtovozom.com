@@ -65,6 +65,9 @@ services:
   web:
     build:
       context: ./web
+      args:
+        # Важно: Next.js вшивает NEXT_PUBLIC_* при сборке образа, не при старте контейнера.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     container_name: avtovozom_web
     env_file:
       - path: .env

@@ -33,9 +33,20 @@ jobs:
             exit 1
           }
           mkdir -p ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          # Многострочный ключ + финальный перевод строки; убираем CR после копирования с Windows
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          if ! grep -qE 'BEGIN (OPENSSH|EC|RSA) PRIVATE KEY' ~/.ssh/deploy_key; then
+            echo "::error::DEPLOY_SSH_KEY должен быть ПРИВАТНЫМ ключом (строки BEGIN … PRIVATE KEY). Не вставляйте .pub"
+            exit 1
+          fi
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "Проверка SSH (BatchMode)…"
+          if ! ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "echo ssh_ok"; then
+            echo "::error::SSH не удалось: проверьте DEPLOY_SSH_KEY (приватный ключ), DEPLOY_HOST, DEPLOY_USER и что публичный ключ есть в ~/.ssh/authorized_keys на сервере для этого пользователя."
+            exit 255
+          fi
           RSYNC_RSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
           rsync -avz -e "$RSYNC_RSH" \
             --delete \
