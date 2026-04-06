@@ -129,13 +129,24 @@ mkdir -p /opt/avtovozom/media
 
 **Вариант A — выровнять пароль в БД под текущий `.env`** (данные сохраняются):
 
+Самый надёжный способ без кавычек в shell — интерактивно в `psql`:
+
 ```bash
 cd /opt/avtovozom
-# Подставьте тот же пароль, что в POSTGRES_PASSWORD в .env (при спецсимволах удобнее через переменную):
+docker compose -f docker-compose.prod.yml exec -it postgres psql -U avtovozom -d postgres
+```
+
+Внутри psql: `\password avtovozom` (ввести пароль дважды — **тот же**, что в `POSTGRES_PASSWORD` в `.env`), затем `\q`.
+
+Либо одной строкой (если в пароле нет одинарной кавычки `'`):
+
+```bash
 docker compose -f docker-compose.prod.yml exec postgres \
   psql -U avtovozom -d postgres -c "ALTER USER avtovozom PASSWORD 'ВАШ_ПАРОЛЬ_ИЗ_ENV';"
 docker compose -f docker-compose.prod.yml up -d backend parser
 ```
+
+Если правили `.env` под Windows, проверьте переводы строк: `dos2unix .env` или откройте в редакторе с LF — иначе в пароль может попасть символ `\r`.
 
 **Вариант B** — вернуть в `.env` старый пароль (как при первом запуске), перезапустить `backend` и `parser`.
 

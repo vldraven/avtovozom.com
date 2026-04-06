@@ -5,17 +5,25 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
+def _env_part(key: str, default: str = "") -> str:
+    """Убирает \\r/\\n и пробелы по краям — типичная проблема после правки .env в Windows или копипаста."""
+    raw = os.getenv(key, default)
+    if raw is None:
+        return default
+    return raw.strip().replace("\r", "").replace("\n", "")
+
+
 def _database_url() -> str:
     """
     В Docker (compose) задаётся POSTGRES_HOST — URL собираем с quote_plus, чтобы пароль с @ : / # и т.д.
     не ломал строку подключения. Иначе — DATABASE_URL или дефолт для локального запуска.
     """
-    if os.getenv("POSTGRES_HOST"):
-        user = os.getenv("POSTGRES_USER", "avtovozom")
-        password = os.getenv("POSTGRES_PASSWORD", "")
-        host = os.getenv("POSTGRES_HOST", "postgres")
-        port = os.getenv("POSTGRES_PORT", "5432")
-        database = os.getenv("POSTGRES_DB", "avtovozom")
+    if _env_part("POSTGRES_HOST"):
+        user = _env_part("POSTGRES_USER", "avtovozom")
+        password = _env_part("POSTGRES_PASSWORD", "")
+        host = _env_part("POSTGRES_HOST", "postgres")
+        port = _env_part("POSTGRES_PORT", "5432")
+        database = _env_part("POSTGRES_DB", "avtovozom")
         return (
             f"postgresql+psycopg2://{quote_plus(user)}:{quote_plus(password)}"
             f"@{host}:{port}/{quote_plus(database)}"
