@@ -244,6 +244,15 @@ def startup() -> None:
                 "INTEGER REFERENCES users(id)"
             )
         )
+        conn.execute(
+            text(
+                "ALTER TABLE cars ADD COLUMN IF NOT EXISTS generation_id "
+                "INTEGER REFERENCES car_generations(id)"
+            )
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_cars_generation_id ON cars (generation_id)")
+        )
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT TRUE"))
         conn.execute(
