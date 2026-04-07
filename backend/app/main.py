@@ -2615,6 +2615,13 @@ def _run_parser_job_background(job_id: int) -> None:
         if not job or job.status != "queued":
             return
         run_parser_job(db, job)
+    except Exception as e:
+        row = db.execute(select(ParseJob).where(ParseJob.id == job_id)).scalar_one_or_none()
+        if row and row.status == "running" and row.finished_at is None:
+            row.status = "failed"
+            row.message = str(e)[:500]
+            row.finished_at = datetime.utcnow()
+            db.commit()
     finally:
         db.close()
 
