@@ -157,6 +157,10 @@ class ParseJob(Base):
     total_updated: Mapped[int] = mapped_column(Integer, default=0)
     total_errors: Mapped[int] = mapped_column(Integer, default=0)
     message: Mapped[str] = mapped_column(String(512), default="")
+    import_model_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("car_models.id"), nullable=True
+    )
+    import_detail_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
 
 class CalculationRequest(Base):

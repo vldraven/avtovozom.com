@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
+import CatalogSortDropdown from "../components/CatalogSortDropdown";
 import DealerOpenRequests from "../components/DealerOpenRequests";
+import SiteSelectDropdown from "../components/SiteSelectDropdown";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import HeaderProfileLink from "../components/HeaderProfileLink";
 import RequestConfirmModal from "../components/RequestConfirmModal";
@@ -15,6 +17,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
+
+function parseImportStepMessage(msg) {
+  const m = /^(\d)\/(\d)\s/.exec(msg || "");
+  if (!m) return null;
+  return { cur: Number(m[1]), total: Number(m[2]) };
+}
 
 export default function Home() {
   const router = useRouter();
@@ -37,6 +45,8 @@ export default function Home() {
   /** Админка парсера: марка → модель → URL (не путать с фильтром каталога объявлений). */
   const [parserAdminBrand, setParserAdminBrand] = useState("");
   const [parserAdminModelId, setParserAdminModelId] = useState(null);
+  const [importListingBusy, setImportListingBusy] = useState(false);
+  const [listSort, setListSort] = useState("date_desc");
   const [profileReady, setProfileReady] = useState(false);
   const [requestModalCar, setRequestModalCar] = useState(null);
   const [requestModalComment, setRequestModalComment] = useState("");
@@ -91,6 +101,9 @@ export default function Home() {
       const n = Number(model);
       if (!Number.isNaN(n)) params.set("model_id", String(n));
     }
+    if (listSort && listSort !== "date_desc") {
+      params.set("sort", listSort);
+    }
     try {
       const res = await fetch(`${API_URL}/cars?${params.toString()}`);
       const data = await res.json();
@@ -104,7 +117,7 @@ export default function Home() {
       setCatalogCbr(null);
       setCatalogCbrError("network");
     }
-  }, [router.isReady, router.query.brand, router.query.model, router.query.q]);
+  }, [router.isReady, router.query.brand, router.query.model, router.query.q, listSort]);
 
   function onSelectBrand(brandId) {
     const row = catalogBrands.find((b) => b.id === brandId);
@@ -301,39 +314,55 @@ export default function Home() {
     setCatalogUrlDrafts(draft);
   }
 
-  async function saveCatalogUrl(modelId) {
-    if (!token) return;
-    const che168_url = (catalogUrlDrafts[modelId] || "").trim() || null;
-    const res = await fetch(`${API_URL}/admin/car-models/${modelId}/catalog`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ che168_url }),
-    });
-    if (!res.ok) {
-      alert("Не удалось сохранить URL каталога.");
+  async function importListingFromChe168() {
+    if (!token) {
+      alert("Сначала выполните вход");
       return;
     }
-    await loadWhitelistCatalog(token);
-  }
-
-  async function saveParserModelWhitelist(modelId, enabled) {
-    if (!token || modelId == null) return;
-    const res = await fetch(`${API_URL}/admin/model-whitelist`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify([{ model_id: modelId, enabled }]),
-    });
-    if (!res.ok) {
-      alert("Не удалось обновить whitelist для модели.");
+    if (parserAdminModelId == null) {
+      alert("Выберите марку и модель.");
       return;
     }
-    await loadWhitelistCatalog(token);
+    const url = (catalogUrlDrafts[parserAdminModelId] || "").trim();
+    if (!url) {
+      alert("Вставьте ссылку на объявление на che168.");
+      return;
+    }
+    setImportListingBusy(true);
+    setParserJobMessage("");
+    try {
+      const res = await fetch(`${API_URL}/admin/parser/import-listing`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ model_id: parserAdminModelId, che168_url: url }),
+      });
+      if (!res.ok) {
+        let detail = "Не удалось запустить импорт.";
+        try {
+          const err = await res.json();
+          if (err.detail) {
+            detail = Array.isArray(err.detail)
+              ? err.detail.map((x) => x.msg || x).join(" ")
+              : String(err.detail);
+          }
+        } catch {
+          /* ignore */
+        }
+        setParserJobMessage(detail);
+        return;
+      }
+      const job = await res.json();
+      setLatestParserJob(job);
+      setParserJobMessage("Импорт запущен. Статус обновляется автоматически.");
+      await loadWhitelistCatalog(token);
+    } catch {
+      setParserJobMessage("Сбой связи с API. Проверьте, что backend доступен.");
+    } finally {
+      setImportListingBusy(false);
+    }
   }
 
   async function loadLatestParserJob(accessToken) {
@@ -432,7 +461,12 @@ export default function Home() {
       setSelectedModelId(null);
     }
     if (qq != null && String(qq) !== "") setQ(String(qq));
-  }, [router.isReady, router.query.brand, router.query.model, router.query.q]);
+    const rawS = router.query.sort;
+    const sv = Array.isArray(rawS) ? rawS[0] : rawS;
+    if (sv && ["date_desc", "date_asc", "price_asc", "price_desc"].includes(String(sv))) {
+      setListSort(String(sv));
+    }
+  }, [router.isReady, router.query.brand, router.query.model, router.query.q, router.query.sort]);
 
   useEffect(() => {
     loadCars();
@@ -450,10 +484,13 @@ export default function Home() {
       if (job.status === "success" || job.status === "failed") {
         setParserJobMessage(
           job.status === "success"
-            ? "Парсер завершил работу. Каталог обновлён."
+            ? job.type === "import_one"
+              ? `Импорт выполнен: ${job.message || "готово"}`
+              : "Парсер завершил работу. Каталог обновлён."
             : `Парсер завершился с ошибкой: ${job.message || "см. логи"}`
         );
         loadCars();
+        loadWhitelistCatalog(token);
       }
     };
     tick();
@@ -600,9 +637,24 @@ export default function Home() {
             )}
           </div>
 
-          <h2 className="section-title section-title--flush-top">
-            Объявления <span className="text-muted">· {total}</span>
-          </h2>
+          <div className="catalog-list-toolbar">
+            <h2 className="section-title section-title--flush-top catalog-list-toolbar__title">
+              Объявления <span className="text-muted">· {total}</span>
+            </h2>
+            <CatalogSortDropdown
+              value={listSort}
+              onChange={(v) => {
+                setListSort(v);
+                const q = { ...router.query };
+                if (v === "date_desc") {
+                  delete q.sort;
+                } else {
+                  q.sort = v;
+                }
+                router.replace({ pathname: "/", query: q }, undefined, { shallow: true });
+              }}
+            />
+          </div>
 
       {profileReady && isStaffRole(me?.role) && (
         <div className="alert alert--success">
@@ -612,90 +664,99 @@ export default function Home() {
 
       {token && isStaffRole(me?.role) && whitelistCatalog.length > 0 && (
         <section className="panel admin-parser-panel">
-          <h2 className="section-title panel-heading-sm">Каталог парсера (админ)</h2>
+          <h2 className="section-title panel-heading-sm">Импорт объявления с che168</h2>
           <p className="admin-parser-meta-line">
             В справочнике <b>{whitelistCatalog.length}</b> моделей ·{" "}
-            <b>{parserAdminBrandNames.length}</b> марок
+            <b>{parserAdminBrandNames.length}</b> марок. Ссылка должна вести на{" "}
+            <b>одно объявление</b> (формат <code>…/dealer/…/….html</code> или{" "}
+            <code>i.che168.com/car/…</code>). Модель будет включена в автоматический парсинг.
           </p>
-          <div className="admin-parser-picker">
-            <label className="admin-parser-label">
-              <span className="admin-parser-label__text">1. Марка</span>
-              <select
-                className="input"
-                style={{ width: "100%" }}
+          <div className="admin-parser-picker admin-parser-picker--import">
+            <div className="admin-parser-label">
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="1. Марка"
+                placeholder="— Выберите марку —"
                 value={parserAdminBrand}
-                onChange={(e) => {
-                  setParserAdminBrand(e.target.value);
+                onChange={(v) => {
+                  setParserAdminBrand(v);
                   setParserAdminModelId(null);
                 }}
-              >
-                <option value="">— Выберите марку —</option>
-                {parserAdminBrandNames.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="admin-parser-label">
-              <span className="admin-parser-label__text">2. Модель</span>
-              <select
-                className="input"
-                style={{ width: "100%" }}
+                options={[
+                  { value: "", label: "— Выберите марку —" },
+                  ...parserAdminBrandNames.map((name) => ({ value: name, label: name })),
+                ]}
+              />
+            </div>
+            <div className="admin-parser-label">
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="2. Модель"
+                placeholder={
+                  parserAdminBrand ? "— Выберите модель —" : "Сначала выберите марку"
+                }
                 disabled={!parserAdminBrand}
-                value={parserAdminModelId ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value;
+                value={parserAdminModelId != null ? String(parserAdminModelId) : ""}
+                onChange={(v) => {
                   setParserAdminModelId(v ? Number(v) : null);
                 }}
-              >
-                <option value="">
-                  {parserAdminBrand ? "— Выберите модель —" : "Сначала выберите марку"}
-                </option>
-                {parserAdminModelsInBrand.map((row) => (
-                  <option key={row.model_id} value={row.model_id}>
-                    {row.model}
-                    {row.enabled ? " · парсер" : ""}
-                    {row.che168_url || catalogUrlDrafts[row.model_id] ? " · URL" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+                options={[
+                  {
+                    value: "",
+                    label: parserAdminBrand ? "— Выберите модель —" : "Сначала выберите марку",
+                  },
+                  ...parserAdminModelsInBrand.map((row) => ({
+                    value: String(row.model_id),
+                    label: row.model,
+                  })),
+                ]}
+              />
+            </div>
             {parserAdminSelectedRow ? (
               <>
-                <label className="admin-parser-check">
-                  <input
-                    type="checkbox"
-                    checked={parserAdminSelectedRow.enabled}
-                    onChange={(e) =>
-                      saveParserModelWhitelist(parserAdminSelectedRow.model_id, e.target.checked)
-                    }
-                  />
-                  <span>Участвует в парсинге (whitelist)</span>
-                </label>
                 <label className="admin-parser-label">
-                  <span className="admin-parser-label__text">3. Ссылка на серию che168</span>
-                  <input
-                    className="input"
-                    type="url"
-                    autoComplete="off"
-                    placeholder="https://www.che168.com/china/.../..."
-                    value={catalogUrlDrafts[parserAdminSelectedRow.model_id] ?? ""}
-                    onChange={(e) =>
-                      setCatalogUrlDrafts((prev) => ({
-                        ...prev,
-                        [parserAdminSelectedRow.model_id]: e.target.value,
-                      }))
-                    }
-                  />
+                  <span className="admin-parser-label__text">3. Ссылка на объявление che168</span>
+                  <div className="input-with-clear-wrap">
+                    <input
+                      className="input input-with-clear"
+                      type="url"
+                      inputMode="url"
+                      autoComplete="off"
+                      placeholder="https://www.che168.com/dealer/…/….html"
+                      value={catalogUrlDrafts[parserAdminSelectedRow.model_id] ?? ""}
+                      onChange={(e) =>
+                        setCatalogUrlDrafts((prev) => ({
+                          ...prev,
+                          [parserAdminSelectedRow.model_id]: e.target.value,
+                        }))
+                      }
+                    />
+                    {(catalogUrlDrafts[parserAdminSelectedRow.model_id] || "").trim() ? (
+                      <button
+                        type="button"
+                        className="input-with-clear__btn"
+                        title="Очистить ссылку"
+                        aria-label="Очистить ссылку"
+                        onClick={() =>
+                          setCatalogUrlDrafts((prev) => ({
+                            ...prev,
+                            [parserAdminSelectedRow.model_id]: "",
+                          }))
+                        }
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </div>
                 </label>
-                <div>
+                <div className="admin-parser-import-actions">
                   <button
                     type="button"
-                    className="btn btn-secondary"
-                    onClick={() => saveCatalogUrl(parserAdminSelectedRow.model_id)}
+                    className="btn btn-primary"
+                    disabled={importListingBusy}
+                    onClick={importListingFromChe168}
                   >
-                    Сохранить URL
+                    {importListingBusy ? "Импорт…" : "Импорт объявления"}
                   </button>
                 </div>
               </>
@@ -704,56 +765,70 @@ export default function Home() {
         </section>
       )}
 
-      {latestParserJob && (
-        <div className="panel parser-card">
-          <p className="parser-job-line">
-            <b>Последний запуск парсера:</b> #{latestParserJob.id} ·{" "}
-            <span style={{ textTransform: "uppercase" }}>{latestParserJob.status}</span>
-            {latestParserJob.message ? <> · {latestParserJob.message}</> : null}
-          </p>
-          <div className="parser-bar">
-            {((latestParserJob.status === "queued" ||
-              latestParserJob.status === "running") &&
-              (latestParserJob.status === "queued" ||
-                (latestParserJob.total_processed ?? 0) === 0)) && (
-              <div className="parser-bar__shimmer" />
-            )}
-            {(latestParserJob.status === "success" ||
-              latestParserJob.status === "failed" ||
-              (latestParserJob.status === "running" &&
-                (latestParserJob.total_processed ?? 0) > 0)) && (
-              <div
-                className="parser-bar__fill"
-                style={{
-                  width: `${(() => {
-                    const j = latestParserJob;
-                    if (j.status === "success") return 100;
-                    if (j.status === "failed") return 100;
-                    const n = j.total_processed ?? 0;
-                    return Math.min(92, 18 + Math.min(74, n * 12));
-                  })()}%`,
-                  background:
-                    latestParserJob.status === "failed"
-                      ? "#c62828"
-                      : latestParserJob.status === "success"
-                        ? "#2e7d32"
-                        : "#1976d2",
-                }}
-              />
-            )}
-          </div>
-          <p className="parser-job-stats">
-            Обработано объявлений: <b>{latestParserJob.total_processed ?? 0}</b> · создано:{" "}
-            <b>{latestParserJob.total_created ?? 0}</b> · обновлено: <b>{latestParserJob.total_updated ?? 0}</b>
-            {(latestParserJob.total_errors ?? 0) > 0 ? (
-              <>
-                {" "}
-                · <span className="parser-job-error">ошибок: {latestParserJob.total_errors}</span>
-              </>
+      {latestParserJob && (() => {
+        const j = latestParserJob;
+        const step = parseImportStepMessage(j.message);
+        const running = j.status === "queued" || j.status === "running";
+        const fillPct = (() => {
+          if (j.status === "success" || j.status === "failed") return 100;
+          if (step && running) return Math.min(96, Math.round((step.cur / step.total) * 100));
+          const n = j.total_processed ?? 0;
+          return Math.min(92, 18 + Math.min(74, n * 12));
+        })();
+        return (
+          <div
+            className={`panel parser-card${
+              j.status === "success" ? " parser-card--success" : ""
+            }${j.status === "failed" ? " parser-card--failed" : ""}${
+              j.type === "import_one" && running ? " parser-card--import-running" : ""
+            }`}
+          >
+            <p className="parser-job-line">
+              <b>{j.type === "import_one" ? "Импорт объявления" : "Последний запуск парсера"}:</b> #{j.id} ·{" "}
+              <span className="parser-job-status">{String(j.status || "").toUpperCase()}</span>
+              {step && running ? (
+                <span className="parser-job-step">
+                  {" "}
+                  · шаг {step.cur} из {step.total}
+                </span>
+              ) : null}
+              {j.message ? <> · {j.message}</> : null}
+            </p>
+            <div className="parser-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={fillPct}>
+              {running && (
+                <div className="parser-bar__shimmer" aria-hidden />
+              )}
+              {(j.status === "success" || j.status === "failed" || running) && (
+                <div
+                  className="parser-bar__fill"
+                  style={{
+                    width: `${fillPct}%`,
+                    background:
+                      j.status === "failed"
+                        ? "#c62828"
+                        : j.status === "success"
+                          ? "#2e7d32"
+                          : "#1976d2",
+                  }}
+                />
+              )}
+            </div>
+            {j.status === "success" && j.type === "import_one" ? (
+              <p className="parser-card__import-done">Готово: объявление добавлено в каталог (см. сообщение выше).</p>
             ) : null}
-          </p>
-        </div>
-      )}
+            <p className="parser-job-stats">
+              Обработано объявлений: <b>{j.total_processed ?? 0}</b> · создано: <b>{j.total_created ?? 0}</b> ·
+              обновлено: <b>{j.total_updated ?? 0}</b>
+              {(j.total_errors ?? 0) > 0 ? (
+                <>
+                  {" "}
+                  · <span className="parser-job-error">ошибок: {j.total_errors}</span>
+                </>
+              ) : null}
+            </p>
+          </div>
+        );
+      })()}
       {parserJobMessage && <div className="muted parser-job-message">{parserJobMessage}</div>}
 
       {(catalogCbr || catalogCbrError) && (

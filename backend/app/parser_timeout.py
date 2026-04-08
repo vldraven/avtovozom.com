@@ -22,7 +22,10 @@ def call_with_timeout(fn: Callable[[], T], timeout_sec: float | None = None) -> 
     def _run() -> T:
         return fn()
 
-    with ThreadPoolExecutor(max_workers=1) as ex:
+    # Нельзя использовать «with ThreadPoolExecutor»: при таймауте контекст ждёт
+    # завершения воркера (shutdown(wait=True)), и зависший Playwright блокирует job навсегда.
+    ex = ThreadPoolExecutor(max_workers=1)
+    try:
         fut = ex.submit(_run)
         try:
             return fut.result(timeout=timeout_sec)
@@ -32,3 +35,5 @@ def call_with_timeout(fn: Callable[[], T], timeout_sec: float | None = None) -> 
                 "Проверьте доступность che168 и сеть; при блокировках укажите CHE168_FORCE_DETAIL_URLS "
                 "или CHE168_SKIP_PLAYWRIGHT=1 (только HTTP)."
             ) from e
+    finally:
+        ex.shutdown(wait=False)

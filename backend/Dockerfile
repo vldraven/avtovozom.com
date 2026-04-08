@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/playwright/python:latest
+# Образ с тем же major/minor Playwright, что и пакет в requirements.txt (иначе BrowserType.launch: Executable doesn't exist).
+FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 WORKDIR /app
 

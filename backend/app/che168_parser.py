@@ -24,6 +24,69 @@ UA = (
     "Chrome/120.0.0.0 Safari/537.36"
 )
 
+# Баннеры, QR, иконки UI — не фото автомобиля (escimg может отдавать и рекламу).
+_BAD_IMG_MARKERS = (
+    "qrcode",
+    "qr_",
+    "/qr",
+    "banner",
+    "logo",
+    "avatar",
+    "message",
+    "email",
+    "share",
+    "weixin",
+    "wx_",
+    "common/",
+    "head_nav",
+    "footer",
+    "sidebar",
+    "promo",
+    "activity",
+    "advert",
+    "ico/",
+    "loading",
+    "placeholder",
+    "autohome.com.cn/common",
+    "nopic",
+    "default",
+    "sprite",
+)
+
+
+def is_likely_vehicle_photo_url(url: str) -> bool:
+    u = (url or "").strip().lower()
+    if not u.startswith("http"):
+        return False
+    if any(m in u for m in _BAD_IMG_MARKERS):
+        return False
+    # Не использовать просто «che168» в домене — туда попадают баннеры и UI.
+    if any(
+        x in u
+        for x in (
+            "escimg",
+            "2sc.autohome",
+            "2scimg",
+            "dealer2sc",
+            "pic.autohome",
+            "car2.autoimg.cn",
+        )
+    ):
+        return True
+    return False
+
+
+def filter_vehicle_photo_urls(urls: list[str] | None) -> list[str]:
+    if not urls:
+        return []
+    out: list[str] = []
+    for x in urls:
+        if x and is_likely_vehicle_photo_url(x) and x not in out:
+            out.append(x)
+        if len(out) >= 16:
+            break
+    return out
+
 
 @dataclass
 class ParsedCar:
@@ -374,7 +437,7 @@ def _parse_detail_from_html(html: str, source_listing_id: str) -> ParsedCar | No
         src = m.group(1)
         if src.startswith("//"):
             src = "https:" + src
-        if src and src not in photos and ("escimg" in src or "2sc" in src):
+        if src and src not in photos and is_likely_vehicle_photo_url(src):
             photos.append(src)
         if len(photos) >= 12:
             break
@@ -384,10 +447,11 @@ def _parse_detail_from_html(html: str, source_listing_id: str) -> ParsedCar | No
             html,
         ):
             src = m.group(1)
-            if src and src not in photos and "icon" not in src.lower():
+            if src and src not in photos and is_likely_vehicle_photo_url(src):
                 photos.append(src)
             if len(photos) >= 12:
                 break
+    photos = filter_vehicle_photo_urls(photos)
     price_cny = _parse_price_cny(body_text)
     if price_cny is None:
         price_cny = _parse_price_from_html_json(html)
@@ -493,6 +557,11 @@ def _forced_detail_urls() -> list[str]:
         if norm:
             out.append(norm)
     return out
+
+
+def normalize_che168_detail_url(url: str) -> str | None:
+    """Канонический URL одной карточки, если в строке ссылка на объявление (dealer/… или i.che168.com/car/…)."""
+    return _single_listing_url_from_input(url)
 
 
 def _single_listing_url_from_input(url: str) -> str | None:
@@ -605,10 +674,11 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
                     src = "https:" + src
                 if not src.startswith("http") or src in photos:
                     continue
-                if "escimg" in src or "2sc" in src or len(photos) < 4:
+                if is_likely_vehicle_photo_url(src):
                     photos.append(src)
                 if len(photos) >= 12:
                     break
+            photos = filter_vehicle_photo_urls(photos)
         except Exception:
             photos = []
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { mediaSrc } from "../lib/media";
+import SiteSelectDropdown from "./SiteSelectDropdown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -221,19 +222,18 @@ export default function DealerOpenRequests({ token, onOpenChat, onChatsUpdated }
                               onChange={(e) => patchForm(r.id, { total_price: e.target.value })}
                             />
                           </label>
-                          <label className="muted">
-                            Валюта
-                            <select
-                              className="input"
-                              value={f.currency}
-                              onChange={(e) => patchForm(r.id, { currency: e.target.value })}
-                            >
-                              <option value="RUB">RUB</option>
-                              <option value="USD">USD</option>
-                              <option value="EUR">EUR</option>
-                              <option value="CNY">CNY</option>
-                            </select>
-                          </label>
+                          <SiteSelectDropdown
+                            className="site-dropdown--block"
+                            label="Валюта"
+                            value={f.currency}
+                            onChange={(v) => patchForm(r.id, { currency: v })}
+                            options={[
+                              { value: "RUB", label: "RUB" },
+                              { value: "USD", label: "USD" },
+                              { value: "EUR", label: "EUR" },
+                              { value: "CNY", label: "CNY" },
+                            ]}
+                          />
                           <label className="muted">
                             Срок, дней
                             <input

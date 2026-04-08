@@ -3,12 +3,41 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
+import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
 import { mediaSrc } from "../../lib/media";
 import { canCreateListings, isAdminRole } from "../../lib/roles";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function IconTrash() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M9 3h6M4 7h16M6 7v12a2 2 0 002 2h8a2 2 0 002-2V7M10 11v6M14 11v6"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconUndo() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M9 14L4 9l5-5M4 9h10.5a4.5 4.5 0 010 9H11"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export default function StaffEditListingPage() {
   const router = useRouter();
@@ -38,6 +67,7 @@ export default function StaffEditListingPage() {
   const [registrationDate, setRegistrationDate] = useState("");
   const [productionDate, setProductionDate] = useState("");
   const [existingPhotos, setExistingPhotos] = useState([]);
+  const [photoIdsToRemove, setPhotoIdsToRemove] = useState(() => new Set());
   const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -108,6 +138,7 @@ export default function StaffEditListingPage() {
       setProductionDate(c.production_date || "");
       const ph = [...(c.photos || [])].sort((a, b) => a.sort_order - b.sort_order);
       setExistingPhotos(ph);
+      setPhotoIdsToRemove(new Set());
     })();
   }, [router.isReady, token, carId, me?.role, me?.id]);
 
@@ -168,6 +199,9 @@ export default function StaffEditListingPage() {
     fd.append("registration_date", registrationDate);
     fd.append("production_date", productionDate);
     for (const f of files) fd.append("photos", f);
+    if (photoIdsToRemove.size > 0) {
+      fd.append("remove_photo_ids", [...photoIdsToRemove].join(","));
+    }
 
     setSubmitting(true);
     try {
@@ -241,61 +275,47 @@ export default function StaffEditListingPage() {
             <p className="muted">Загрузка...</p>
           ) : loadError ? null : (
             <form className="panel" onSubmit={submit} style={{ display: "grid", gap: 12 }}>
-              <label className="muted" style={{ display: "grid", gap: 4 }}>
-                Марка
-                <select
-                  className="input"
-                  value={brandId}
-                  required
-                  onChange={(e) => {
-                    setBrandId(e.target.value);
-                    setGenerationId("");
-                  }}
-                >
-                  <option value="">—</option>
-                  {brands.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="muted" style={{ display: "grid", gap: 4 }}>
-                Модель
-                <select
-                  className="input"
-                  value={modelId}
-                  required
-                  disabled={!brandId}
-                  onChange={(e) => {
-                    setModelId(e.target.value);
-                    setGenerationId("");
-                  }}
-                >
-                  <option value="">—</option>
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="Марка"
+                placeholder="—"
+                value={brandId}
+                onChange={(v) => {
+                  setBrandId(v);
+                  setGenerationId("");
+                }}
+                options={[
+                  { value: "", label: "—" },
+                  ...brands.map((b) => ({ value: String(b.id), label: b.name })),
+                ]}
+              />
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="Модель"
+                placeholder="—"
+                value={modelId}
+                disabled={!brandId}
+                onChange={(v) => {
+                  setModelId(v);
+                  setGenerationId("");
+                }}
+                options={[
+                  { value: "", label: "—" },
+                  ...models.map((m) => ({ value: String(m.id), label: m.name })),
+                ]}
+              />
               {generations.length > 0 ? (
-                <label className="muted" style={{ display: "grid", gap: 4 }}>
-                  Поколение (необязательно)
-                  <select
-                    className="input"
-                    value={generationId}
-                    onChange={(e) => setGenerationId(e.target.value)}
-                  >
-                    <option value="">— не выбрано —</option>
-                    {generations.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="Поколение (необязательно)"
+                  placeholder="— не выбрано —"
+                  value={generationId}
+                  onChange={setGenerationId}
+                  options={[
+                    { value: "", label: "— не выбрано —" },
+                    ...generations.map((g) => ({ value: String(g.id), label: g.name })),
+                  ]}
+                />
               ) : null}
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Заголовок
@@ -411,19 +431,45 @@ export default function StaffEditListingPage() {
               {existingPhotos.length > 0 && (
                 <div>
                   <span className="muted" style={{ fontWeight: 600, display: "block", marginBottom: 8 }}>
-                    Текущие фото ({existingPhotos.length})
+                    Текущие фото ({existingPhotos.length}
+                    {photoIdsToRemove.size > 0 ? `, к удалению: ${photoIdsToRemove.size}` : ""})
                   </span>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {existingPhotos.map((p) => (
-                      <img
-                        key={p.id}
-                        src={mediaSrc(p.storage_url)}
-                        alt=""
-                        width={96}
-                        height={72}
-                        style={{ objectFit: "cover", borderRadius: 6 }}
-                      />
-                    ))}
+                  <div className="staff-edit-photos">
+                    {existingPhotos.map((p) => {
+                      const mark = photoIdsToRemove.has(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          className={`staff-edit-photo-tile${mark ? " staff-edit-photo-tile--marked" : ""}`}
+                        >
+                          <div className="staff-edit-photo-wrap">
+                            <img
+                              src={mediaSrc(p.storage_url)}
+                              alt=""
+                              width={96}
+                              height={72}
+                              style={{ objectFit: "cover", borderRadius: 6 }}
+                            />
+                            <button
+                              type="button"
+                              className={`staff-edit-photo-icon-btn${mark ? " staff-edit-photo-icon-btn--undo" : ""}`}
+                              title={mark ? "Вернуть фото" : "Удалить фото"}
+                              aria-label={mark ? "Вернуть фото в объявление" : "Удалить фото из объявления"}
+                              onClick={() =>
+                                setPhotoIdsToRemove((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(p.id)) next.delete(p.id);
+                                  else next.add(p.id);
+                                  return next;
+                                })
+                              }
+                            >
+                              {mark ? <IconUndo /> : <IconTrash />}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

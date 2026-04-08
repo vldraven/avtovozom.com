@@ -76,6 +76,21 @@ def download_car_photos(car_id: int, urls: list[str], max_count: int = 12) -> li
     return [u for u in urls[:max_count] if u.startswith("http")]
 
 
+def delete_car_photo_files(car_id: int, storage_urls: list[str]) -> None:
+    """Удаляет файлы по путям вида /media/cars/{car_id}/… из MEDIA_ROOT."""
+    root = media_root()
+    car_prefix = f"/media/cars/{car_id}/"
+    for u in storage_urls:
+        if not u or not u.startswith(car_prefix):
+            continue
+        rel = u[len("/media/") :].lstrip("/")
+        path = root.joinpath(*rel.split("/"))
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def save_uploaded_car_photos(
     car_id: int, image_blobs: list[bytes], max_count: int = 15
 ) -> list[str]:

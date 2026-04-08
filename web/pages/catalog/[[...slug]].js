@@ -3,6 +3,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 
 import Breadcrumbs from "../../components/Breadcrumbs";
+import CatalogSortDropdown from "../../components/CatalogSortDropdown";
+import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import CarDetailView from "../../components/CarDetailView";
 import HeaderMessagesLink from "../../components/HeaderMessagesLink";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
@@ -30,6 +32,7 @@ export default function CatalogTreePage() {
   const [me, setMe] = useState(null);
   const [treeError, setTreeError] = useState(null);
   const [carsError, setCarsError] = useState(null);
+  const [listSort, setListSort] = useState("date_desc");
 
   const { brand, model, generation, unknownSlug, badModelSlug, badGenSlug } = useMemo(() => {
     if (segments == null || !tree.length) {
@@ -174,6 +177,9 @@ export default function CatalogTreePage() {
     if (brand) params.set("brand_id", String(brand.id));
     if (model) params.set("model_id", String(model.id));
     if (generation && !badGenSlug) params.set("generation_id", String(generation.id));
+    if (listSort && listSort !== "date_desc") {
+      params.set("sort", listSort);
+    }
     let cancelled = false;
     (async () => {
       setCarsError(null);
@@ -212,7 +218,17 @@ export default function CatalogTreePage() {
     badModelSlug,
     badGenSlug,
     generation,
+    listSort,
   ]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const rawS = router.query.sort;
+    const sv = Array.isArray(rawS) ? rawS[0] : rawS;
+    if (sv && ["date_desc", "date_asc", "price_asc", "price_desc"].includes(String(sv))) {
+      setListSort(String(sv));
+    }
+  }, [router.isReady, router.query.sort]);
 
   function logout() {
     clearToken();
@@ -357,13 +373,13 @@ export default function CatalogTreePage() {
                       <p className="catalog-tree-focused-brand">{brand.name}</p>
                       {model && !badModelSlug ? (
                         <>
-                          <label className="catalog-tree-field">
-                            <span className="catalog-tree-field__label">Модель</span>
-                            <select
-                              className="catalog-tree-native-select"
+                          <div className="catalog-tree-field">
+                            <SiteSelectDropdown
+                              className="site-dropdown--block"
+                              label="Модель"
+                              placeholder="Все модели марки"
                               value={String(model.id)}
-                              onChange={(e) => {
-                                const v = e.target.value;
+                              onChange={(v) => {
                                 if (v === "") {
                                   router.push(`/catalog/${brand.slug}`);
                                   return;
@@ -371,26 +387,25 @@ export default function CatalogTreePage() {
                                 const m = brand.models.find((x) => String(x.id) === v);
                                 if (m) router.push(`/catalog/${brand.slug}/${m.slug}`);
                               }}
-                              aria-label="Выбор модели"
-                            >
-                              <option value="">Все модели марки</option>
-                              {brand.models.map((m) => (
-                                <option key={m.id} value={String(m.id)}>
-                                  {m.name}
-                                  {m.listings_count > 0 ? ` · ${m.listings_count}` : ""}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
+                              ariaLabel="Выбор модели"
+                              options={[
+                                { value: "", label: "Все модели марки" },
+                                ...brand.models.map((m) => ({
+                                  value: String(m.id),
+                                  label: `${m.name}${m.listings_count > 0 ? ` · ${m.listings_count}` : ""}`,
+                                })),
+                              ]}
+                            />
+                          </div>
                           {(model.generations || []).length > 0 ? (
                             <div className="catalog-tree-generation-step">
-                              <label className="catalog-tree-field catalog-tree-field--tight">
-                                <span className="catalog-tree-field__label">Поколение</span>
-                                <select
-                                  className="catalog-tree-native-select"
+                              <div className="catalog-tree-field catalog-tree-field--tight">
+                                <SiteSelectDropdown
+                                  className="site-dropdown--block"
+                                  label="Поколение"
+                                  placeholder="Все поколения"
                                   value={generation ? String(generation.id) : ""}
-                                  onChange={(e) => {
-                                    const v = e.target.value;
+                                  onChange={(v) => {
                                     if (v === "") {
                                       router.push(`/catalog/${brand.slug}/${model.slug}`);
                                       return;
@@ -404,43 +419,41 @@ export default function CatalogTreePage() {
                                       );
                                     }
                                   }}
-                                  aria-label="Выбор поколения"
-                                >
-                                  <option value="">Все поколения</option>
-                                  {(model.generations || []).map((g) => (
-                                    <option key={g.id} value={String(g.id)}>
-                                      {g.name}
-                                      {g.listings_count > 0 ? ` · ${g.listings_count}` : ""}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
+                                  ariaLabel="Выбор поколения"
+                                  options={[
+                                    { value: "", label: "Все поколения" },
+                                    ...(model.generations || []).map((g) => ({
+                                      value: String(g.id),
+                                      label: `${g.name}${g.listings_count > 0 ? ` · ${g.listings_count}` : ""}`,
+                                    })),
+                                  ]}
+                                />
+                              </div>
                             </div>
                           ) : null}
                         </>
                       ) : (
-                        <label className="catalog-tree-field">
-                          <span className="catalog-tree-field__label">Модель</span>
-                          <select
-                            className="catalog-tree-native-select"
+                        <div className="catalog-tree-field">
+                          <SiteSelectDropdown
+                            className="site-dropdown--block"
+                            label="Модель"
+                            placeholder="Все модели марки"
                             value=""
-                            onChange={(e) => {
-                              const v = e.target.value;
+                            onChange={(v) => {
                               if (v === "") return;
                               const m = brand.models.find((x) => String(x.id) === v);
                               if (m) router.push(`/catalog/${brand.slug}/${m.slug}`);
                             }}
-                            aria-label="Выбор модели марки"
-                          >
-                            <option value="">Все модели марки</option>
-                            {brand.models.map((m) => (
-                              <option key={m.id} value={String(m.id)}>
-                                {m.name}
-                                {m.listings_count > 0 ? ` · ${m.listings_count}` : ""}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                            ariaLabel="Выбор модели марки"
+                            options={[
+                              { value: "", label: "Все модели марки" },
+                              ...brand.models.map((m) => ({
+                                value: String(m.id),
+                                label: `${m.name}${m.listings_count > 0 ? ` · ${m.listings_count}` : ""}`,
+                              })),
+                            ]}
+                          />
+                        </div>
                       )}
                     </>
                   ) : (
@@ -514,9 +527,24 @@ export default function CatalogTreePage() {
                 </aside>
 
                 <div className="catalog-main-panel">
-                  <h2 className="section-title section-title--flush-top">
-                    Объявления <span className="text-muted">· {total}</span>
-                  </h2>
+                  <div className="catalog-list-toolbar">
+                    <h2 className="section-title section-title--flush-top catalog-list-toolbar__title">
+                      Объявления <span className="text-muted">· {total}</span>
+                    </h2>
+                    <CatalogSortDropdown
+                      value={listSort}
+                      onChange={(v) => {
+                        setListSort(v);
+                        const q = { ...router.query };
+                        if (v === "date_desc") {
+                          delete q.sort;
+                        } else {
+                          q.sort = v;
+                        }
+                        router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true });
+                      }}
+                    />
+                  </div>
 
                   {carsError ? (
                     <div className="alert alert--warn" style={{ marginBottom: "1rem" }}>

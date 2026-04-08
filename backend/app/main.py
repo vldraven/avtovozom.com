@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, distinct, func, or_, select, text
+from sqlalchemy import and_, delete, distinct, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from .db import Base, engine, get_db, SessionLocal
@@ -48,7 +48,7 @@ from .model_resolver import resolve_model_id_for_listing
 from .parser_logic import run_parser_job
 from .translator_ru import translate_to_ru
 from .email_utils import send_email
-from .media_storage import save_chat_attachment, save_uploaded_car_photos
+from .media_storage import delete_car_photo_files, save_chat_attachment, save_uploaded_car_photos
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
 from .schemas import (
@@ -78,6 +78,7 @@ from .schemas import (
     CarModelCatalogIn,
     ModelWhitelistItem,
     ParseJobOut,
+    ParserImportListingIn,
     PasswordChangeIn,
     ProfileUpdateIn,
     PublicRequestLeadIn,
@@ -645,7 +646,17 @@ def register_verify(payload: RegisterVerifyIn, db: Session = Depends(get_db)):
 
 @app.post("/auth/login", response_model=TokenOut)
 def login(payload: LoginIn, db: Session = Depends(get_db)):
-    user = db.execute(select(User).where(User.email == payload.email.lower())).scalar_one_or_none()
+    raw = payload.email.strip()
+    user = None
+    if "@" in raw:
+        user = db.execute(select(User).where(User.email == raw.lower())).scalar_one_or_none()
+    else:
+        digits = "".join(c for c in raw if c.isdigit())
+        if digits:
+            phone_norm = func.regexp_replace(User.phone, "[^0-9]", "", "g")
+            user = db.execute(
+                select(User).where(and_(User.phone.isnot(None), phone_norm == digits))
+            ).scalar_one_or_none()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.email_verified:
@@ -735,6 +746,10 @@ def list_cars(
     hp_from: int | None = None,
     hp_to: int | None = None,
     manufacturer: str | None = None,
+    sort: str | None = Query(
+        default="date_desc",
+        description="date_desc|date_asc|price_asc|price_desc",
+    ),
     page: int = 1,
     limit: int = 20,
     db: Session = Depends(get_db),
@@ -791,8 +806,17 @@ def list_cars(
         stmt = stmt.where(Car.horsepower <= hp_to)
 
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    s = (sort or "date_desc").strip().lower()
+    if s == "price_asc":
+        order = (Car.price_cny.asc(), Car.id.desc())
+    elif s == "price_desc":
+        order = (Car.price_cny.desc(), Car.id.desc())
+    elif s == "date_asc":
+        order = (Car.created_at.asc(), Car.id.asc())
+    else:
+        order = (Car.created_at.desc(), Car.id.desc())
     cars = db.execute(
-        stmt.order_by(Car.updated_at.desc())
+        stmt.order_by(*order)
         .offset((page - 1) * limit)
         .limit(limit)
     ).unique().scalars().all()
@@ -965,6 +989,7 @@ async def _update_car_from_multipart(
     registration_date: str | None,
     production_date: str | None,
     photos: list[UploadFile] | None,
+    remove_photo_ids: str | None = None,
 ) -> CarOut:
     model_row = db.execute(
         select(CarModel).where(CarModel.id == model_id)
@@ -1003,6 +1028,30 @@ async def _update_car_from_multipart(
     car.price_cny = float(price_cny)
     car.registration_date = (registration_date or "").strip() or None
     car.production_date = (production_date or "").strip() or None
+
+    raw_rm = (remove_photo_ids or "").strip()
+    if raw_rm:
+        id_list: list[int] = []
+        for part in raw_rm.split(","):
+            part = part.strip()
+            if part.isdigit():
+                id_list.append(int(part))
+        if id_list:
+            ph_rows = (
+                db.execute(
+                    select(CarPhoto).where(
+                        CarPhoto.car_id == car.id,
+                        CarPhoto.id.in_(id_list),
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            urls_rm = [p.storage_url for p in ph_rows]
+            for p in ph_rows:
+                db.delete(p)
+            db.flush()
+            delete_car_photo_files(car_id, urls_rm)
 
     if blobs:
         db.execute(delete(CarPhoto).where(CarPhoto.car_id == car.id))
@@ -1328,6 +1377,7 @@ async def staff_update_own_car(
     registration_date: str | None = Form(None),
     production_date: str | None = Form(None),
     photos: list[UploadFile] | None = File(None),
+    remove_photo_ids: str | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "moderator", "dealer")),
 ):
@@ -1371,6 +1421,7 @@ async def staff_update_own_car(
         registration_date=registration_date,
         production_date=production_date,
         photos=photos,
+        remove_photo_ids=remove_photo_ids,
     )
 
 
@@ -1623,6 +1674,7 @@ async def admin_update_car(
     registration_date: str | None = Form(None),
     production_date: str | None = Form(None),
     photos: list[UploadFile] | None = File(None),
+    remove_photo_ids: str | None = Form(None),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ):
@@ -1662,6 +1714,7 @@ async def admin_update_car(
         registration_date=registration_date,
         production_date=production_date,
         photos=photos,
+        remove_photo_ids=remove_photo_ids,
     )
 
 
@@ -2633,6 +2686,33 @@ def run_parser_manually(
     _: User = Depends(require_roles("admin", "moderator")),
 ):
     job = ParseJob(type="manual", status="queued")
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    background_tasks.add_task(_run_parser_job_background, job.id)
+    return job
+
+
+@app.post("/admin/parser/import-listing", response_model=ParseJobOut)
+def import_che168_listing(
+    payload: ParserImportListingIn,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    """Сохраняет ссылку на модель, включает whitelist и ставит в очередь разбор одной карточки."""
+    url = (payload.che168_url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Укажите ссылку на объявление che168.")
+    exists = db.execute(select(CarModel).where(CarModel.id == payload.model_id)).scalar_one_or_none()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Модель не найдена.")
+    job = ParseJob(
+        type="import_one",
+        status="queued",
+        import_model_id=payload.model_id,
+        import_detail_url=url[:2048],
+    )
     db.add(job)
     db.commit()
     db.refresh(job)

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { saveToken } from "../lib/auth";
 
@@ -9,8 +9,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export default function AuthPage() {
   const router = useRouter();
   const nextUrl = typeof router.query.next === "string" ? router.query.next : "/";
-  const [mode, setMode] = useState("choice");
-  const [loginEmail, setLoginEmail] = useState("");
+  const [mode, setMode] = useState("login");
+  const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regPhone, setRegPhone] = useState("");
@@ -21,6 +21,27 @@ export default function AuthPage() {
   const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.mode === "register") setMode("register");
+  }, [router.isReady, router.query.mode]);
+
+  function goRegister() {
+    setMode("register");
+    router.replace(
+      { pathname: "/auth", query: { ...router.query, mode: "register" } },
+      undefined,
+      { shallow: true }
+    );
+  }
+
+  function goLogin() {
+    setMode("login");
+    const q = { ...router.query };
+    delete q.mode;
+    router.replace({ pathname: "/auth", query: q }, undefined, { shallow: true });
+  }
+
   async function login() {
     setBusy(true);
     setError("");
@@ -29,7 +50,10 @@ export default function AuthPage() {
       const res = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail.trim().toLowerCase(), password: loginPassword }),
+        body: JSON.stringify({
+          email: loginIdentifier.trim(),
+          password: loginPassword,
+        }),
       });
       if (!res.ok) {
         const txt = await res.text();
@@ -86,9 +110,9 @@ export default function AuthPage() {
         return;
       }
       setMessage("Регистрация завершена. Временный пароль отправлен вам на email.");
-      setMode("login");
-      setLoginEmail(regEmail.trim().toLowerCase());
+      setLoginIdentifier(regEmail.trim().toLowerCase());
       setCodeSent(false);
+      goLogin();
     } finally {
       setBusy(false);
     }
@@ -109,51 +133,43 @@ export default function AuthPage() {
           {message && <div className="alert alert--success">{message}</div>}
           {error && <div className="alert alert--danger">{error}</div>}
 
-          {mode === "choice" && (
-            <div className="panel">
-              <p>
-                Чтобы отправить заявку в один клик с страницы авто, войдите. Если аккаунта ещё нет — на странице
-                объявления откройте форму «Заявка на расчёт»: мы сохраним заявку и зарегистрируем вас по email (код
-                подтверждения придёт в письме).
-              </p>
-              <div className="toolbar">
-                <button type="button" className="btn btn-primary" onClick={() => setMode("login")}>
-                  Войти
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={() => setMode("register")}>
-                  Зарегистрироваться
-                </button>
-              </div>
-            </div>
-          )}
-
           {mode === "login" && (
             <div className="panel">
-              <h2 className="section-title panel-heading-sm">Вход</h2>
-              <div className="form-stack form-stack--tight">
+              <form
+                className="form-stack form-stack--tight"
+                autoComplete="on"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  login();
+                }}
+              >
                 <input
                   className="input"
-                  placeholder="Email"
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
+                  name="username"
+                  placeholder="Email или телефон"
+                  type="text"
+                  autoComplete="username"
+                  value={loginIdentifier}
+                  onChange={(e) => setLoginIdentifier(e.target.value)}
                 />
                 <input
                   className="input"
+                  name="password"
                   placeholder="Пароль"
                   type="password"
+                  autoComplete="current-password"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                 />
                 <div className="toolbar">
-                  <button type="button" className="btn btn-primary" disabled={busy} onClick={login}>
+                  <button type="submit" className="btn btn-primary" disabled={busy}>
                     Войти
                   </button>
-                  <button type="button" className="btn btn-ghost" onClick={() => setMode("register")}>
-                    Нет аккаунта?
+                  <button type="button" className="btn btn-secondary" onClick={goRegister}>
+                    Зарегистрироваться
                   </button>
                 </div>
-              </div>
+              </form>
             </div>
           )}
 
@@ -197,7 +213,7 @@ export default function AuthPage() {
                     </button>
                   </>
                 )}
-                <button type="button" className="btn btn-ghost" onClick={() => setMode("login")}>
+                <button type="button" className="btn btn-ghost" onClick={goLogin}>
                   Уже есть аккаунт
                 </button>
               </div>

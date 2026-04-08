@@ -262,6 +262,12 @@ class CarModelCatalogIn(BaseModel):
     che168_url: str | None = None
 
 
+class ParserImportListingIn(BaseModel):
+    """Разовый импорт одной карточки: ссылка на объявление che168 (dealer/… или i.che168.com/car/…)."""
+    model_id: int
+    che168_url: str
+
+
 class ParseJobOut(BaseModel):
     id: int
     type: str
@@ -285,6 +291,8 @@ class RegisterIn(BaseModel):
 
 
 class LoginIn(BaseModel):
+    """Поле email: адрес почты или номер телефона (цифры; маска допускается)."""
+
     email: str
     password: str
 

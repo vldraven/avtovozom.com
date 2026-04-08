@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
+import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
 import { canCreateListings } from "../../lib/roles";
@@ -182,55 +183,47 @@ export default function StaffNewListingPage() {
             <p className="muted">Загрузка...</p>
           ) : (
             <form className="panel" onSubmit={submit} style={{ display: "grid", gap: 12 }}>
-              <label className="muted" style={{ display: "grid", gap: 4 }}>
-                Марка
-                <select
-                  className="input"
-                  value={brandId}
-                  required
-                  onChange={(e) => setBrandId(e.target.value)}
-                >
-                  <option value="">—</option>
-                  {brands.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="muted" style={{ display: "grid", gap: 4 }}>
-                Модель
-                <select
-                  className="input"
-                  value={modelId}
-                  required
-                  disabled={!brandId}
-                  onChange={(e) => setModelId(e.target.value)}
-                >
-                  <option value="">—</option>
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="Марка"
+                placeholder="—"
+                value={brandId}
+                onChange={(v) => {
+                  setBrandId(v);
+                  setGenerationId("");
+                }}
+                options={[
+                  { value: "", label: "—" },
+                  ...brands.map((b) => ({ value: String(b.id), label: b.name })),
+                ]}
+              />
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="Модель"
+                placeholder="—"
+                value={modelId}
+                disabled={!brandId}
+                onChange={(v) => {
+                  setModelId(v);
+                  setGenerationId("");
+                }}
+                options={[
+                  { value: "", label: "—" },
+                  ...models.map((m) => ({ value: String(m.id), label: m.name })),
+                ]}
+              />
               {generations.length > 0 ? (
-                <label className="muted" style={{ display: "grid", gap: 4 }}>
-                  Поколение (необязательно)
-                  <select
-                    className="input"
-                    value={generationId}
-                    onChange={(e) => setGenerationId(e.target.value)}
-                  >
-                    <option value="">— не выбрано —</option>
-                    {generations.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="Поколение (необязательно)"
+                  placeholder="— не выбрано —"
+                  value={generationId}
+                  onChange={setGenerationId}
+                  options={[
+                    { value: "", label: "— не выбрано —" },
+                    ...generations.map((g) => ({ value: String(g.id), label: g.name })),
+                  ]}
+                />
               ) : null}
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Заголовок
