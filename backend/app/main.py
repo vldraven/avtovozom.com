@@ -287,6 +287,16 @@ def startup() -> None:
         )
         conn.execute(text("ALTER TABLE car_generations ADD COLUMN IF NOT EXISTS year_from INTEGER"))
         conn.execute(text("ALTER TABLE car_generations ADD COLUMN IF NOT EXISTS year_to INTEGER"))
+        conn.execute(
+            text(
+                "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS import_model_id INTEGER REFERENCES car_models(id)"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS import_detail_url VARCHAR(2048)"
+            )
+        )
     db = next(get_db())
     try:
         seed_initial_data(db)
