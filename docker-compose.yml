@@ -78,6 +78,13 @@ services:
         required: false
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      # Docker Desktop (особенно macOS): иначе next dev не видит изменения файлов на хосте
+      WATCHPACK_POLLING: "true"
+    volumes:
+      # Код с хоста — правки в web/ сразу подхватываются без docker compose build web
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
     depends_on:
       - backend
     ports:
