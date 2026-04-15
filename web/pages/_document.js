@@ -5,7 +5,7 @@ export default function Document() {
     <Html lang="ru">
       <Head>
         <meta httpEquiv="content-language" content="ru" />
-        <link rel="icon" href="/favicon.png" type="image/png" sizes="any" />
+        <link rel="icon" href="/favicon.png" type="image/png" sizes="192x192" />
         <link rel="apple-touch-icon" href="/favicon.png" />
       </Head>
       <body>
