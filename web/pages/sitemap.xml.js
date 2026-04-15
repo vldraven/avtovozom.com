@@ -1,11 +1,6 @@
 import { publicCarHref } from "../lib/carRoutes";
+import { getPublicSiteUrlFromRequest } from "../lib/publicSiteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
-
-function getSiteUrlServer() {
-  const raw = (process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/$/, "");
-  if (raw) return raw;
-  return "http://localhost:3000";
-}
 
 function escapeXml(s) {
   return String(s)
@@ -16,8 +11,8 @@ function escapeXml(s) {
     .replace(/'/g, "&apos;");
 }
 
-export async function getServerSideProps({ res }) {
-  const base = getSiteUrlServer();
+export async function getServerSideProps({ req, res }) {
+  const base = getPublicSiteUrlFromRequest(req);
   const API_URL = getServerApiBase();
 
   const staticPaths = ["/", "/catalog", "/customs-calculator"];

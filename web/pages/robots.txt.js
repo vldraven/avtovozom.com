@@ -1,11 +1,7 @@
-function getSiteUrlServer() {
-  const raw = (process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/$/, "");
-  if (raw) return raw;
-  return "http://localhost:3000";
-}
+import { getPublicSiteUrlFromRequest } from "../lib/publicSiteUrl";
 
-export async function getServerSideProps({ res }) {
-  const base = getSiteUrlServer();
+export async function getServerSideProps({ req, res }) {
+  const base = getPublicSiteUrlFromRequest(req);
   const body = `User-agent: *
 Allow: /
 
