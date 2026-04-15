@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 
 import Breadcrumbs from "./Breadcrumbs";
+import CarPhotoLightbox from "./CarPhotoLightbox";
 import HeaderMessagesLink from "./HeaderMessagesLink";
 import HeaderProfileLink from "./HeaderProfileLink";
 import RequestConfirmModal from "./RequestConfirmModal";
@@ -48,6 +49,8 @@ export default function CarDetailView({
   const [requestModalComment, setRequestModalComment] = useState("");
   const [requestModalBusy, setRequestModalBusy] = useState(false);
   const [requestOkMessage, setRequestOkMessage] = useState("");
+  const [photoLightboxOpen, setPhotoLightboxOpen] = useState(false);
+  const [photoLightboxIndex, setPhotoLightboxIndex] = useState(0);
 
   const isListingOwner =
     car != null &&
@@ -402,7 +405,22 @@ export default function CarDetailView({
 
           <div className="photo-gallery">
             {hero?.storage_url ? (
-              <div className="photo-gallery__stage-wrap">
+              <div
+                className="photo-gallery__stage-wrap photo-gallery__stage-wrap--openable"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setPhotoLightboxIndex(safeIndex);
+                  setPhotoLightboxOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setPhotoLightboxIndex(safeIndex);
+                    setPhotoLightboxOpen(true);
+                  }
+                }}
+              >
                 <img
                   className="photo-gallery__stage"
                   src={mediaSrc(hero.storage_url)}
@@ -415,7 +433,10 @@ export default function CarDetailView({
                       className="photo-gallery__nav photo-gallery__nav--prev"
                       aria-label="Предыдущее фото"
                       disabled={safeIndex <= 0}
-                      onClick={() => setActivePhoto((i) => Math.max(0, i - 1))}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActivePhoto((i) => Math.max(0, i - 1));
+                      }}
                     >
                       ‹
                     </button>
@@ -424,7 +445,10 @@ export default function CarDetailView({
                       className="photo-gallery__nav photo-gallery__nav--next"
                       aria-label="Следующее фото"
                       disabled={safeIndex >= nPhotos - 1}
-                      onClick={() => setActivePhoto((i) => Math.min(nPhotos - 1, i + 1))}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActivePhoto((i) => Math.min(nPhotos - 1, i + 1));
+                      }}
                     >
                       ›
                     </button>
@@ -463,7 +487,23 @@ export default function CarDetailView({
                 ))}
               </div>
             )}
+            {nPhotos > 0 ? (
+              <p className="photo-gallery__hint">Нажмите на фото для просмотра во весь экран. Свайп влево/вправо в режиме просмотра.</p>
+            ) : null}
           </div>
+
+          <CarPhotoLightbox
+            open={photoLightboxOpen}
+            onClose={(lastIdx) => {
+              setPhotoLightboxOpen(false);
+              if (typeof lastIdx === "number" && sortedPhotos.length) {
+                setActivePhoto(Math.min(sortedPhotos.length - 1, Math.max(0, lastIdx)));
+              }
+            }}
+            urls={sortedPhotos.map((p) => p.storage_url)}
+            title={car.title}
+            initialIndex={photoLightboxIndex}
+          />
 
           {car.pricing_guide && (
             <section className="panel" style={{ marginTop: 20 }}>
@@ -566,7 +606,7 @@ export default function CarDetailView({
           {me?.role !== "dealer" && (
             <section style={{ marginTop: 24 }}>
               <button type="button" className="btn btn-primary" onClick={openRequestModal}>
-                Подать заявку на расчёт
+                Заказать расчёт
               </button>
               {requestOkMessage ? (
                 <div className="alert alert--success" style={{ marginTop: 12 }}>

@@ -51,7 +51,20 @@ from .email_utils import send_email
 from .media_storage import delete_car_photo_files, save_chat_attachment, save_uploaded_car_photos
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
+from .customs_calc import ensure_settings_row, run_estimate, validate_config_yaml
+from .customs_util_json import (
+    build_default_util_json_company,
+    build_default_util_json_individual,
+    validate_util_company_json,
+    validate_util_individual_json,
+)
 from .schemas import (
+    AdminCalculationRequestOut,
+    AdminPasswordResetOut,
+    AdminUserCreateIn,
+    AdminUserCreateResultOut,
+    AdminUserOut,
+    AdminUserUpdateIn,
     CalculationRequestDealerOut,
     CalculationRequestMyOut,
     CalculationRequestOut,
@@ -71,6 +84,11 @@ from .schemas import (
     CreateRequestIn,
     DealerOfferCreateIn,
     DealerPublicProfileOut,
+    CustomsCalcConfigIn,
+    CustomsCalcConfigOut,
+    UtilCoeffDefaultsOut,
+    CustomsCalcEstimateIn,
+    CustomsCalcEstimateOut,
     DealerOfferOut,
     LoginIn,
     OpenChatOut,
@@ -90,6 +108,7 @@ from .schemas import (
 )
 from .security import create_access_token, decode_access_token, hash_password, verify_password
 from .seed import seed_initial_data
+from .telegram_notify import notify_new_calculation_request
 
 app = FastAPI(title="Avtovozom API", version="0.1.0")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -297,9 +316,22 @@ def startup() -> None:
                 "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS import_detail_url VARCHAR(2048)"
             )
         )
+        conn.execute(
+            text(
+                "ALTER TABLE customs_calc_settings ADD COLUMN IF NOT EXISTS "
+                "util_coefficients_individual TEXT"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE customs_calc_settings ADD COLUMN IF NOT EXISTS "
+                "util_coefficients_company TEXT"
+            )
+        )
     db = next(get_db())
     try:
         seed_initial_data(db)
+        ensure_settings_row(db)
     finally:
         db.close()
 
@@ -307,6 +339,21 @@ def startup() -> None:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/public/customs-calculator/estimate", response_model=CustomsCalcEstimateOut)
+def public_customs_calculator_estimate(payload: CustomsCalcEstimateIn, db: Session = Depends(get_db)):
+    row = ensure_settings_row(db)
+    try:
+        out = run_estimate(
+            row.config_yaml,
+            payload,
+            util_individual_json=row.util_coefficients_individual,
+            util_company_json=row.util_coefficients_company,
+        )
+        return out
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка расчёта: {e}") from e
 
 
 @app.get("/catalog/brands", response_model=list[CatalogBrandOut])
@@ -1786,6 +1833,205 @@ def admin_rematch_car_model(
     }
 
 
+def _user_to_admin_out(user: User) -> AdminUserOut:
+    return AdminUserOut(
+        id=user.id,
+        email=user.email,
+        phone=user.phone,
+        full_name=user.full_name,
+        display_name=user.display_name or "",
+        company_name=user.company_name,
+        role=user.role.code,
+        is_active=user.is_active,
+        email_verified=user.email_verified,
+    )
+
+
+@app.get("/admin/users", response_model=list[AdminUserOut])
+def admin_list_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    users = (
+        db.execute(select(User).options(joinedload(User.role)).order_by(User.id.asc()))
+        .unique()
+        .scalars()
+        .all()
+    )
+    return [_user_to_admin_out(u) for u in users]
+
+
+@app.post("/admin/users", response_model=AdminUserCreateResultOut)
+def admin_create_user(
+    payload: AdminUserCreateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Некорректный email")
+    exists = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if exists:
+        raise HTTPException(status_code=400, detail="Email уже занят")
+    role = db.execute(select(Role).where(Role.code == payload.role)).scalar_one_or_none()
+    if not role:
+        raise HTTPException(status_code=400, detail="Неизвестная роль")
+    gen_pwd: str | None = None
+    if payload.password and payload.password.strip():
+        pwd = payload.password.strip()
+        if len(pwd) < 8:
+            raise HTTPException(status_code=400, detail="Пароль не короче 8 символов")
+        must_change = False
+    else:
+        pwd = secrets.token_urlsafe(14)
+        gen_pwd = pwd
+        must_change = True
+    user = User(
+        email=email,
+        phone=(payload.phone or "").strip() or None,
+        full_name=(payload.full_name or "").strip(),
+        password_hash=hash_password(pwd),
+        role_id=role.id,
+        is_active=True,
+        email_verified=True,
+        must_change_password=must_change,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    user = (
+        db.execute(select(User).options(joinedload(User.role)).where(User.id == user.id))
+        .unique()
+        .scalar_one()
+    )
+    return AdminUserCreateResultOut(user=_user_to_admin_out(user), generated_password=gen_pwd)
+
+
+@app.patch("/admin/users/{user_id}", response_model=AdminUserOut)
+def admin_update_user(
+    user_id: int,
+    payload: AdminUserUpdateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    user = (
+        db.execute(select(User).options(joinedload(User.role)).where(User.id == user_id))
+        .unique()
+        .scalar_one_or_none()
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if payload.email is not None:
+        em = payload.email.strip().lower()
+        if not em or "@" not in em:
+            raise HTTPException(status_code=400, detail="Некорректный email")
+        dup = db.execute(
+            select(User).where(User.email == em, User.id != user_id)
+        ).scalar_one_or_none()
+        if dup:
+            raise HTTPException(status_code=400, detail="Email уже занят")
+        user.email = em
+    if payload.phone is not None:
+        user.phone = payload.phone.strip() or None
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+    if payload.display_name is not None:
+        user.display_name = payload.display_name.strip()
+    if payload.company_name is not None:
+        user.company_name = payload.company_name.strip() or None
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+    if payload.role is not None:
+        role = db.execute(select(Role).where(Role.code == payload.role)).scalar_one_or_none()
+        if not role:
+            raise HTTPException(status_code=400, detail="Неизвестная роль")
+        user.role_id = role.id
+    db.commit()
+    db.refresh(user)
+    user = (
+        db.execute(select(User).options(joinedload(User.role)).where(User.id == user_id))
+        .unique()
+        .scalar_one()
+    )
+    return _user_to_admin_out(user)
+
+
+@app.post("/admin/users/{user_id}/reset-password", response_model=AdminPasswordResetOut)
+def admin_reset_user_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    user = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    new_pwd = secrets.token_urlsafe(14)
+    user.password_hash = hash_password(new_pwd)
+    user.must_change_password = True
+    db.commit()
+    return AdminPasswordResetOut(new_password=new_pwd)
+
+
+@app.get("/admin/customs-calculator/config", response_model=CustomsCalcConfigOut)
+def admin_get_customs_calculator_config(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    row = ensure_settings_row(db)
+    return CustomsCalcConfigOut(
+        config_yaml=row.config_yaml,
+        util_coefficients_individual=row.util_coefficients_individual,
+        util_coefficients_company=row.util_coefficients_company,
+        updated_at=row.updated_at,
+    )
+
+
+@app.get("/admin/customs-calculator/util-defaults", response_model=UtilCoeffDefaultsOut)
+def admin_customs_util_defaults(_: User = Depends(require_roles("admin"))):
+    """Встроенные JSON-таблицы коэффициентов УС (сброс в админке)."""
+    return UtilCoeffDefaultsOut(
+        individual=build_default_util_json_individual(),
+        company=build_default_util_json_company(),
+    )
+
+
+@app.put("/admin/customs-calculator/config", response_model=CustomsCalcConfigOut)
+def admin_update_customs_calculator_config(
+    payload: CustomsCalcConfigIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    _, err = validate_config_yaml(payload.config_yaml)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    j1 = validate_util_individual_json(payload.util_coefficients_individual)
+    if j1:
+        raise HTTPException(status_code=400, detail=j1)
+    j2 = validate_util_company_json(payload.util_coefficients_company)
+    if j2:
+        raise HTTPException(status_code=400, detail=j2)
+    row = ensure_settings_row(db)
+    # Храним YAML как текст: не пересобираем через yaml.dump, чтобы не терять комментарии #.
+    row.config_yaml = payload.config_yaml.strip() + "\n"
+
+    def _norm(s: str | None) -> str | None:
+        if s is None:
+            return None
+        t = s.strip()
+        return t if t else None
+
+    row.util_coefficients_individual = _norm(payload.util_coefficients_individual)
+    row.util_coefficients_company = _norm(payload.util_coefficients_company)
+    db.commit()
+    db.refresh(row)
+    return CustomsCalcConfigOut(
+        config_yaml=row.config_yaml,
+        util_coefficients_individual=row.util_coefficients_individual,
+        util_coefficients_company=row.util_coefficients_company,
+        updated_at=row.updated_at,
+    )
+
+
 @app.post("/requests/lead", response_model=PublicRequestLeadOut)
 def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_db)):
     """
@@ -1835,6 +2081,14 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
     db.add(req)
     db.commit()
     db.refresh(req)
+    notify_new_calculation_request(
+        request_id=req.id,
+        car_id=req.car_id,
+        user_name=user_name,
+        user_contact=user_contact,
+        comment=req.comment or "",
+        car_page_url=_public_car_page_url(db, req.car_id),
+    )
     return PublicRequestLeadOut(
         ok=True,
         request_id=req.id,
@@ -1867,6 +2121,14 @@ def create_request(
     db.add(request)
     db.commit()
     db.refresh(request)
+    notify_new_calculation_request(
+        request_id=request.id,
+        car_id=request.car_id,
+        user_name=request.user_name,
+        user_contact=request.user_contact,
+        comment=request.comment or "",
+        car_page_url=_public_car_page_url(db, request.car_id),
+    )
     return request
 
 
@@ -1875,20 +2137,9 @@ def _unread_offers_count(request: CalculationRequest, offers: list[DealerOffer])
     return sum(1 for o in offers if seen is None or o.created_at > seen)
 
 
-@app.get("/requests/my", response_model=list[CalculationRequestMyOut])
-def my_requests(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    requests = (
-        db.execute(
-            select(CalculationRequest)
-            .where(CalculationRequest.user_id == current_user.id)
-            .order_by(CalculationRequest.id.desc())
-        )
-        .scalars()
-        .all()
-    )
+def _calculation_requests_to_my_out(
+    db: Session, requests: list[CalculationRequest]
+) -> list[CalculationRequestMyOut]:
     if not requests:
         return []
 
@@ -1977,6 +2228,23 @@ def my_requests(
     return out
 
 
+@app.get("/requests/my", response_model=list[CalculationRequestMyOut])
+def my_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    requests = (
+        db.execute(
+            select(CalculationRequest)
+            .where(CalculationRequest.user_id == current_user.id)
+            .order_by(CalculationRequest.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return _calculation_requests_to_my_out(db, requests)
+
+
 @app.post("/requests/{request_id}/mark-offers-seen")
 def mark_request_offers_seen(
     request_id: int,
@@ -2015,6 +2283,64 @@ def _public_car_page_url(db: Session, car_id: int) -> str:
     slug_maps = build_catalog_slug_maps(db)
     bs, ms = slugs_for_car(car, slug_maps[0], slug_maps[1])
     return f"{origin}/catalog/{bs}/{ms}/{car_id}"
+
+
+@app.get("/admin/calculation-requests", response_model=list[AdminCalculationRequestOut])
+def admin_list_calculation_requests(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    requests = (
+        db.execute(
+            select(CalculationRequest).order_by(CalculationRequest.id.desc()).limit(500)
+        )
+        .scalars()
+        .all()
+    )
+    my_list = _calculation_requests_to_my_out(db, requests)
+    user_ids = [r.user_id for r in requests if r.user_id]
+    users_map: dict[int, User] = {}
+    if user_ids:
+        users = db.execute(select(User).where(User.id.in_(user_ids))).scalars().all()
+        users_map = {u.id: u for u in users}
+    out: list[AdminCalculationRequestOut] = []
+    for r_db, base in zip(requests, my_list):
+        u = users_map.get(r_db.user_id) if r_db.user_id else None
+        out.append(
+            AdminCalculationRequestOut(
+                **base.model_dump(),
+                client_email=u.email if u else None,
+                client_user_id=r_db.user_id,
+                car_page_url=_public_car_page_url(db, r_db.car_id),
+            )
+        )
+    return out
+
+
+@app.get("/admin/calculation-requests/{request_id}", response_model=AdminCalculationRequestOut)
+def admin_get_calculation_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    r = db.execute(
+        select(CalculationRequest).where(CalculationRequest.id == request_id)
+    ).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    built = _calculation_requests_to_my_out(db, [r])
+    if not built:
+        raise HTTPException(status_code=404, detail="Request not found")
+    base = built[0]
+    u = None
+    if r.user_id:
+        u = db.execute(select(User).where(User.id == r.user_id)).scalar_one_or_none()
+    return AdminCalculationRequestOut(
+        **base.model_dump(),
+        client_email=u.email if u else None,
+        client_user_id=r.user_id,
+        car_page_url=_public_car_page_url(db, r.car_id),
+    )
 
 
 def _format_offer_seed_message(
@@ -2735,7 +3061,7 @@ def parser_jobs(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin", "moderator")),
 ):
-    jobs = db.execute(select(ParseJob).order_by(ParseJob.id.desc()).limit(20)).scalars().all()
+    jobs = db.execute(select(ParseJob).order_by(ParseJob.id.desc()).limit(40)).scalars().all()
     return jobs
 
 

@@ -1,0 +1,124 @@
+# Тот же смысл, что и DEFAULT_TKS_CONFIG_YAML в customs_calc.py (для новых установок БД).
+# Рабочую копию правьте в админке; здесь — удобный ориентир в Git.
+# Полная инструкция по полям: docs/CUSTOMS_CALCULATOR_CONFIG.md
+
+# Конфиг tks-api-official: корень tariffs обязателен.
+# ETC (ответ etc): пошлина ≈ rate_per_cc × объём_см³ × курс(1 EUR→RUB) + сборы (см. исходники tks_api_official/calc.py).
+# CTP (ответ ctp): упрощённо для юрлица — пошлина max(20% цены, 0,44 EUR/см³×объём), НДС 20%, акциз power×ставка и т.д.
+#
+tariffs:
+  # Таможенный сбор за оформление (₽). В модели одна сумма; по закону ступени зависят от таможенной стоимости.
+  base_clearance_fee: 3100
+  # Слагаемое «Util Fee» в ETC; в CTP умножается на ctp_util_coeff_base. Не тождественно утильсбору по ПП РФ.
+  base_util_fee: 20000
+  # Не используется кодом tks-api-official в calculate_etc (оставлено для совместимости с config.yaml апстрима).
+  etc_util_coeff_base: 1.0
+  # Только CTP: util_fee = base_util_fee × это значение.
+  ctp_util_coeff_base: 1.2
+  # ETC + физлицо: подмена строки Util Fee (иначе tks всегда добавляет полный base_util_fee).
+  individual_etc_util_fee: 0
+  # Опционально: фикс. утилизационный сбор для ETC физлица (₽), вместо 20000×factor из recycling_factors.
+  # individual_recycling_rub: 5200
+
+  # Физлицо (ЕТС): пошлина по возрасту + утилизация + ступени ПП № 1637 (см. customs_physical.py).
+  physical_person:
+    duty_electric_percent_under_3: 15
+    util_hp_threshold: 160
+    util_under_3_le_hp: 3400
+    util_over_3_le_hp: 5200
+    util_recycling_base_rub: 20000
+    util_ice_coeff_schedule: "2026-01"
+    util_ev_preferential_hp_max: 80
+    # УС = util_recycling_base_rub × K (таблица по объёму и мощности). Свои ступени: util_ice_power_stairs
+
+  # CTP: акциз = мощность_л.с. × ставка (₽/л.с.). В НК РФ — ступени по мощности; здесь одно число на тип двигателя.
+  excise_rates:
+    gasoline: 63
+    diesel: 63
+    electric: 0
+    hybrid: 63
+
+  # В библиотеке: 20000 ₽ × коэффициент. Упрощение относительно ПП РФ № 1291 / № 81.
+  recycling_factors:
+    default:
+      gasoline: 1.0
+      diesel: 1.0
+      electric: 0.3
+      hybrid: 0.9
+    adjustments:
+      "5-7":
+        gasoline: 0.26
+        diesel: 0.26
+        electric: 0.26
+        hybrid: 0.26
+
+  # rate_per_cc подобрано под эталон объёма ~2000 см³ (ряд 1801–2300 см³ в таблицах ЕТТ для физлиц): 3–5 лет 2,7; 5+ лет 4,8 EUR/см³.
+  # Для других объёмов и для авто «до 3 лет» по закону — другие правила; сверяйте с официальными таблицами.
+  # min_duty парсером калькулятора не используется (только справочно для администратора).
+  age_groups:
+    overrides:
+      "new":
+        gasoline:
+          rate_per_cc: 2.7
+          min_duty: 0
+        diesel:
+          rate_per_cc: 2.7
+          min_duty: 0
+        electric:
+          rate_per_cc: 0
+          min_duty: 0
+        hybrid:
+          rate_per_cc: 2.7
+          min_duty: 0
+      "1-3":
+        gasoline:
+          rate_per_cc: 2.7
+          min_duty: 0
+        diesel:
+          rate_per_cc: 2.7
+          min_duty: 0
+        electric:
+          rate_per_cc: 0
+          min_duty: 0
+        hybrid:
+          rate_per_cc: 2.7
+          min_duty: 0
+      "3-5":
+        gasoline:
+          rate_per_cc: 2.7
+          min_duty: 0
+        diesel:
+          rate_per_cc: 2.7
+          min_duty: 0
+        electric:
+          rate_per_cc: 0
+          min_duty: 0
+        hybrid:
+          rate_per_cc: 2.7
+          min_duty: 0
+      "5-7":
+        gasoline:
+          rate_per_cc: 4.8
+          min_duty: 0
+        diesel:
+          rate_per_cc: 4.8
+          min_duty: 0
+        electric:
+          rate_per_cc: 0
+          min_duty: 1000
+        hybrid:
+          rate_per_cc: 2.0
+          min_duty: 2500
+      "over_7":
+        gasoline:
+          rate_per_cc: 4.8
+          min_duty: 0
+        diesel:
+          rate_per_cc: 4.8
+          min_duty: 0
+        electric:
+          rate_per_cc: 0
+          min_duty: 1500
+        hybrid:
+          rate_per_cc: 3.0
+          min_duty: 3000

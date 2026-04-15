@@ -279,6 +279,7 @@ export default function StaffEditListingPage() {
                 className="site-dropdown--block"
                 label="Марка"
                 placeholder="—"
+                searchable
                 value={brandId}
                 onChange={(v) => {
                   setBrandId(v);
@@ -293,6 +294,7 @@ export default function StaffEditListingPage() {
                 className="site-dropdown--block"
                 label="Модель"
                 placeholder="—"
+                searchable
                 value={modelId}
                 disabled={!brandId}
                 onChange={(v) => {
@@ -309,6 +311,7 @@ export default function StaffEditListingPage() {
                   className="site-dropdown--block"
                   label="Поколение (необязательно)"
                   placeholder="— не выбрано —"
+                  searchable
                   value={generationId}
                   onChange={setGenerationId}
                   options={[
@@ -316,6 +319,10 @@ export default function StaffEditListingPage() {
                     ...generations.map((g) => ({ value: String(g.id), label: g.name })),
                   ]}
                 />
+              ) : modelId ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  Поколение в справочнике для этой модели не задано — объявление будет без привязки к поколению.
+                </p>
               ) : null}
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Заголовок

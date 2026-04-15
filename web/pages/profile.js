@@ -2,12 +2,13 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 
+import AdminParserPanel from "../components/AdminParserPanel";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import { clearToken, getStoredToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
-import { canCreateListings, isStaffRole } from "../lib/roles";
+import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -82,6 +83,11 @@ export default function ProfilePage() {
     await loadRoleData(t, data.role);
   }
 
+  async function reloadParserJobsWithToken(t) {
+    const j = await fetch(`${API_URL}/admin/parser/jobs`, { headers: { Authorization: `Bearer ${t}` } });
+    if (j.ok) setAdminJobs(await j.json());
+  }
+
   async function loadMyRequestsOnly(t) {
     const rr = await fetch(`${API_URL}/requests/my`, { headers: { Authorization: `Bearer ${t}` } });
     if (rr.ok) setRequests(await rr.json());
@@ -111,8 +117,7 @@ export default function ProfilePage() {
       await loadMyRequestsOnly(t);
     }
     if (isStaffRole(role)) {
-      const j = await fetch(`${API_URL}/admin/parser/jobs`, { headers: { Authorization: `Bearer ${t}` } });
-      if (j.ok) setAdminJobs(await j.json());
+      await reloadParserJobsWithToken(t);
     }
     if (canCreateListings(role)) {
       const sc = await fetch(`${API_URL}/staff/my-cars`, { headers: { Authorization: `Bearer ${t}` } });
@@ -297,6 +302,35 @@ export default function ProfilePage() {
                 </div>
               </section>
 
+              {isStaffRole(me.role) && (
+                <section className="panel">
+                  <h2 className="section-title panel-heading-sm">Заявки на расчёт</h2>
+                  <p className="muted section-title--flush-top">
+                    Все заявки клиентов и ответы дилеров — в отдельном разделе.
+                  </p>
+                  <Link href="/staff/admin-requests" className="btn btn-primary btn-inline">
+                    Открыть раздел «Заявки»
+                  </Link>
+                </section>
+              )}
+
+              {isAdminRole(me.role) && (
+                <section className="panel">
+                  <h2 className="section-title panel-heading-sm">Управление учётными записями</h2>
+                  <p className="muted section-title--flush-top">
+                    Список пользователей, создание, редактирование и сброс пароля.
+                  </p>
+                  <Link href="/staff/admin-users" className="btn btn-primary btn-inline">
+                    Открыть управление УЗ
+                  </Link>
+                  <div style={{ marginTop: "0.65rem" }}>
+                    <Link href="/staff/admin-customs-calculator" className="btn btn-secondary btn-inline">
+                      Настройки калькулятора растаможки
+                    </Link>
+                  </div>
+                </section>
+              )}
+
               <section className="panel">
                 <h2 className="section-title panel-heading-sm">Смена пароля</h2>
                 <div className="profile-field-grid">
@@ -342,7 +376,7 @@ export default function ProfilePage() {
                     и предложения.
                   </p>
                   {requests.length === 0 ? (
-                    <p className="muted">Заявок пока нет — выберите авто в каталоге и нажмите «Заявка на расчёт».</p>
+                    <p className="muted">Заявок пока нет — выберите авто в каталоге и нажмите «Заказать расчёт».</p>
                   ) : (
                     <div className="profile-request-list">
                       {requests.map((r) => {
@@ -531,18 +565,11 @@ export default function ProfilePage() {
               )}
 
               {isStaffRole(me.role) && (
-                <section className="panel">
-                  <h2 className="section-title panel-heading-sm">Админ-раздел: парсер</h2>
-                  {adminJobs.length === 0 ? (
-                    <p className="muted">Джобов парсера пока нет.</p>
-                  ) : (
-                    adminJobs.map((j) => (
-                      <div key={j.id} className="admin-jobs-log-line">
-                        #{j.id} · {j.status} · processed: {j.total_processed} · errors: {j.total_errors}
-                      </div>
-                    ))
-                  )}
-                </section>
+                <AdminParserPanel
+                  token={token}
+                  jobs={adminJobs}
+                  onReload={() => reloadParserJobsWithToken(token)}
+                />
               )}
             </>
           )}

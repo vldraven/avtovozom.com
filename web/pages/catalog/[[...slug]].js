@@ -3,17 +3,21 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 
 import Breadcrumbs from "../../components/Breadcrumbs";
+import CatalogCardImageScrub from "../../components/CatalogCardImageScrub";
 import CatalogSortDropdown from "../../components/CatalogSortDropdown";
 import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import CarDetailView from "../../components/CarDetailView";
 import HeaderMessagesLink from "../../components/HeaderMessagesLink";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
+import RequestConfirmModal from "../../components/RequestConfirmModal";
 import { clearToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
-import { mediaSrc } from "../../lib/media";
 import { canCreateListings } from "../../lib/roles";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const DEFAULT_REQUEST_COMMENT =
+  "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
 
 function segmentsFromQuery(slug) {
   if (slug == null) return [];
@@ -33,6 +37,9 @@ export default function CatalogTreePage() {
   const [treeError, setTreeError] = useState(null);
   const [carsError, setCarsError] = useState(null);
   const [listSort, setListSort] = useState("date_desc");
+  const [requestModalCar, setRequestModalCar] = useState(null);
+  const [requestModalComment, setRequestModalComment] = useState("");
+  const [requestModalBusy, setRequestModalBusy] = useState(false);
 
   const { brand, model, generation, unknownSlug, badModelSlug, badGenSlug } = useMemo(() => {
     if (segments == null || !tree.length) {
@@ -149,21 +156,80 @@ export default function CatalogTreePage() {
     let cancelled = false;
     (async () => {
       const stored = localStorage.getItem("avt_token");
-      if (!stored) return;
-      setToken(stored);
-      try {
-        const res = await fetch(`${API_URL}/auth/me`, {
-          headers: { Authorization: `Bearer ${stored}` },
-        });
-        if (!cancelled && res.ok) setMe(await res.json());
-      } catch {
-        /* API недоступен — не падаем красным экраном Next */
+      if (stored) {
+        setToken(stored);
+        try {
+          const res = await fetch(`${API_URL}/auth/me`, {
+            headers: { Authorization: `Bearer ${stored}` },
+          });
+          if (!cancelled && res.ok) setMe(await res.json());
+        } catch {
+          /* API недоступен — не падаем красным экраном Next */
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  function openRequestForModal(car) {
+    if (!token) {
+      const next = publicCarHref(car);
+      router.push(`/request-quote?car_id=${car.id}&next=${encodeURIComponent(next)}`);
+      return;
+    }
+    setRequestModalCar(car);
+    setRequestModalComment(DEFAULT_REQUEST_COMMENT);
+  }
+
+  function closeRequestModal() {
+    if (requestModalBusy) return;
+    setRequestModalCar(null);
+  }
+
+  async function confirmRequestFromModal() {
+    if (!requestModalCar || !token) return;
+    const comment = requestModalComment.trim() || DEFAULT_REQUEST_COMMENT;
+    setRequestModalBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/requests`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          car_id: requestModalCar.id,
+          comment,
+        }),
+      });
+      if (res.status === 401 || res.status === 403) {
+        const carRef = requestModalCar;
+        clearToken();
+        setToken("");
+        setMe(null);
+        setRequestModalCar(null);
+        router.push(
+          `/request-quote?car_id=${carRef.id}&next=${encodeURIComponent(publicCarHref(carRef))}`
+        );
+        return;
+      }
+      if (!res.ok) {
+        window.alert("Не удалось отправить заявку. Попробуйте ещё раз.");
+        return;
+      }
+      setRequestModalCar(null);
+      window.alert(
+        "Заявка отправлена. Статус и расчёты дилеров — в профиле, раздел «Мои заявки на расчёт»."
+      );
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("avt-requests-updated"));
+      }
+    } finally {
+      setRequestModalBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!router.isReady || segments == null) return;
@@ -378,6 +444,7 @@ export default function CatalogTreePage() {
                               className="site-dropdown--block"
                               label="Модель"
                               placeholder="Все модели марки"
+                              searchable
                               value={String(model.id)}
                               onChange={(v) => {
                                 if (v === "") {
@@ -404,6 +471,7 @@ export default function CatalogTreePage() {
                                   className="site-dropdown--block"
                                   label="Поколение"
                                   placeholder="Все поколения"
+                                  searchable
                                   value={generation ? String(generation.id) : ""}
                                   onChange={(v) => {
                                     if (v === "") {
@@ -438,6 +506,7 @@ export default function CatalogTreePage() {
                             className="site-dropdown--block"
                             label="Модель"
                             placeholder="Все модели марки"
+                            searchable
                             value=""
                             onChange={(v) => {
                               if (v === "") return;
@@ -557,17 +626,7 @@ export default function CatalogTreePage() {
                       {cars.map((car) => (
                         <article key={car.id} className="catalog-card">
                           <Link href={publicCarHref(car)} className="catalog-card__main">
-                            <div className="catalog-card__image-wrap">
-                              {car.photos?.[0]?.storage_url ? (
-                                <img
-                                  className="catalog-card__image"
-                                  src={mediaSrc(car.photos[0].storage_url)}
-                                  alt=""
-                                />
-                              ) : (
-                                <div className="catalog-card__placeholder">Нет фото</div>
-                              )}
-                            </div>
+                            <CatalogCardImageScrub photos={car.photos} />
                             <div className="catalog-card__content">
                               <h3 className="catalog-card__title">{car.title}</h3>
                               <p className="catalog-card__meta">
@@ -605,6 +664,18 @@ export default function CatalogTreePage() {
                             </div>
                           </Link>
                           <div className="catalog-card__actions">
+                            {me?.role !== "dealer" ? (
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  openRequestForModal(car);
+                                }}
+                              >
+                                Заказать расчёт
+                              </button>
+                            ) : null}
                             <Link href={publicCarHref(car)} className="btn btn-secondary btn-sm">
                               Подробнее
                             </Link>
@@ -617,6 +688,16 @@ export default function CatalogTreePage() {
               </div>
             </>
           )}
+
+          <RequestConfirmModal
+            open={!!requestModalCar}
+            onClose={closeRequestModal}
+            onConfirm={confirmRequestFromModal}
+            busy={requestModalBusy}
+            car={requestModalCar}
+            comment={requestModalComment}
+            onCommentChange={setRequestModalComment}
+          />
         </div>
       </main>
     </div>

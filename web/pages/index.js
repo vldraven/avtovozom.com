@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
+import CatalogCardImageScrub from "../components/CatalogCardImageScrub";
 import CatalogSortDropdown from "../components/CatalogSortDropdown";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
@@ -10,7 +11,6 @@ import HeaderProfileLink from "../components/HeaderProfileLink";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { clearToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
-import { mediaSrc } from "../lib/media";
 import { canCreateListings, isStaffRole } from "../lib/roles";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -603,6 +603,11 @@ export default function Home() {
                   </span>
                 </button>
               ) : null}
+              <p className="muted" style={{ marginTop: "1rem", marginBottom: 0, fontSize: "0.95rem" }}>
+                <Link href="/customs-calculator">Калькулятор растаможки</Link>
+                {" — "}
+                ориентировочный расчёт пошлины и утилизационного сбора.
+              </p>
               {selectedBrandId ? (
                 <div style={{ marginTop: "1rem" }}>
                   <h2 className="catalog-picker__section-title" style={{ marginBottom: "0.5rem" }}>
@@ -678,6 +683,7 @@ export default function Home() {
                 label="1. Марка"
                 placeholder="— Выберите марку —"
                 value={parserAdminBrand}
+                searchable
                 onChange={(v) => {
                   setParserAdminBrand(v);
                   setParserAdminModelId(null);
@@ -696,6 +702,7 @@ export default function Home() {
                   parserAdminBrand ? "— Выберите модель —" : "Сначала выберите марку"
                 }
                 disabled={!parserAdminBrand}
+                searchable
                 value={parserAdminModelId != null ? String(parserAdminModelId) : ""}
                 onChange={(v) => {
                   setParserAdminModelId(v ? Number(v) : null);
@@ -848,17 +855,7 @@ export default function Home() {
           {cars.map((car) => (
             <article key={car.id} className="catalog-card">
               <Link href={publicCarHref(car)} className="catalog-card__main">
-                <div className="catalog-card__image-wrap">
-                  {car.photos?.[0]?.storage_url ? (
-                    <img
-                      className="catalog-card__image"
-                      src={mediaSrc(car.photos[0].storage_url)}
-                      alt=""
-                    />
-                  ) : (
-                    <div className="catalog-card__placeholder">Нет фото</div>
-                  )}
-                </div>
+                <CatalogCardImageScrub photos={car.photos} />
                 <div className="catalog-card__content">
                   <h3 className="catalog-card__title">{car.title}</h3>
                   <p className="catalog-card__meta">
@@ -912,7 +909,7 @@ export default function Home() {
                     openRequestForModal(car);
                   }}
                 >
-                  Заявка на расчёт
+                  Заказать расчёт
                 </button>
                 <Link href={publicCarHref(car)} className="btn btn-secondary btn-sm">
                   Подробнее

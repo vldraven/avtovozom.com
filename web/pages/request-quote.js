@@ -152,7 +152,7 @@ export default function RequestQuotePage() {
             <Link href="/" className="site-logo">
               avtovozom
             </Link>
-            <span className="site-tagline">Заявка на расчёт</span>
+            <span className="site-tagline">Заказать расчёт</span>
           </div>
           <div className="auth-bar">
             <Link href={backHref} className="btn btn-ghost btn-sm">
@@ -166,7 +166,7 @@ export default function RequestQuotePage() {
       </header>
       <main className="site-main">
         <div className="container page-narrow">
-          <h1 className="section-title">Заявка на расчёт</h1>
+          <h1 className="section-title">Заказать расчёт</h1>
 
           {loadError && <div className="alert alert--danger">{loadError}</div>}
           {error && <div className="alert alert--danger">{error}</div>}

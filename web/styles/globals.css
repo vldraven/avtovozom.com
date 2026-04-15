@@ -473,6 +473,33 @@ a:hover {
   min-width: min(280px, calc(100vw - 2rem));
 }
 
+.site-dropdown__search-row {
+  padding: 0.35rem 0.6rem 0.5rem;
+  list-style: none;
+}
+
+.site-dropdown__search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.site-dropdown__search-input:focus {
+  outline: none;
+  border-color: #0a0a0a;
+}
+
+.site-dropdown__empty {
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  color: #64748b;
+  list-style: none;
+}
+
 .site-dropdown__option {
   display: flex;
   width: 100%;
@@ -656,6 +683,72 @@ a:hover {
   overflow: hidden;
 }
 
+.catalog-card__image-wrap--scrub {
+  position: relative;
+  /* pan-y оставляет горизонтальный жест браузеру — на тачскрине скраб не получает pointermove */
+  touch-action: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.catalog-card__image-wrap--scrub .catalog-card__image {
+  touch-action: none;
+}
+
+/* На десктопе — только наведение; на тачскрине — точки и счётчик + свайп (touch-action: none) */
+.catalog-card__scrub-segments {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.35rem;
+  display: none;
+  justify-content: center;
+  gap: 0.35rem;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.catalog-card__scrub-seg {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.45);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.catalog-card__scrub-seg--on {
+  background: rgba(255, 255, 255, 0.95);
+  transform: scale(1.12);
+}
+
+.catalog-card__scrub-hint {
+  display: none;
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.2rem;
+  z-index: 2;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+@media (hover: none) {
+  .catalog-card__scrub-segments {
+    display: flex;
+  }
+
+  .catalog-card__scrub-hint {
+    display: block;
+  }
+}
+
 .catalog-card__image {
   width: 100%;
   height: 100%;
@@ -797,6 +890,10 @@ a:hover {
   max-height: min(70vh, 560px);
 }
 
+.photo-gallery__stage-wrap--openable {
+  cursor: zoom-in;
+}
+
 .photo-gallery__stage {
   width: 100%;
   height: 100%;
@@ -896,6 +993,131 @@ a:hover {
 
 .photo-gallery__thumb--active {
   border-color: var(--color-accent);
+}
+
+/* Полноэкранный просмотр фото (карточка авто) */
+.car-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.car-lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.92);
+  cursor: pointer;
+}
+
+.car-lightbox__inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.car-lightbox__inner > * {
+  pointer-events: auto;
+}
+
+.car-lightbox__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 3;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.car-lightbox__close:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.car-lightbox__stage {
+  max-width: 100vw;
+  max-height: 100vh;
+  padding: 3rem 1rem;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.car-lightbox__img {
+  max-width: 100%;
+  max-height: calc(100vh - 6rem);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.car-lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 3rem;
+  height: 3rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.car-lightbox__nav:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.car-lightbox__nav:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.car-lightbox__nav--prev {
+  left: 0.5rem;
+}
+
+.car-lightbox__nav--next {
+  right: 0.5rem;
+}
+
+.car-lightbox__counter {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.75);
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  z-index: 2;
 }
 
 .spec-grid {
@@ -2016,6 +2238,72 @@ code {
   gap: 0.35rem;
 }
 
+/* Админ: калькулятор растаможки — переключатели разделов */
+.admin-calc-segment {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+.admin-calc-segment button {
+  border: none;
+  background: #fff;
+  padding: 0.45rem 1rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.95rem;
+  color: #475569;
+  border-right: 1px solid #e2e8f0;
+}
+.admin-calc-segment button:last-child {
+  border-right: none;
+}
+.admin-calc-segment button:hover {
+  background: #f8fafc;
+}
+.admin-calc-segment button.is-active {
+  background: #0f172a;
+  color: #fff;
+}
+.admin-calc-segment button.is-active:hover {
+  background: #1e293b;
+}
+
+.admin-util-editor .admin-util-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.admin-util-editor .admin-util-table th,
+.admin-util-editor .admin-util-table td {
+  border: 1px solid #e2e8f0;
+  padding: 4px 8px;
+  text-align: left;
+}
+.admin-util-editor .admin-util-table th {
+  background: #f8fafc;
+}
+.admin-util-editor .input--table {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  margin: 0;
+  font-size: 0.9rem;
+}
+.admin-util-editor__grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 768px) {
+  .admin-util-editor__grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
 .panel-heading-sm {
   font-size: 1.1rem;
   margin-top: 0;
@@ -2280,6 +2568,23 @@ code {
   font-weight: 700;
 }
 
+.admin-requests-offers-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.admin-requests-offers-pill--empty {
+  background: #f1f5f9;
+  color: #64748b;
+  font-weight: 500;
+}
+
 .profile-request-card__meta-tight {
   font-size: 0.88rem;
   margin-top: 4px;
@@ -2407,6 +2712,219 @@ code {
   font-size: 0.875rem;
   line-height: 1.45;
   word-break: break-word;
+}
+
+/* Панель парсера в профиле (staff) */
+.admin-parser-panel-profile__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-parser-panel-profile__title {
+  margin-bottom: 0.35rem;
+}
+
+.admin-parser-panel-profile__lead {
+  margin: 0;
+  max-width: 42rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.admin-parser-panel-profile__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.admin-parser-panel-profile__inline-msg {
+  font-size: 0.875rem;
+  margin: 0 0 0.75rem;
+  color: var(--color-text);
+}
+
+.admin-parser-panel-profile__poll-hint {
+  font-size: 0.8125rem;
+  margin: 0 0 0.75rem;
+}
+
+.admin-parser-panel-profile__empty {
+  margin: 0.5rem 0 0;
+}
+
+.admin-parser-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-bg, #f8fafc);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  margin-bottom: 0.75rem;
+}
+
+.admin-parser-summary-strip__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.admin-parser-summary-strip__item--warn {
+  border-left: 3px solid #f59e0b;
+  padding-left: 0.65rem;
+  margin-left: 0.15rem;
+}
+
+.admin-parser-summary-strip__k {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+  font-weight: 600;
+}
+
+.admin-parser-summary-strip__v {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.admin-parser-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.admin-parser-badge--success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.admin-parser-badge--danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.admin-parser-badge--running {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.admin-parser-badge--queued {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.admin-parser-job-table-wrap {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+}
+
+.admin-parser-job-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.admin-parser-job-table th {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  background: #f1f5f9;
+  color: var(--color-muted);
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.admin-parser-job-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.admin-parser-job-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-parser-job-table__row--failed {
+  background: #fff7f7;
+}
+
+.admin-parser-job-table__mono {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.admin-parser-job-table__muted {
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.admin-parser-job-table__err-count {
+  font-weight: 700;
+  color: #b91c1c;
+}
+
+.admin-parser-job-table__detail-row td {
+  background: #fafafa;
+  padding-top: 0.35rem;
+  padding-bottom: 0.65rem;
+}
+
+.admin-parser-job-table__toggle-msg {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--color-accent, #2563eb);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.admin-parser-job-table__toggle-msg:hover {
+  opacity: 0.85;
+}
+
+.admin-parser-job-table__detail-body {
+  margin-top: 0.5rem;
+}
+
+.admin-parser-job-table__import-url {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  word-break: break-all;
+}
+
+.admin-parser-job-table__message {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 12rem;
+  overflow-y: auto;
 }
 
 /* --- Заявка без входа (request-quote) --- */

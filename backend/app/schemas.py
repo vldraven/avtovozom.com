@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 
 from pydantic import BaseModel, Field
@@ -252,6 +254,139 @@ class CalculationRequestMyOut(BaseModel):
     """Число расчётов дилеров, появившихся после последнего просмотра клиентом."""
 
 
+class AdminCalculationRequestOut(CalculationRequestMyOut):
+    """Заявка для админ-раздела: email клиента и ссылка на объявление."""
+
+    client_email: str | None = None
+    client_user_id: int | None = None
+    car_page_url: str | None = None
+
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: str
+    phone: str | None = None
+    full_name: str
+    display_name: str = ""
+    company_name: str | None = None
+    role: str
+    is_active: bool
+    email_verified: bool
+
+
+class AdminUserCreateIn(BaseModel):
+    email: str
+    password: str | None = None
+    phone: str | None = None
+    full_name: str = ""
+    role: str = "user"
+
+
+class AdminUserUpdateIn(BaseModel):
+    email: str | None = None
+    phone: str | None = None
+    full_name: str | None = None
+    display_name: str | None = None
+    company_name: str | None = None
+    role: str | None = None
+    is_active: bool | None = None
+
+
+class AdminUserCreateResultOut(BaseModel):
+    user: AdminUserOut
+    generated_password: str | None = None
+
+
+class AdminPasswordResetOut(BaseModel):
+    new_password: str
+
+
+class CustomsCalcConfigOut(BaseModel):
+    config_yaml: str
+    util_coefficients_individual: str | None = None
+    util_coefficients_company: str | None = None
+    updated_at: datetime | None = None
+
+
+class CustomsCalcConfigIn(BaseModel):
+    config_yaml: str
+    util_coefficients_individual: str | None = None
+    util_coefficients_company: str | None = None
+
+
+class UtilCoeffDefaultsOut(BaseModel):
+    individual: str
+    company: str
+
+
+class CustomsCalcEstimateIn(BaseModel):
+    age: str = Field(..., description="new|1-3|3-5|5-7|over_7")
+    engine_capacity: int = Field(..., ge=50, le=20000)
+    engine_type: str = Field(..., description="gasoline|diesel|electric|hybrid")
+    power: int = Field(..., ge=1, le=3000)
+    price: float = Field(..., gt=0, le=1_000_000_000)
+    owner_type: str = Field(..., description="individual|company")
+    currency: str = Field(..., min_length=3, max_length=3)
+
+
+class CustomsCalcEtcContext(BaseModel):
+    """Расшифровка ETC: для физлица — пошлина по возрасту и утилизация; для юрлица — справка по YAML."""
+
+    age: str
+    engine_type: str
+    engine_capacity_cc: int
+    customs_value_rub: float | None = None
+    customs_value_eur: float | None = None
+    duty_mode: str = ""
+    duty_percent: float | None = None
+    duty_min_eur_per_cc: float | None = None
+    rate_per_cc_eur: float | None = None
+    duty_rub: float | None = None
+    utilization_fee_rub: float | None = None
+    recycling_fee_rub: float | None = None
+    clearance_fee_rub: float | None = None
+    util_fee_rub: float | None = None
+    utilization_mode: str | None = Field(
+        default=None,
+        description="Как считался утилизационный сбор: flat_le_hp, high_hp_scaled_by_cc, …",
+    )
+    hint: str = Field(
+        default="",
+        description="Подсказка по конфигу или режиму расчёта.",
+    )
+
+
+class CustomsCalcSummary(BaseModel):
+    """Краткая разбивка для витрины: оформление, пошлина, утилизация, итого."""
+
+    clearance_fee_rub: float = Field(..., description="Таможенное оформление (сбор), ₽")
+    duty_rub: float = Field(..., description="Таможенная пошлина (для юрлица при необходимости включает акциз и НДС в одной сумме)")
+    utilization_fee_rub: float = Field(..., description="Утилизационный сбор, ₽")
+    total_rub: float = Field(..., description="Итого к уплате (оценка), ₽")
+
+
+class CustomsCalcEstimateOut(BaseModel):
+    etc: dict
+    ctp: dict
+    disclaimer: str
+    primary_mode: str = Field(
+        default="etc",
+        description="Какой блок ориентировать на выбранный тип ввоза: etc (физлицо) или ctp (юрлицо).",
+    )
+    calculation_note: str = Field(
+        default="",
+        description="Кратко: что изменено относительно сырого tks-api (ступени сбора, физлицо).",
+    )
+    etc_context: CustomsCalcEtcContext | None = Field(
+        default=None,
+        description="Расшифровка ETC: возраст, ставка из конфига, компоненты — чтобы было видно, что возраст учтён.",
+    )
+    summary: CustomsCalcSummary | None = Field(
+        default=None,
+        description="Упрощённая разбивка платежей для пользователя.",
+    )
+
+
 class ModelWhitelistItem(BaseModel):
     model_id: int
     enabled: bool
@@ -279,6 +414,10 @@ class ParseJobOut(BaseModel):
     total_updated: int
     total_errors: int
     message: str
+    import_model_id: int | None = None
+    """Для type=import_one — модель в справочнике."""
+    import_detail_url: str | None = None
+    """Для type=import_one — исходная ссылка на объявление che168."""
 
     class Config:
         from_attributes = True

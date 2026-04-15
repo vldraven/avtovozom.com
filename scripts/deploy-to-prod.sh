@@ -25,6 +25,7 @@ rsync -avz \
   --exclude '__pycache__/' \
   --exclude '*.pyc' \
   --exclude '.env' \
+  --exclude 'backups/' \
   --exclude 'media/' \
   --exclude '.cursor/' \
   --exclude '.DS_Store' \

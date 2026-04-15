@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 function ChevronDown({ open }) {
   return (
@@ -39,14 +39,36 @@ export default function SiteSelectDropdown({
   className = "",
   toolbarIcon,
   ariaLabel,
+  searchable = false,
 }) {
   const autoId = useId();
   const baseId = id ?? `site-dd-${autoId}`;
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const rootRef = useRef(null);
+  const searchInputRef = useRef(null);
 
   const selected = options.find((o) => String(o.value) === String(value));
   const displayLabel = selected?.label ?? placeholder;
+
+  const filteredOptions = useMemo(() => {
+    if (!searchable) return options;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => String(o.label).toLowerCase().includes(q));
+  }, [options, searchQuery, searchable]);
+
+  useEffect(() => {
+    if (!open) setSearchQuery("");
+  }, [open]);
+
+  useEffect(() => {
+    if (open && searchable && searchInputRef.current) {
+      const t = setTimeout(() => searchInputRef.current?.focus(), 0);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [open, searchable]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -131,28 +153,49 @@ export default function SiteSelectDropdown({
           role="listbox"
           aria-label={ariaLabel ?? label ?? "Варианты"}
         >
-          {options.map((opt) => {
-            const isSelected = String(opt.value) === String(value);
-            return (
-              <li key={`${String(opt.value)}-${opt.label}`} role="presentation">
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  className={`site-dropdown__option${isSelected ? " site-dropdown__option--active" : ""}`}
-                  onClick={() => {
-                    onChange(opt.value);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="site-dropdown__check" aria-hidden>
-                    {isSelected ? "✓" : ""}
-                  </span>
-                  <span className="site-dropdown__option-text">{opt.label}</span>
-                </button>
-              </li>
-            );
-          })}
+          {searchable ? (
+            <li className="site-dropdown__search-row" role="presentation">
+              <input
+                ref={searchInputRef}
+                type="search"
+                className="site-dropdown__search-input"
+                placeholder="Поиск…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="Поиск по списку"
+              />
+            </li>
+          ) : null}
+          {filteredOptions.length === 0 ? (
+            <li className="site-dropdown__empty" role="presentation">
+              Ничего не найдено
+            </li>
+          ) : (
+            filteredOptions.map((opt) => {
+              const isSelected = String(opt.value) === String(value);
+              return (
+                <li key={`${String(opt.value)}-${opt.label}`} role="presentation">
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    className={`site-dropdown__option${isSelected ? " site-dropdown__option--active" : ""}`}
+                    onClick={() => {
+                      onChange(opt.value);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="site-dropdown__check" aria-hidden>
+                      {isSelected ? "✓" : ""}
+                    </span>
+                    <span className="site-dropdown__option-text">{opt.label}</span>
+                  </button>
+                </li>
+              );
+            })
+          )}
         </ul>
       ) : null}
     </div>

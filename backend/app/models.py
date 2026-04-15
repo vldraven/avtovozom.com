@@ -95,6 +95,19 @@ class ModelWhitelist(Base):
     model = relationship("CarModel")
 
 
+class CustomsCalcSettings(Base):
+    __tablename__ = "customs_calc_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    config_yaml: Mapped[str] = mapped_column(Text, nullable=False)
+    # JSON-текст: коэффициенты УС (ПП № 1291), редактируются в админке; если NULL — только встроенные/YAML-значения.
+    util_coefficients_individual: Mapped[str | None] = mapped_column(Text, nullable=True)
+    util_coefficients_company: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class Car(Base):
     __tablename__ = "cars"
 
