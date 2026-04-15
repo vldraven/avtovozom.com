@@ -919,6 +919,15 @@ a:hover {
   color: var(--color-accent);
 }
 
+button.detail-back {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
 .detail-hero {
   margin-bottom: 1.5rem;
 }

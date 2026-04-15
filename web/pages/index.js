@@ -61,10 +61,22 @@ export default function Home() {
     );
   }, [catalogBrands]);
 
-  const BRANDS_COLLAPSED = 30;
+  const BRANDS_COLLAPSED_DESKTOP = 30;
+  const BRANDS_COLLAPSED_MOBILE = 14;
+  const [isMobileBrandsLayout, setIsMobileBrandsLayout] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const apply = () => setIsMobileBrandsLayout(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  const brandsCollapsedLimit = isMobileBrandsLayout ? BRANDS_COLLAPSED_MOBILE : BRANDS_COLLAPSED_DESKTOP;
   const visibleBrands = brandsExpanded
     ? sortedBrands
-    : sortedBrands.slice(0, BRANDS_COLLAPSED);
+    : sortedBrands.slice(0, brandsCollapsedLimit);
 
   const parserAdminBrandNames = useMemo(() => {
     const names = [...new Set(whitelistCatalog.map((r) => r.brand))];
@@ -666,7 +678,7 @@ export default function Home() {
                   </button>
                 ))}
               </div>
-              {sortedBrands.length > BRANDS_COLLAPSED ? (
+              {sortedBrands.length > brandsCollapsedLimit ? (
                 <button
                   type="button"
                   className="brands-compact-more"

@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import Breadcrumbs from "./Breadcrumbs";
 import CarPhotoLightbox from "./CarPhotoLightbox";
@@ -230,14 +230,30 @@ export default function CarDetailView({
     return () => window.removeEventListener("keydown", onKey);
   }, [nPhotos]);
 
+  const catalogFallbackHref = useMemo(() => {
+    if (!car) return "/catalog";
+    if (car.brand_slug && car.model_slug) {
+      return `/catalog/${car.brand_slug}/${car.model_slug}`;
+    }
+    return "/catalog";
+  }, [car]);
+
+  const handleBack = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.length <= 1) {
+      router.push(catalogFallbackHref);
+      return;
+    }
+    router.back();
+  }, [router, catalogFallbackHref]);
+
   if (error) {
     return (
       <div className="layout">
         <main className="site-main">
           <div className="container">
-            <Link href="/catalog" className="detail-back">
-              ← Каталог
-            </Link>
+            <button type="button" className="detail-back" onClick={handleBack}>
+              ← Назад
+            </button>
             <p>
               <strong>{error}</strong>
             </p>
@@ -252,9 +268,9 @@ export default function CarDetailView({
       <div className="layout">
         <main className="site-main">
           <div className="container">
-            <Link href="/catalog" className="detail-back">
-              ← Каталог
-            </Link>
+            <button type="button" className="detail-back" onClick={handleBack}>
+              ← Назад
+            </button>
             <p className="muted">Загрузка…</p>
           </div>
         </main>
@@ -374,9 +390,9 @@ export default function CarDetailView({
               ]}
             />
           )}
-          <Link href="/catalog" className="detail-back">
-            ← Каталог
-          </Link>
+          <button type="button" className="detail-back" onClick={handleBack}>
+            ← Назад
+          </button>
 
           <div className="detail-hero">
             <h1 className="detail-title">{car.title}</h1>
