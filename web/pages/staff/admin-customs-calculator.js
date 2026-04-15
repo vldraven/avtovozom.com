@@ -71,7 +71,7 @@ export default function AdminCustomsCalculatorPage() {
     setUpdatedAt(body.updated_at || "");
   }, []);
 
-  async function loadUtilDefaults(which) {
+  async function loadUtilDefaults(audience) {
     setError("");
     setMessage("");
     try {
@@ -83,24 +83,19 @@ export default function AdminCustomsCalculatorPage() {
         setError(parseApiError(body) || "Не удалось загрузить таблицы по умолчанию.");
         return;
       }
-      if (which === "individual" || which === "both") {
+      if (audience === "individual") {
         setUtilIndividual(body.individual || "");
-      }
-      if (which === "company" || which === "both") {
+      } else {
         setUtilCompany(body.company || "");
       }
-      setMessage(
-        which === "both"
-          ? "Подставлены встроенные коэффициенты для физлиц и юрлиц (сохраните, чтобы записать в БД)."
-          : "Подставлены встроенные коэффициенты (сохраните, чтобы записать в БД)."
-      );
+      setMessage("Подставлены встроенные коэффициенты. Сохраните, чтобы записать в БД.");
     } catch {
       setError("Сеть: не удалось загрузить таблицы по умолчанию.");
     }
   }
 
   function loadBuiltInForCurrentUtil() {
-    loadUtilDefaults(utilAudience === "individual" ? "individual" : "company");
+    loadUtilDefaults(utilAudience);
   }
 
   async function saveConfig() {
@@ -167,7 +162,15 @@ export default function AdminCustomsCalculatorPage() {
       <main className="site-main">
         <div className="container" style={{ maxWidth: 900 }}>
           <p className="muted" style={{ marginBottom: "0.5rem" }}>
-            <Link href="/profile">← Профиль</Link>
+            <Link href="/profile#admin-settings">← В профиль</Link>
+            <span aria-hidden> · </span>
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="admin-calc-back"
+            >
+              Назад
+            </button>
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: "0.75rem" }}>
             <h1 className="section-title" style={{ marginBottom: 0 }}>
@@ -231,15 +234,9 @@ export default function AdminCustomsCalculatorPage() {
                   Юрлица
                 </button>
               </div>
-              <p className="muted" style={{ fontSize: "0.92rem", marginBottom: "1rem", lineHeight: 1.45 }}>
-                Пустой набор — на сайте действуют встроенные коэффициенты из кода. «Загрузить из БД» отменит несохранённые правки.
-              </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: "1rem" }}>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={loadBuiltInForCurrentUtil}>
                   Подставить встроенные ({utilAudience === "individual" ? "физлица" : "юрлица"})
-                </button>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadUtilDefaults("both")}>
-                  Подставить оба набора
                 </button>
               </div>
               {utilAudience === "individual" ? (

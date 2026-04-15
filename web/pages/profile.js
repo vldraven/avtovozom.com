@@ -315,7 +315,7 @@ export default function ProfilePage() {
               )}
 
               {isAdminRole(me.role) && (
-                <section className="panel">
+                <section className="panel" id="admin-settings">
                   <h2 className="section-title panel-heading-sm">Управление учётными записями</h2>
                   <p className="muted section-title--flush-top">
                     Список пользователей, создание, редактирование и сброс пароля.
@@ -325,7 +325,7 @@ export default function ProfilePage() {
                   </Link>
                   <div style={{ marginTop: "0.65rem" }}>
                     <Link href="/staff/admin-customs-calculator" className="btn btn-secondary btn-inline">
-                      Настройки калькулятора растаможки
+                      Редактировать коэффициенты
                     </Link>
                   </div>
                 </section>

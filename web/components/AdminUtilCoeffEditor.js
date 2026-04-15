@@ -8,26 +8,6 @@ const ICE_BANDS = [
   { key: "3501", label: "свыше 3500 см³" },
 ];
 
-function emptyPayload(mode) {
-  const base = {
-    version: 1,
-    util_ice_coeff_schedule: "2026-01",
-    util_recycling_base_rub: 20000,
-    util_ice_power_stairs: {},
-    util_ev_power_stairs: {},
-  };
-  if (mode === "individual") {
-    base.util_hp_threshold = 160;
-    base.util_under_3_le_hp = 3400;
-    base.util_over_3_le_hp = 5200;
-    base.util_ev_preferential_hp_max = 80;
-    base.util_electric_coeff_schedule = "2026-01";
-  } else {
-    base.util_electric_coeff_schedule = "2026-01";
-  }
-  return base;
-}
-
 function parseJson(raw) {
   const s = (raw || "").trim();
   if (!s) return { ok: true, data: null, error: null };
@@ -364,12 +344,9 @@ export default function AdminUtilCoeffEditor({ value, onChange, mode }) {
 
   if (!parsed.data) {
     return (
-      <div>
-        <p className="muted" style={{ marginBottom: "0.75rem" }}>Нет данных — подставьте встроенные или начните с пустого шаблона.</p>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onChange(stringifyPayload(emptyPayload(mode)))}>
-          Пустой шаблон
-        </button>
-      </div>
+      <p className="muted" style={{ marginBottom: 0 }}>
+        Нет сохранённых коэффициентов. Нажмите «Подставить встроенные» над этим блоком или введите данные во вкладке JSON.
+      </p>
     );
   }
 
