@@ -1297,6 +1297,8 @@ a:hover {
   margin-top: 0.15rem;
   color: #64748b;
   font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .price-breakdown-card__amount {
