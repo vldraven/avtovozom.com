@@ -1,9 +1,11 @@
+import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
 import { publicCarHref } from "../../lib/carRoutes";
 import { mediaSrc } from "../../lib/media";
+import { absoluteUrl } from "../../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -48,8 +50,26 @@ export default function DealerPublicPage() {
     };
   }, [router.isReady, id]);
 
+  const dealerIdStr = router.isReady && id != null ? String(Array.isArray(id) ? id[0] : id) : "";
+
   return (
     <div className="layout">
+      {data && !error && dealerIdStr ? (
+        <Head>
+          <title>{`${data.headline} — дилер | avtovozom`}</title>
+          <meta
+            name="description"
+            content={`Профиль дилера на avtovozom: ${data.listings_total} объявлений в каталоге.`}
+          />
+          <link rel="canonical" href={absoluteUrl(`/dealers/${dealerIdStr}`)} />
+          <meta property="og:title" content={`${data.headline} — дилер`} />
+          <meta
+            property="og:description"
+            content={`Объявления дилера в каталоге avtovozom (${data.listings_total}).`}
+          />
+          <meta property="og:url" content={absoluteUrl(`/dealers/${dealerIdStr}`)} />
+        </Head>
+      ) : null}
       <header className="site-header">
         <div className="container site-header__inner">
           <div className="site-header__brand">

@@ -1,3 +1,4 @@
+import Head from "next/head";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -13,6 +14,7 @@ import RequestConfirmModal from "../../components/RequestConfirmModal";
 import { clearToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
 import { canCreateListings } from "../../lib/roles";
+import { absoluteUrl } from "../../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -315,6 +317,42 @@ export default function CatalogTreePage() {
     return items;
   }, [brand, model, generation]);
 
+  const catalogCanon = useMemo(() => {
+    if (segments == null || segments.length === 0) return "/catalog";
+    return `/catalog/${segments.join("/")}`;
+  }, [segments]);
+
+  const catalogSeo = useMemo(() => {
+    if (unknownSlug) {
+      return {
+        title: "Раздел не найден — avtovozom",
+        desc: "Проверьте адрес каталога или вернитесь к списку марок.",
+      };
+    }
+    if (generation && brand && model) {
+      return {
+        title: `${brand.name} ${model.name} ${generation.name} — авто из Китая | avtovozom`,
+        desc: `Объявления ${brand.name} ${model.name}, поколение ${generation.name}. Доставка из Китая в Россию.`,
+      };
+    }
+    if (model && brand) {
+      return {
+        title: `${brand.name} ${model.name} — купить из Китая | avtovozom`,
+        desc: `Каталог ${brand.name} ${model.name}: цены, расчёт под ключ до РФ.`,
+      };
+    }
+    if (brand) {
+      return {
+        title: `${brand.name} — автомобили из Китая | avtovozom`,
+        desc: `Модели ${brand.name}: подбор, доставка и растаможка автомобиля из Китая.`,
+      };
+    }
+    return {
+      title: "Каталог автомобилей из Китая | avtovozom",
+      desc: "Подбор марок и моделей, цены, доставка в Россию и сопровождение сделки.",
+    };
+  }, [unknownSlug, brand, model, generation]);
+
   if (!router.isReady) {
     return (
       <div className="layout">
@@ -343,6 +381,14 @@ export default function CatalogTreePage() {
 
   return (
     <div className="layout">
+      <Head>
+        <title>{catalogSeo.title}</title>
+        <meta name="description" content={catalogSeo.desc} />
+        <link rel="canonical" href={absoluteUrl(catalogCanon)} />
+        <meta property="og:title" content={catalogSeo.title} />
+        <meta property="og:description" content={catalogSeo.desc} />
+        <meta property="og:url" content={absoluteUrl(catalogCanon)} />
+      </Head>
       <header className="site-header">
         <div className="container site-header__inner">
           <div className="site-header__brand">

@@ -1,3 +1,4 @@
+import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
@@ -10,6 +11,8 @@ import RequestConfirmModal from "./RequestConfirmModal";
 import { clearToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
+import { absoluteUrl } from "../lib/siteUrl";
+import { seoDescription } from "../lib/seoText";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -259,8 +262,54 @@ export default function CarDetailView({
     );
   }
 
+  const canonicalPath = publicCarHref(car);
+  const canonical = absoluteUrl(canonicalPath);
+  const metaDesc = seoDescription(
+    car.description || `${car.brand} ${car.model}, ${car.year} год — цена в ¥, доставка в Россию.`
+  );
+  const ogImage = hero?.storage_url ? mediaSrc(hero.storage_url) : "";
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Vehicle",
+    name: car.title,
+    brand: { "@type": "Brand", name: car.brand },
+    model: car.model,
+    ...(car.year ? { modelDate: `${car.year}-01-01` } : {}),
+    ...(ogImage ? { image: [ogImage] } : {}),
+    ...(car.price_breakdown?.total_rub != null
+      ? {
+          offers: {
+            "@type": "Offer",
+            priceCurrency: "RUB",
+            price: Math.round(Number(car.price_breakdown.total_rub)),
+            availability: "https://schema.org/InStock",
+            url: canonical,
+          },
+        }
+      : {}),
+  };
+
   return (
-    <div className="layout">
+    <>
+      <Head>
+        <title>{`${car.title} — купить из Китая | avtovozom`}</title>
+        <meta name="description" content={metaDesc} />
+        <link rel="canonical" href={canonical} />
+        <meta property="og:type" content="product" />
+        <meta property="og:title" content={car.title} />
+        <meta property="og:description" content={metaDesc} />
+        <meta property="og:url" content={canonical} />
+        {ogImage ? <meta property="og:image" content={ogImage} /> : null}
+        <meta name="twitter:title" content={car.title} />
+        <meta name="twitter:description" content={metaDesc} />
+        {ogImage ? <meta name="twitter:image" content={ogImage} /> : null}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </Head>
+      <div className="layout">
       <header className="site-header">
         <div className="container site-header__inner">
           <div className="site-header__brand">
@@ -660,5 +709,6 @@ export default function CarDetailView({
         </div>
       </main>
     </div>
+    </>
   );
 }

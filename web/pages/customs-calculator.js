@@ -1,6 +1,8 @@
+import Head from "next/head";
 import Link from "next/link";
 import { useState } from "react";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
+import { absoluteUrl } from "../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const CURRENCY_OPTIONS = [
@@ -103,6 +105,20 @@ export default function CustomsCalculatorPage() {
 
   return (
     <div className="layout">
+      <Head>
+        <title>Калькулятор растаможки авто из Китая | avtovozom</title>
+        <meta
+          name="description"
+          content="Оценка таможенных платежей и утильсбора для ввоза автомобиля в РФ: физлицо и юрлицо, курс и ставки."
+        />
+        <link rel="canonical" href={absoluteUrl("/customs-calculator")} />
+        <meta property="og:title" content="Калькулятор растаможки авто из Китая | avtovozom" />
+        <meta
+          property="og:description"
+          content="Оценка таможенных платежей и утильсбора для ввоза автомобиля в РФ."
+        />
+        <meta property="og:url" content={absoluteUrl("/customs-calculator")} />
+      </Head>
       <header className="site-header">
         <div className="container site-header__inner">
           <Link href="/" className="site-logo">

@@ -1,3 +1,4 @@
+import Head from "next/head";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -12,6 +13,7 @@ import RequestConfirmModal from "../components/RequestConfirmModal";
 import { clearToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { canCreateListings, isStaffRole } from "../lib/roles";
+import { absoluteUrl } from "../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -505,7 +507,22 @@ export default function Home() {
   }, [token, latestParserJob?.id, latestParserJob?.status]);
 
   return (
-    <div className="layout">
+    <>
+      <Head>
+        <title>avtovozom — автомобили из Китая в Россию</title>
+        <meta
+          name="description"
+          content="Каталог автомобилей из Китая: подбор марки и модели, цена в юанях, ориентировочная цена в России, доставка и растаможка."
+        />
+        <link rel="canonical" href={absoluteUrl("/")} />
+        <meta property="og:title" content="avtovozom — автомобили из Китая в Россию" />
+        <meta
+          property="og:description"
+          content="Каталог автомобилей из Китая: подбор марки и модели, цена в юанях, ориентировочная цена в России, доставка и растаможка."
+        />
+        <meta property="og:url" content={absoluteUrl("/")} />
+      </Head>
+      <div className="layout">
       <header className="site-header">
         <div className="container site-header__inner">
           <div className="site-header__brand">
@@ -1009,5 +1026,6 @@ export default function Home() {
         </div>
       </main>
     </div>
+    </>
   );
 }
