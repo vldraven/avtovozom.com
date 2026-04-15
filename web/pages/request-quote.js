@@ -15,6 +15,34 @@ function parseApiDetail(body) {
   return null;
 }
 
+/** Только цифры: 7 и до 10 цифр номера (макс. 11 символов). */
+function normalizeRuPhoneDigits(raw) {
+  let d = String(raw).replace(/\D/g, "");
+  if (!d) return "";
+  if (d[0] === "8") d = "7" + d.slice(1);
+  if (d[0] === "9") d = "7" + d;
+  if (d[0] !== "7") return "";
+  return d.slice(0, 11);
+}
+
+/** Маска: +7 (999) 123-45-67 */
+function formatRuPhoneMask(digits) {
+  if (!digits) return "";
+  const r = digits.slice(1);
+  if (r.length === 0) return "+7 ";
+  if (r.length <= 3) return "+7 (" + r + (r.length === 3 ? ") " : "");
+  let out = "+7 (" + r.slice(0, 3) + ") " + r.slice(3, 6);
+  if (r.length <= 6) return out;
+  out += "-" + r.slice(6, 8);
+  if (r.length <= 8) return out;
+  return out + "-" + r.slice(8, 10);
+}
+
+function phoneDigitsToApi(digits) {
+  if (!digits) return "";
+  return digits.startsWith("7") ? `+${digits}` : digits;
+}
+
 export default function RequestQuotePage() {
   const router = useRouter();
   const rawCar = router.query.car_id;
@@ -29,7 +57,7 @@ export default function RequestQuotePage() {
   const [loadError, setLoadError] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phoneDigits, setPhoneDigits] = useState("");
   const [comment, setComment] = useState(
     "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки."
   );
@@ -63,7 +91,7 @@ export default function RequestQuotePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
-          phone: phone.trim(),
+          phone: phoneDigitsToApi(phoneDigits).trim(),
           full_name: fullName.trim(),
           car_id: Number(carId),
           comment: comment.trim(),
@@ -225,9 +253,11 @@ export default function RequestQuotePage() {
                 <input
                   className="input"
                   type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+7…"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  value={formatRuPhoneMask(phoneDigits)}
+                  onChange={(e) => setPhoneDigits(normalizeRuPhoneDigits(e.target.value))}
+                  placeholder="+7 (999) 123-45-67"
                 />
               </label>
               <label className="muted form-label">
