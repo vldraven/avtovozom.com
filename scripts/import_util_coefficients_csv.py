@@ -77,6 +77,29 @@ def split_row(line: str) -> list[str]:
     return [p.strip().strip('"') for p in parts]
 
 
+def detect_k_columns(header_cells: list[str]) -> tuple[int, int] | None:
+    """
+    Возвращает индексы колонок K для 0-3 и 3-5 лет.
+    Поддерживает:
+      - старый формат: ...; Ставка; 0-3 лет; Ставка; 3-5 лет
+      - новый формат: ...; Ставка 0-3; Ставка 3-5
+    """
+    if not header_cells:
+        return None
+    lowered = [c.lower().replace("ё", "е").strip() for c in header_cells]
+    i_u3: int | None = None
+    i_o3: int | None = None
+    for i, c in enumerate(lowered):
+        if i_u3 is None and ("0-3" in c or "0–3" in c):
+            # В старом формате рядом слева стоит "Ставка"
+            i_u3 = i - 1 if i > 0 and "ставка" in lowered[i - 1] else i
+        if i_o3 is None and ("3-5" in c or "3–5" in c):
+            i_o3 = i - 1 if i > 0 and "ставка" in lowered[i - 1] else i
+    if i_u3 is None or i_o3 is None:
+        return None
+    return int(i_u3), int(i_o3)
+
+
 def parse_util_csv(path: Path) -> tuple[list[list[Any]], list[list[Any]], dict[str, list[list[Any]]], dict[str, list[list[Any]]]]:
     text = path.read_text(encoding="utf-8-sig")
     ev_u3: list[list[Any]] = []
@@ -84,6 +107,8 @@ def parse_util_csv(path: Path) -> tuple[list[list[Any]], list[list[Any]], dict[s
     ice_u3: dict[str, list[list[Any]]] = {}
     ice_o3: dict[str, list[list[Any]]] = {}
     current: str | None = None
+    k_col_u3 = 2
+    k_col_o3 = 4
 
     for raw in text.splitlines():
         cells = split_row(raw)
@@ -91,6 +116,11 @@ def parse_util_csv(path: Path) -> tuple[list[list[Any]], list[list[Any]], dict[s
             continue
         c0 = (cells[0] or "").strip()
         cl = c0.lower()
+        if cl.startswith("квт"):
+            detected = detect_k_columns(cells)
+            if detected:
+                k_col_u3, k_col_o3 = detected
+            continue
         if "ев " in cl or cl.startswith("ev "):
             current = "ev"
             continue
@@ -102,11 +132,9 @@ def parse_util_csv(path: Path) -> tuple[list[list[Any]], list[list[Any]], dict[s
             continue
         if current is None:
             continue
-        if cl.startswith("квт"):
+        if len(cells) <= max(k_col_u3, k_col_o3):
             continue
-        if len(cells) < 5:
-            continue
-        k_u3, k_o3 = norm_num(cells[2]), norm_num(cells[4])
+        k_u3, k_o3 = norm_num(cells[k_col_u3]), norm_num(cells[k_col_o3])
         if k_u3 is None or k_o3 is None:
             continue
         hp = parse_ls_upper(cells[1])

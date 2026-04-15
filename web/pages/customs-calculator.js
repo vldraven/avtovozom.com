@@ -1,7 +1,31 @@
 import Link from "next/link";
 import { useState } from "react";
+import SiteSelectDropdown from "../components/SiteSelectDropdown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const CURRENCY_OPTIONS = [
+  { value: "USD", label: "USD" },
+  { value: "EUR", label: "EUR" },
+  { value: "CNY", label: "CNY" },
+  { value: "RUB", label: "RUB" },
+];
+const ENGINE_TYPE_OPTIONS = [
+  { value: "gasoline", label: "Бензин" },
+  { value: "diesel", label: "Дизель" },
+  { value: "electric", label: "Электро" },
+  { value: "hybrid", label: "Гибрид" },
+];
+const AGE_OPTIONS = [
+  { value: "new", label: "Новый" },
+  { value: "1-3", label: "1–3 года" },
+  { value: "3-5", label: "3–5 лет" },
+  { value: "5-7", label: "5–7 лет" },
+  { value: "over_7", label: "Старше 7 лет" },
+];
+const OWNER_OPTIONS = [
+  { value: "individual", label: "Физлицо" },
+  { value: "company", label: "Юрлицо" },
+];
 
 function parseApiError(body) {
   if (!body || typeof body !== "object") return "";
@@ -24,9 +48,23 @@ export default function CustomsCalculatorPage() {
     age: "5-7",
     owner_type: "individual",
   });
+
+  const isElectric = form.engine_type === "electric";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+
+  function onEngineTypeChange(t) {
+    setForm((p) => {
+      if (t === "electric") {
+        return { ...p, engine_type: t, engine_capacity: "0" };
+      }
+      if (p.engine_type === "electric" && (p.engine_capacity === "0" || p.engine_capacity === "")) {
+        return { ...p, engine_type: t, engine_capacity: "2000" };
+      }
+      return { ...p, engine_type: t };
+    });
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -80,9 +118,6 @@ export default function CustomsCalculatorPage() {
       <main className="site-main">
         <div className="container" style={{ maxWidth: 560 }}>
           <h1 className="section-title">Калькулятор растаможки</h1>
-          <p className="muted" style={{ marginTop: "-0.35rem", marginBottom: "1rem", fontSize: "0.95rem", lineHeight: 1.45 }}>
-            Ориентировочный расчёт для сравнения вариантов. Окончательные суммы определяет таможня.
-          </p>
           <form className="panel form-stack" onSubmit={submit}>
             <div className="profile-field-grid">
               <label className="form-label">
@@ -97,43 +132,41 @@ export default function CustomsCalculatorPage() {
                   required
                 />
               </label>
-              <label className="form-label">
-                Валюта
-                <select
-                  className="input"
+              <div className="form-label">
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="Валюта"
                   value={form.currency}
-                  onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
-                >
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="CNY">CNY</option>
-                  <option value="RUB">RUB</option>
-                </select>
-              </label>
+                  onChange={(v) => setForm((p) => ({ ...p, currency: String(v) }))}
+                  options={CURRENCY_OPTIONS}
+                />
+              </div>
               <label className="form-label">
-                Объём двигателя, см³
+                {isElectric ? "Объём ДВС, см³" : "Объём двигателя, см³"}
                 <input
                   className="input"
                   type="number"
-                  min="50"
+                  min={isElectric ? "0" : "50"}
+                  step="1"
                   value={form.engine_capacity}
                   onChange={(e) => setForm((p) => ({ ...p, engine_capacity: e.target.value }))}
                   required
                 />
+                {isElectric ? (
+                  <span className="muted" style={{ display: "block", marginTop: "0.35rem", fontSize: "0.88rem", lineHeight: 1.4 }}>
+                    Для электромобиля рабочего объёма ДВС нет — укажите 0. Поле нужно для бензина, дизеля и гибрида.
+                  </span>
+                ) : null}
               </label>
-              <label className="form-label">
-                Тип двигателя
-                <select
-                  className="input"
+              <div className="form-label">
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="Тип двигателя"
                   value={form.engine_type}
-                  onChange={(e) => setForm((p) => ({ ...p, engine_type: e.target.value }))}
-                >
-                  <option value="gasoline">Бензин</option>
-                  <option value="diesel">Дизель</option>
-                  <option value="electric">Электро</option>
-                  <option value="hybrid">Гибрид</option>
-                </select>
-              </label>
+                  onChange={(v) => onEngineTypeChange(String(v))}
+                  options={ENGINE_TYPE_OPTIONS}
+                />
+              </div>
               <label className="form-label">
                 Мощность, л.с.
                 <input
@@ -145,27 +178,24 @@ export default function CustomsCalculatorPage() {
                   required
                 />
               </label>
-              <label className="form-label">
-                Возраст авто
-                <select className="input" value={form.age} onChange={(e) => setForm((p) => ({ ...p, age: e.target.value }))}>
-                  <option value="new">Новый</option>
-                  <option value="1-3">1–3 года</option>
-                  <option value="3-5">3–5 лет</option>
-                  <option value="5-7">5–7 лет</option>
-                  <option value="over_7">Старше 7 лет</option>
-                </select>
-              </label>
-              <label className="form-label">
-                Кто ввозит
-                <select
-                  className="input"
+              <div className="form-label">
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="Возраст авто"
+                  value={form.age}
+                  onChange={(v) => setForm((p) => ({ ...p, age: String(v) }))}
+                  options={AGE_OPTIONS}
+                />
+              </div>
+              <div className="form-label">
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="Кто ввозит"
                   value={form.owner_type}
-                  onChange={(e) => setForm((p) => ({ ...p, owner_type: e.target.value }))}
-                >
-                  <option value="individual">Физлицо</option>
-                  <option value="company">Юрлицо</option>
-                </select>
-              </label>
+                  onChange={(v) => setForm((p) => ({ ...p, owner_type: String(v) }))}
+                  options={OWNER_OPTIONS}
+                />
+              </div>
             </div>
             <button type="submit" className="btn btn-primary" disabled={busy}>
               {busy ? "Считаем…" : "Рассчитать"}

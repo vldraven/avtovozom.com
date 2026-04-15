@@ -147,14 +147,98 @@ function IceBandTable({ title, rows, onChange, columnLabel }) {
   );
 }
 
-function EvStairsEditor({ rowsU3, rowsO3, onChangeU3, onChangeO3, nested }) {
-  if (nested) {
-    return (
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-        <IceBandTable title="0–3 лет" rows={rowsU3} onChange={onChangeU3} columnLabel="K" />
-        <IceBandTable title="3–5 лет" rows={rowsO3} onChange={onChangeO3} columnLabel="K" />
+function DualAgeTable({ title, rowsU3, rowsO3, onChange }) {
+  const u3 = Array.isArray(rowsU3) ? rowsU3 : [];
+  const o3 = Array.isArray(rowsO3) ? rowsO3 : [];
+  const merged = [];
+  const size = Math.max(u3.length, o3.length);
+  for (let i = 0; i < size; i += 1) {
+    const hp = Number(u3[i]?.[0] ?? o3[i]?.[0] ?? (i > 0 ? merged[i - 1][0] + 10 : 100));
+    const kU3 = Number(u3[i]?.[1] ?? 0);
+    const kO3 = Number(o3[i]?.[1] ?? 0);
+    merged.push([hp, kU3, kO3]);
+  }
+
+  const commit = (rows3) => {
+    const nextU3 = rows3.map((r) => [r[0], r[1]]);
+    const nextO3 = rows3.map((r) => [r[0], r[2]]);
+    onChange(nextU3, nextO3);
+  };
+
+  const updateRow = (idx, field, val) => {
+    const next = merged.map((r) => [...r]);
+    const num =
+      field === "hp"
+        ? parseInt(String(val).replace(/\s/g, ""), 10)
+        : parseFloat(String(val).replace(",", ".").replace(/\s/g, ""));
+    next[idx][field === "hp" ? 0 : field === "u3" ? 1 : 2] = Number.isFinite(num) ? num : 0;
+    commit(next);
+  };
+
+  const addRow = () => {
+    const lastHp = merged.length ? Number(merged[merged.length - 1][0]) : 100;
+    commit([...merged, [lastHp + 10, 0, 0]]);
+  };
+
+  const removeRow = (idx) => {
+    commit(merged.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div style={{ marginBottom: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>{title}</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={addRow}>
+          + строка
+        </button>
       </div>
-    );
+      <div style={{ overflowX: "auto" }}>
+        <table className="admin-util-table">
+          <thead>
+            <tr>
+              <th>л.с. до</th>
+              <th>K 0–3</th>
+              <th>K 3–5</th>
+              <th style={{ width: 56 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {merged.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="muted" style={{ padding: "0.5rem" }}>
+                  нет строк
+                </td>
+              </tr>
+            ) : (
+              merged.map((r, idx) => (
+                <tr key={idx}>
+                  <td>
+                    <input type="number" className="input input--table" value={r[0]} onChange={(e) => updateRow(idx, "hp", e.target.value)} />
+                  </td>
+                  <td>
+                    <input type="text" inputMode="decimal" className="input input--table" value={r[1]} onChange={(e) => updateRow(idx, "u3", e.target.value)} />
+                  </td>
+                  <td>
+                    <input type="text" inputMode="decimal" className="input input--table" value={r[2]} onChange={(e) => updateRow(idx, "o3", e.target.value)} />
+                  </td>
+                  <td>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeRow(idx)} title="Удалить">
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function EvStairsEditor({ rowsU3, rowsO3, onChangeU3, onChangeO3, onChangeDual, nested }) {
+  if (nested) {
+    return <DualAgeTable title="По мощности" rowsU3={rowsU3} rowsO3={rowsO3} onChange={onChangeDual} />;
   }
   return <IceBandTable title="По мощности" rows={rowsU3} onChange={onChangeU3} columnLabel="K" />;
 }
@@ -272,6 +356,25 @@ export default function AdminUtilCoeffEditor({ value, onChange, mode }) {
     commit(data);
   };
 
+  const updateIceBandDual = (bandKey, rowsU3, rowsO3) => {
+    if (!parsed.ok || !parsed.data) return;
+    const data = deepClone(parsed.data);
+    const schedIce = data.util_ice_coeff_schedule || "2026-01";
+    if (!data.util_ice_power_stairs) data.util_ice_power_stairs = {};
+    if (!data.util_ice_power_stairs[schedIce]) {
+      data.util_ice_power_stairs[schedIce] = { under_3: {}, from_3: {} };
+    }
+    const schedVal = data.util_ice_power_stairs[schedIce];
+    if (!isNestedIce(schedVal)) return;
+    schedVal.under_3[bandKey] = rowsU3;
+    schedVal.from_3[bandKey] = rowsO3;
+    data.util_ice_power_stairs[schedIce] = {
+      under_3: pruneIceBands(schedVal.under_3),
+      from_3: pruneIceBands(schedVal.from_3),
+    };
+    commit(data);
+  };
+
   const addIceBand = (bandKey) => {
     if (!parsed.ok || !parsed.data) return;
     const data = deepClone(parsed.data);
@@ -321,6 +424,21 @@ export default function AdminUtilCoeffEditor({ value, onChange, mode }) {
     } else {
       data.util_ev_power_stairs[sched] = rows;
     }
+    commit(data);
+  };
+
+  const updateEvStairsDual = (rowsU3, rowsO3) => {
+    if (!parsed.ok || !parsed.data) return;
+    const data = deepClone(parsed.data);
+    const sched = data.util_electric_coeff_schedule || data.util_ice_coeff_schedule || "2026-01";
+    if (!data.util_ev_power_stairs) data.util_ev_power_stairs = {};
+    if (!data.util_ev_power_stairs[sched]) {
+      data.util_ev_power_stairs[sched] = { under_3: [], from_3: [] };
+    }
+    const evVal = data.util_ev_power_stairs[sched];
+    if (!isNestedEv(evVal)) return;
+    evVal.under_3 = rowsU3;
+    evVal.from_3 = rowsO3;
     commit(data);
   };
 
@@ -484,20 +602,7 @@ export default function AdminUtilCoeffEditor({ value, onChange, mode }) {
                 </button>
               </div>
               {nested ? (
-                <div className="admin-util-editor__grid2">
-                  <IceBandTable
-                    title="0–3 лет"
-                    rows={u3}
-                    onChange={(rows) => updateIceBand(key, "u3", rows)}
-                    columnLabel="K"
-                  />
-                  <IceBandTable
-                    title="3–5 лет"
-                    rows={o3}
-                    onChange={(rows) => updateIceBand(key, "o3", rows)}
-                    columnLabel="K"
-                  />
-                </div>
+                <DualAgeTable title={`${label}`} rowsU3={u3} rowsO3={o3} onChange={(rowsUnder3, rowsFrom3) => updateIceBandDual(key, rowsUnder3, rowsFrom3)} />
               ) : (
                 <IceBandTable title="K" rows={flat} onChange={(rows) => updateIceBand(key, "flat", rows)} columnLabel="K" />
               )}
@@ -528,6 +633,7 @@ export default function AdminUtilCoeffEditor({ value, onChange, mode }) {
           rowsO3={isNestedEv(evSchedVal) ? evSchedVal.from_3 : []}
           onChangeU3={(rows) => updateEvStairs("u3", rows)}
           onChangeO3={(rows) => updateEvStairs("o3", rows)}
+          onChangeDual={(rowsUnder3, rowsFrom3) => updateEvStairsDual(rowsUnder3, rowsFrom3)}
         />
       </div>
 

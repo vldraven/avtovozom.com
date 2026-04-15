@@ -645,13 +645,13 @@ export default function CatalogTreePage() {
                                 </span>
                               </p>
                               <p className="catalog-card__price">
-                                {car.rub_china != null ? (
+                                {car.price_breakdown?.total_rub != null ? (
                                   <>
                                     <strong className="catalog-price-rub">
-                                      {Math.round(car.rub_china).toLocaleString("ru-RU")} ₽
+                                      {Math.round(car.price_breakdown.total_rub).toLocaleString("ru-RU")} ₽
                                     </strong>
                                     <span className="text-muted catalog-price-sub">
-                                      в Китае по ЦБ · {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
+                                      в России (расчётная)
                                     </span>
                                   </>
                                 ) : (

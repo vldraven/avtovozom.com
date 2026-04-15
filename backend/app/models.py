@@ -103,6 +103,8 @@ class CustomsCalcSettings(Base):
     # JSON-текст: коэффициенты УС (ПП № 1291), редактируются в админке; если NULL — только встроенные/YAML-значения.
     util_coefficients_individual: Mapped[str | None] = mapped_column(Text, nullable=True)
     util_coefficients_company: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # JSON-текст: дополнительные расходы для итоговой цены на карточке авто.
+    additional_expenses_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )

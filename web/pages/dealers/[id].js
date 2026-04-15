@@ -124,7 +124,9 @@ export default function DealerPublicPage() {
                               {c.brand} {c.model} · {c.year}
                             </div>
                             <div className="dealer-public-card__price">
-                              {c.rub_china != null ? formatRub(c.rub_china) : `${Math.round(c.price_cny)} ¥`}
+                              {c.price_breakdown?.total_rub != null
+                                ? `${formatRub(c.price_breakdown.total_rub)} (РФ)`
+                                : `${Math.round(c.price_cny)} ¥`}
                             </div>
                           </div>
                         </Link>

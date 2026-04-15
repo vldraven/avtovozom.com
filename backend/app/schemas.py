@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CarPhotoOut(BaseModel):
@@ -39,6 +39,21 @@ class CarPricingGuideOut(BaseModel):
     params_lines: list[str]
     calculator_links: list[FreeCalculatorLink]
     disclaimer: str
+
+
+class CarPriceBreakdownItemOut(BaseModel):
+    key: str
+    label: str
+    amount_rub: float
+    description: str = ""
+
+
+class CarPriceBreakdownOut(BaseModel):
+    total_rub: float
+    owner_type: str
+    age_group: str
+    engine_type_calc: str
+    components: list[CarPriceBreakdownItemOut]
 
 
 class CarOut(BaseModel):
@@ -78,6 +93,8 @@ class CarOut(BaseModel):
     """Цена в Китае в ₽ по курсу ЦБ (за 1 CNY см. cbr в списке или pricing_guide)."""
     pricing_guide: CarPricingGuideOut | None = None
     """Курс, сводка для калькуляторов и ссылки — только в GET /cars/{id}."""
+    price_breakdown: CarPriceBreakdownOut | None = None
+    """Ориентировочная детализация итоговой цены в РФ."""
 
 
 class CarsListOut(BaseModel):
@@ -305,6 +322,7 @@ class CustomsCalcConfigOut(BaseModel):
     config_yaml: str
     util_coefficients_individual: str | None = None
     util_coefficients_company: str | None = None
+    additional_expenses_json: str | None = None
     updated_at: datetime | None = None
 
 
@@ -312,6 +330,7 @@ class CustomsCalcConfigIn(BaseModel):
     config_yaml: str
     util_coefficients_individual: str | None = None
     util_coefficients_company: str | None = None
+    additional_expenses_json: str | None = None
 
 
 class UtilCoeffDefaultsOut(BaseModel):
@@ -321,12 +340,21 @@ class UtilCoeffDefaultsOut(BaseModel):
 
 class CustomsCalcEstimateIn(BaseModel):
     age: str = Field(..., description="new|1-3|3-5|5-7|over_7")
-    engine_capacity: int = Field(..., ge=50, le=20000)
+    engine_capacity: int = Field(..., ge=0, le=20000, description="Для электро допускается 0 (нет объёма ДВС).")
     engine_type: str = Field(..., description="gasoline|diesel|electric|hybrid")
     power: int = Field(..., ge=1, le=3000)
     price: float = Field(..., gt=0, le=1_000_000_000)
     owner_type: str = Field(..., description="individual|company")
     currency: str = Field(..., min_length=3, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_engine_capacity_for_type(self) -> "CustomsCalcEstimateIn":
+        et = (self.engine_type or "").strip().lower()
+        if et == "electric":
+            return self
+        if self.engine_capacity < 50:
+            raise ValueError("Для бензина, дизеля и гибрида укажите объём двигателя не менее 50 см³.")
+        return self
 
 
 class CustomsCalcEtcContext(BaseModel):

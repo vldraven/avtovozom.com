@@ -387,9 +387,15 @@ def run_estimate(
     try:
         calc = CustomsCalculator(cfg_path)
         _patch_calculator_currency_to_cbr(calc)
+        # tks ожидает ненулевой объём; для электро в форме допускается 0 (нет ДВС).
+        tks_capacity = (
+            max(1, int(payload.engine_capacity))
+            if str(payload.engine_type).lower().strip() == "electric"
+            else int(payload.engine_capacity)
+        )
         calc.set_vehicle_details(
             age=payload.age,
-            engine_capacity=payload.engine_capacity,
+            engine_capacity=tks_capacity,
             engine_type=payload.engine_type,
             power=payload.power,
             price=payload.price,

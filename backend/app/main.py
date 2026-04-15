@@ -38,6 +38,7 @@ from .models import (
     ChatMessage,
     DealerOffer,
     ModelWhitelist,
+    CustomsCalcSettings,
     ParseJob,
     Role,
     User,
@@ -52,6 +53,11 @@ from .media_storage import delete_car_photo_files, save_chat_attachment, save_up
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
 from .customs_calc import ensure_settings_row, run_estimate, validate_config_yaml
+from .additional_expenses import (
+    default_additional_expenses_json,
+    parse_additional_expenses_json,
+    validate_additional_expenses_json,
+)
 from .customs_util_json import (
     build_default_util_json_company,
     build_default_util_json_individual,
@@ -78,6 +84,8 @@ from .schemas import (
     CatalogTreeGenerationOut,
     CatalogTreeModelOut,
     CarGenerationCreateIn,
+    CarPriceBreakdownItemOut,
+    CarPriceBreakdownOut,
     CbrSnapshot,
     CarOut,
     CarsListOut,
@@ -126,6 +134,143 @@ MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "/app/media"))
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
 
+def _car_age_group_for_calc(car: Car) -> str:
+    now_year = datetime.now(timezone.utc).year
+    age_years = max(0, int(now_year) - int(car.year))
+    if age_years < 1:
+        return "new"
+    if age_years <= 3:
+        return "1-3"
+    if age_years <= 5:
+        return "3-5"
+    if age_years <= 7:
+        return "5-7"
+    return "over_7"
+
+
+def _car_engine_type_for_calc(car: Car) -> str:
+    raw = (car.fuel_type or "").strip().lower()
+    if any(token in raw for token in ("элект", "electric", "ev", "纯电", "bev")):
+        return "electric"
+    if "diesel" in raw or "диз" in raw:
+        return "diesel"
+    if any(token in raw for token in ("hybrid", "гиб", "phev", "hev", "增程")):
+        return "hybrid"
+    return "gasoline"
+
+
+def _to_rub(amount: float, currency: str, rub_per_cny: float) -> float:
+    cur = (currency or "RUB").strip().upper()
+    if cur == "CNY":
+        return float(amount) * float(rub_per_cny)
+    return float(amount)
+
+
+def _build_car_price_breakdown(
+    car: Car,
+    *,
+    row: CustomsCalcSettings,
+    cbr: CbrSnapshot | None,
+) -> CarPriceBreakdownOut | None:
+    if cbr is None:
+        return None
+
+    rub_china = float(rub_china_for_car(car, cbr))
+    engine_type = _car_engine_type_for_calc(car)
+    age_group = _car_age_group_for_calc(car)
+    engine_capacity = max(0, int(car.engine_volume_cc or 0))
+    if engine_type != "electric":
+        engine_capacity = max(50, engine_capacity)
+
+    estimate = run_estimate(
+        row.config_yaml,
+        CustomsCalcEstimateIn(
+            age=age_group,
+            engine_capacity=engine_capacity,
+            engine_type=engine_type,
+            power=max(1, int(car.horsepower or 1)),
+            price=float(car.price_cny),
+            owner_type="individual",
+            currency="CNY",
+        ),
+        util_individual_json=row.util_coefficients_individual,
+        util_company_json=row.util_coefficients_company,
+    )
+    summary = estimate.summary
+    if summary is None:
+        return None
+
+    extras = parse_additional_expenses_json(row.additional_expenses_json)
+    export_raw = extras["export_expenses"]
+    russia_raw = extras["russia_expenses"]
+    bank_raw = extras["bank_commission"]
+    company_raw = extras["company_commission"]
+
+    export_rub = _to_rub(float(export_raw["amount"]), str(export_raw["currency"]), cbr.rub_per_cny)
+    russia_rub = _to_rub(float(russia_raw["amount"]), str(russia_raw["currency"]), cbr.rub_per_cny)
+    company_rub = _to_rub(float(company_raw["amount"]), str(company_raw["currency"]), cbr.rub_per_cny)
+    bank_rub = rub_china * (float(bank_raw["percent"]) / 100.0)
+
+    items = [
+        CarPriceBreakdownItemOut(
+            key="china_price",
+            label="Стоимость в Китае по курсу",
+            amount_rub=round(rub_china, 2),
+            description=f"{float(car.price_cny):,.0f} ¥ по курсу ЦБ".replace(",", " "),
+        ),
+        CarPriceBreakdownItemOut(
+            key="clearance_fee",
+            label="Таможенное оформление",
+            amount_rub=round(float(summary.clearance_fee_rub), 2),
+            description="Таможенный сбор за оформление.",
+        ),
+        CarPriceBreakdownItemOut(
+            key="duty",
+            label="Таможенная пошлина",
+            amount_rub=round(float(summary.duty_rub), 2),
+            description="Расчет по параметрам автомобиля и возрастной группе.",
+        ),
+        CarPriceBreakdownItemOut(
+            key="utilization_fee",
+            label="Утилизационный сбор",
+            amount_rub=round(float(summary.utilization_fee_rub), 2),
+            description="По таблицам коэффициентов, заданным в админке.",
+        ),
+        CarPriceBreakdownItemOut(
+            key="export_expenses",
+            label="Расходы в стране экспорта",
+            amount_rub=round(export_rub, 2),
+            description=str(export_raw["description"]),
+        ),
+        CarPriceBreakdownItemOut(
+            key="russia_expenses",
+            label="Расходы в России",
+            amount_rub=round(russia_rub, 2),
+            description=str(russia_raw["description"]),
+        ),
+        CarPriceBreakdownItemOut(
+            key="bank_commission",
+            label="Комиссия банка за перевод",
+            amount_rub=round(bank_rub, 2),
+            description=str(bank_raw["description"]),
+        ),
+        CarPriceBreakdownItemOut(
+            key="company_commission",
+            label="Комиссия компании",
+            amount_rub=round(company_rub, 2),
+            description=str(company_raw["description"]),
+        ),
+    ]
+    total_rub = sum(float(i.amount_rub) for i in items)
+    return CarPriceBreakdownOut(
+        total_rub=round(total_rub, 2),
+        owner_type="individual",
+        age_group=age_group,
+        engine_type_calc=engine_type,
+        components=items,
+    )
+
+
 def _car_to_out(
     car: Car,
     *,
@@ -133,6 +278,7 @@ def _car_to_out(
     full_import: bool = False,
     has_public_dealer_profile: bool = False,
     slug_maps: tuple[dict[int, str], dict[tuple[int, int], str]],
+    price_breakdown: CarPriceBreakdownOut | None = None,
 ) -> CarOut:
     rub = round(rub_china_for_car(car, cbr), 2) if cbr is not None else None
     guide = build_pricing_guide(car, cbr) if full_import and cbr is not None else None
@@ -167,6 +313,7 @@ def _car_to_out(
         photos=car.photos,
         rub_china=rub,
         pricing_guide=guide,
+        price_breakdown=price_breakdown,
     )
 
 
@@ -326,6 +473,12 @@ def startup() -> None:
             text(
                 "ALTER TABLE customs_calc_settings ADD COLUMN IF NOT EXISTS "
                 "util_coefficients_company TEXT"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE customs_calc_settings ADD COLUMN IF NOT EXISTS "
+                "additional_expenses_json TEXT"
             )
         )
     db = next(get_db())
@@ -880,9 +1033,23 @@ def list_cars(
 
     snap, cbr_err = build_cbr_snapshot()
     slug_maps = build_catalog_slug_maps(db)
-    items = [
-        _car_to_out(car, cbr=snap, full_import=False, slug_maps=slug_maps) for car in cars
-    ]
+    settings_row = ensure_settings_row(db)
+    items: list[CarOut] = []
+    for car in cars:
+        pb = None
+        try:
+            pb = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
+        except Exception:
+            pb = None
+        items.append(
+            _car_to_out(
+                car,
+                cbr=snap,
+                full_import=False,
+                slug_maps=slug_maps,
+                price_breakdown=pb,
+            )
+        )
     return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
 
 
@@ -913,6 +1080,12 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
         )
         has_pub = bool(seller and seller.role and seller.role.code == "dealer")
     snap, _ = build_cbr_snapshot()
+    settings_row = ensure_settings_row(db)
+    price_breakdown = None
+    try:
+        price_breakdown = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
+    except Exception:
+        price_breakdown = None
     slug_maps = build_catalog_slug_maps(db)
     return _car_to_out(
         car,
@@ -920,6 +1093,7 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
         full_import=bool(snap),
         has_public_dealer_profile=has_pub,
         slug_maps=slug_maps,
+        price_breakdown=price_breakdown,
     )
 
 
@@ -948,9 +1122,23 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
     cars = db.execute(stmt).unique().scalars().all()
     snap, _ = build_cbr_snapshot()
     slug_maps = build_catalog_slug_maps(db)
-    items = [
-        _car_to_out(c, cbr=snap, full_import=False, slug_maps=slug_maps) for c in cars
-    ]
+    settings_row = ensure_settings_row(db)
+    items: list[CarOut] = []
+    for c in cars:
+        pb = None
+        try:
+            pb = _build_car_price_breakdown(c, row=settings_row, cbr=snap)
+        except Exception:
+            pb = None
+        items.append(
+            _car_to_out(
+                c,
+                cbr=snap,
+                full_import=False,
+                slug_maps=slug_maps,
+                price_breakdown=pb,
+            )
+        )
     co = (user.company_name or "").strip()
     dn = (user.display_name or "").strip()
     fn = (user.full_name or "").strip()
@@ -1982,6 +2170,9 @@ def admin_get_customs_calculator_config(
         config_yaml=row.config_yaml,
         util_coefficients_individual=row.util_coefficients_individual,
         util_coefficients_company=row.util_coefficients_company,
+        additional_expenses_json=(
+            row.additional_expenses_json or default_additional_expenses_json()
+        ),
         updated_at=row.updated_at,
     )
 
@@ -2010,6 +2201,9 @@ def admin_update_customs_calculator_config(
     j2 = validate_util_company_json(payload.util_coefficients_company)
     if j2:
         raise HTTPException(status_code=400, detail=j2)
+    j3 = validate_additional_expenses_json(payload.additional_expenses_json)
+    if j3:
+        raise HTTPException(status_code=400, detail=j3)
     row = ensure_settings_row(db)
     # Храним YAML как текст: не пересобираем через yaml.dump, чтобы не терять комментарии #.
     row.config_yaml = payload.config_yaml.strip() + "\n"
@@ -2022,12 +2216,16 @@ def admin_update_customs_calculator_config(
 
     row.util_coefficients_individual = _norm(payload.util_coefficients_individual)
     row.util_coefficients_company = _norm(payload.util_coefficients_company)
+    row.additional_expenses_json = _norm(payload.additional_expenses_json)
     db.commit()
     db.refresh(row)
     return CustomsCalcConfigOut(
         config_yaml=row.config_yaml,
         util_coefficients_individual=row.util_coefficients_individual,
         util_coefficients_company=row.util_coefficients_company,
+        additional_expenses_json=(
+            row.additional_expenses_json or default_additional_expenses_json()
+        ),
         updated_at=row.updated_at,
     )
 

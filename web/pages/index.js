@@ -26,6 +26,7 @@ function parseImportStepMessage(msg) {
 
 export default function Home() {
   const router = useRouter();
+  const [mobileHeaderMenuOpen, setMobileHeaderMenuOpen] = useState(false);
   const [cars, setCars] = useState([]);
   const [total, setTotal] = useState(0);
   const [catalogCbr, setCatalogCbr] = useState(null);
@@ -276,6 +277,7 @@ export default function Home() {
     clearToken();
     setToken("");
     setMe(null);
+    setMobileHeaderMenuOpen(false);
   }
 
   async function loadMe(accessToken) {
@@ -473,6 +475,10 @@ export default function Home() {
   }, [loadCars]);
 
   useEffect(() => {
+    setMobileHeaderMenuOpen(false);
+  }, [router.asPath]);
+
+  useEffect(() => {
     if (!token || !latestParserJob?.id) return;
     const s = latestParserJob.status;
     if (s !== "queued" && s !== "running") return;
@@ -508,7 +514,23 @@ export default function Home() {
             </Link>
             <span className="site-tagline">Каталог и подбор автомобилей</span>
           </div>
+          <button
+            type="button"
+            className="site-header__burger"
+            aria-label="Открыть меню"
+            aria-expanded={mobileHeaderMenuOpen}
+            onClick={() => setMobileHeaderMenuOpen((v) => !v)}
+          >
+            <span className={`site-header__burger-icon${mobileHeaderMenuOpen ? " is-open" : ""}`} aria-hidden>
+              <span />
+              <span />
+              <span />
+            </span>
+          </button>
           <div className="auth-bar">
+            <Link href="/customs-calculator" className="site-header-calc-link">
+              Калькулятор растаможки
+            </Link>
             {!token ? (
               <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
                 Войти
@@ -529,6 +551,42 @@ export default function Home() {
             )}
           </div>
         </div>
+        {mobileHeaderMenuOpen ? (
+          <div className="site-header-mobile-menu-wrap">
+            <button
+              type="button"
+              className="site-header-mobile-menu__backdrop"
+              aria-label="Закрыть меню"
+              onClick={() => setMobileHeaderMenuOpen(false)}
+            />
+            <div className="container site-header-mobile-menu__container">
+              <nav className="site-header-mobile-menu" aria-label="Меню сайта">
+                <Link href="/customs-calculator" className="site-header-mobile-menu__link">
+                  Калькулятор растаможки
+                </Link>
+                {!token ? (
+                  <Link href="/auth" className="site-header-mobile-menu__link">
+                    Войти
+                  </Link>
+                ) : (
+                  <>
+                    <Link href="/profile" className="site-header-mobile-menu__link">
+                      Профиль
+                    </Link>
+                    {canCreateListings(me?.role) ? (
+                      <Link href="/staff/new-listing" className="site-header-mobile-menu__link">
+                        Добавить объявление
+                      </Link>
+                    ) : null}
+                    <button type="button" className="site-header-mobile-menu__link site-header-mobile-menu__btn" onClick={logout}>
+                      Выйти
+                    </button>
+                  </>
+                )}
+              </nav>
+            </div>
+          </div>
+        ) : null}
       </header>
 
       <main className="site-main">
@@ -603,11 +661,6 @@ export default function Home() {
                   </span>
                 </button>
               ) : null}
-              <p className="muted" style={{ marginTop: "1rem", marginBottom: 0, fontSize: "0.95rem" }}>
-                <Link href="/customs-calculator">Калькулятор растаможки</Link>
-                {" — "}
-                ориентировочный расчёт пошлины и утилизационного сбора.
-              </p>
               {selectedBrandId ? (
                 <div style={{ marginTop: "1rem" }}>
                   <h2 className="catalog-picker__section-title" style={{ marginBottom: "0.5rem" }}>
@@ -879,13 +932,13 @@ export default function Home() {
                     </span>
                   </p>
                   <p className="catalog-card__price">
-                    {car.rub_china != null ? (
+                    {car.price_breakdown?.total_rub != null ? (
                       <>
                         <strong className="catalog-price-rub">
-                          {Math.round(car.rub_china).toLocaleString("ru-RU")} ₽
+                          {Math.round(car.price_breakdown.total_rub).toLocaleString("ru-RU")} ₽
                         </strong>
                         <span className="text-muted catalog-price-sub">
-                          в Китае по ЦБ · {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
+                          в России (расчётная)
                         </span>
                       </>
                     ) : (

@@ -69,6 +69,7 @@ export default function CarDetailView({
   const nPhotos = sortedPhotos.length;
   const safeIndex = nPhotos ? Math.min(activePhoto, nPhotos - 1) : 0;
   const hero = sortedPhotos[safeIndex];
+  const customsGroupKeys = new Set(["clearance_fee", "duty", "utilization_fee"]);
 
   async function loadCarDetails() {
     setError("");
@@ -346,12 +347,14 @@ export default function CarDetailView({
             ) : null}
             {car.rub_china != null ? (
               <>
-                <p className="detail-price">
-                  {formatRubInt(car.rub_china)} ₽
-                  <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem", marginLeft: 10 }}>
-                    в Китае по курсу ЦБ
-                  </span>
-                </p>
+                {car.price_breakdown?.total_rub ? (
+                  <p className="detail-price detail-price--rf">
+                    {formatRubInt(car.price_breakdown.total_rub)} ₽
+                    <span className="detail-price__hint">
+                      приблизительная цена в России
+                    </span>
+                  </p>
+                ) : null}
                 <p className="muted" style={{ marginTop: 8, fontSize: 15 }}>
                   {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
                   {car.pricing_guide ? (
@@ -508,43 +511,17 @@ export default function CarDetailView({
           {car.pricing_guide && (
             <section className="panel" style={{ marginTop: 20 }}>
               <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
-                Таможня
+                Общая информация
               </h2>
               <ul className="pricing-guide-params" style={{ margin: "12px 0", paddingLeft: "1.25rem", lineHeight: 1.55 }}>
-                {car.pricing_guide.params_lines.map((line) => (
+                {car.pricing_guide.params_lines
+                  .filter((line) => !line.startsWith("Для калькуляторов обычно нужны:"))
+                  .map((line) => (
                   <li key={line} style={{ marginBottom: 6 }}>
                     {line}
                   </li>
-                ))}
+                  ))}
               </ul>
-              <h3 className="section-title" style={{ fontSize: "1.05rem", marginTop: 18, marginBottom: 8 }}>
-                Справочный калькулятор
-              </h3>
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {car.pricing_guide.calculator_links.map((link) => (
-                  <li
-                    key={link.url}
-                    style={{
-                      marginBottom: 12,
-                      padding: "10px 12px",
-                      background: "var(--color-bg)",
-                      borderRadius: "var(--radius-sm)",
-                    }}
-                  >
-                    <a href={link.url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>
-                      {link.title}
-                    </a>
-                    {link.description ? (
-                      <p className="muted" style={{ margin: "6px 0 0 0", fontSize: 13 }}>
-                        {link.description}
-                      </p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-              <p className="muted" style={{ fontSize: 12, marginTop: 16, marginBottom: 0 }}>
-                {car.pricing_guide.disclaimer}
-              </p>
             </section>
           )}
 
@@ -602,6 +579,56 @@ export default function CarDetailView({
             </h2>
             <p className="description-text">{car.description || "Описание отсутствует."}</p>
           </section>
+
+          {car.price_breakdown?.components?.length ? (
+            <section className="panel">
+              <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
+                Детализация цены в России
+              </h2>
+              <div className="price-breakdown-card">
+                <div className="price-breakdown-card__total">
+                  <span>Средняя стоимость автомобиля со всеми расходами:</span>
+                  <strong>{formatRubInt(car.price_breakdown.total_rub)} ₽</strong>
+                </div>
+                <div className="price-breakdown-card__rows">
+                  {(() => {
+                    const customsItems = car.price_breakdown.components.filter((item) => customsGroupKeys.has(item.key));
+                    const otherItems = car.price_breakdown.components.filter((item) => !customsGroupKeys.has(item.key));
+                    const customsTotal = customsItems.reduce((acc, item) => acc + Number(item.amount_rub || 0), 0);
+                    return (
+                      <>
+                        {customsItems.length ? (
+                          <>
+                            <div className="price-breakdown-card__row" key="customs_total">
+                              <div className="price-breakdown-card__label">Таможенные платежи</div>
+                              <div className="price-breakdown-card__amount">{formatRubInt(customsTotal)} ₽</div>
+                            </div>
+                            {customsItems.map((item) => (
+                              <div className="price-breakdown-card__row price-breakdown-card__row--sub" key={item.key}>
+                                <div className="price-breakdown-card__label">{item.label}</div>
+                                <div className="price-breakdown-card__amount">{formatRubInt(item.amount_rub)} ₽</div>
+                              </div>
+                            ))}
+                          </>
+                        ) : null}
+                        {otherItems.map((item) => (
+                          <div className="price-breakdown-card__row" key={item.key}>
+                            <div>
+                              <div className="price-breakdown-card__label">{item.label}</div>
+                              {item.description ? (
+                                <div className="price-breakdown-card__desc">{item.description}</div>
+                              ) : null}
+                            </div>
+                            <div className="price-breakdown-card__amount">{formatRubInt(item.amount_rub)} ₽</div>
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           {me?.role !== "dealer" && (
             <section style={{ marginTop: 24 }}>
