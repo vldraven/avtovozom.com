@@ -1401,6 +1401,20 @@ code {
   padding-right: 1.25rem;
 }
 
+/* Десктоп: ссылки на посадочные; на мобильных — в бургер-меню */
+.home-hero__delivery-links {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 768px) {
+  .home-hero__delivery-links {
+    display: none;
+  }
+}
+
 .catalog-picker {
   margin-top: 1.25rem;
   padding-top: 1.25rem;

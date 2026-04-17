@@ -593,6 +593,12 @@ export default function Home() {
                 <Link href="/customs-calculator" className="site-header-mobile-menu__link">
                   Калькулятор растаможки
                 </Link>
+                <Link href="/dostavka-avto-iz-kitaya" className="site-header-mobile-menu__link">
+                  Доставка авто из Китая
+                </Link>
+                <Link href="/dostavka-avto-iz-korei" className="site-header-mobile-menu__link">
+                  Доставка авто из Кореи
+                </Link>
                 {!token ? (
                   <Link href="/auth" className="site-header-mobile-menu__link">
                     Войти
@@ -622,9 +628,6 @@ export default function Home() {
         <div className="container">
           <section className="home-hero" aria-label="Поиск и выбор марки">
             <h1 className="home-hero__title">Доставка автомобилей из Китая и Кореи</h1>
-            <p className="muted" style={{ marginTop: 0, marginBottom: "1.1rem", maxWidth: 720 }}>
-              Заказ авто под ключ: подбор марки и модели, выкуп, доставка в РФ и помощь с растаможкой.
-            </p>
             <form className="home-search-form" onSubmit={onSearchSubmit} role="search">
               <input
                 className="input"
@@ -640,14 +643,7 @@ export default function Home() {
               </button>
             </form>
 
-            <div
-              style={{
-                display: "flex",
-                gap: "0.75rem",
-                flexWrap: "wrap",
-                marginTop: "0.75rem",
-              }}
-            >
+            <div className="home-hero__delivery-links">
               <Link href="/dostavka-avto-iz-kitaya" className="btn btn-ghost btn-sm">
                 Доставка авто из Китая
               </Link>
