@@ -521,16 +521,16 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>avtovozom — автомобили из Китая в Россию</title>
+        <title>Доставка автомобилей из Китая и Кореи в Россию | avtovozom</title>
         <meta
           name="description"
-          content="Каталог автомобилей из Китая: подбор марки и модели, цена в юанях, ориентировочная цена в России, доставка и растаможка."
+          content="Заказ автомобилей под ключ из Китая и Кореи: подбор марки и модели, выкуп, доставка в РФ, помощь с растаможкой и оценка ориентировочной цены в России."
         />
         <link rel="canonical" href={absoluteUrl("/")} />
-        <meta property="og:title" content="avtovozom — автомобили из Китая в Россию" />
+        <meta property="og:title" content="Доставка автомобилей из Китая и Кореи в Россию | avtovozom" />
         <meta
           property="og:description"
-          content="Каталог автомобилей из Китая: подбор марки и модели, цена в юанях, ориентировочная цена в России, доставка и растаможка."
+          content="Заказ автомобилей под ключ из Китая и Кореи: подбор марки и модели, выкуп, доставка в РФ, помощь с растаможкой и оценка ориентировочной цены в России."
         />
         <meta property="og:url" content={absoluteUrl("/")} />
       </Head>
@@ -541,7 +541,7 @@ export default function Home() {
             <Link href="/" className="site-logo">
               avtovozom
             </Link>
-            <span className="site-tagline">Каталог и подбор автомобилей</span>
+            <span className="site-tagline">Доставка автомобилей из Китая и Кореи</span>
           </div>
           <button
             type="button"
@@ -621,7 +621,10 @@ export default function Home() {
       <main className="site-main">
         <div className="container">
           <section className="home-hero" aria-label="Поиск и выбор марки">
-            <h1 className="home-hero__title">Подобрать автомобиль</h1>
+            <h1 className="home-hero__title">Доставка автомобилей из Китая и Кореи</h1>
+            <p className="muted" style={{ marginTop: 0, marginBottom: "1.1rem", maxWidth: 720 }}>
+              Заказ авто под ключ: подбор марки и модели, выкуп, доставка в РФ и помощь с растаможкой.
+            </p>
             <form className="home-search-form" onSubmit={onSearchSubmit} role="search">
               <input
                 className="input"
@@ -636,6 +639,22 @@ export default function Home() {
                 Найти
               </button>
             </form>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "0.75rem",
+                flexWrap: "wrap",
+                marginTop: "0.75rem",
+              }}
+            >
+              <Link href="/dostavka-avto-iz-kitaya" className="btn btn-ghost btn-sm">
+                Доставка авто из Китая
+              </Link>
+              <Link href="/dostavka-avto-iz-korei" className="btn btn-ghost btn-sm">
+                Доставка авто из Кореи
+              </Link>
+            </div>
 
             <div className="catalog-picker">
               <h2 className="catalog-picker__section-title">Марки</h2>

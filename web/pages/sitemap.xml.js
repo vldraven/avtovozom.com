@@ -15,7 +15,7 @@ export async function getServerSideProps({ req, res }) {
   const base = getPublicSiteUrlFromRequest(req);
   const API_URL = getServerApiBase();
 
-  const staticPaths = ["/", "/catalog", "/customs-calculator"];
+  const staticPaths = ["/", "/catalog", "/customs-calculator", "/dostavka-avto-iz-kitaya", "/dostavka-avto-iz-korei"];
   const urls = staticPaths.map((loc) => ({
     loc: `${base}${loc}`,
     changefreq: "daily",

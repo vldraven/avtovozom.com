@@ -395,7 +395,7 @@ export default function CatalogTreePage() {
             <Link href="/" className="site-logo">
               avtovozom
             </Link>
-            <span className="site-tagline">Каталог и подбор автомобилей</span>
+            <span className="site-tagline">Доставка автомобилей из Китая и Кореи</span>
           </div>
           <div className="auth-bar">
             {!token ? (
