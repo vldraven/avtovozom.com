@@ -81,6 +81,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      NEXT_PUBLIC_YANDEX_METRIKA_ID: ${NEXT_PUBLIC_YANDEX_METRIKA_ID:-}
       # SSR (sitemap): из контейнера web localhost:8000 — не backend
       SERVER_API_URL: ${SERVER_API_URL:-http://backend:8000}
       # Docker Desktop (особенно macOS): иначе next dev не видит изменения файлов на хосте

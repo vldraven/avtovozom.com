@@ -2,6 +2,7 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 
 import MobileBottomNav from "../components/MobileBottomNav";
+import YandexMetrika from "../components/YandexMetrika";
 import "../styles/globals.css";
 
 /** Личные кабинеты и админка — не индексируем (дублирует robots.txt Disallow). */
@@ -42,6 +43,7 @@ export default function App({ Component, pageProps }) {
       <div className="app-chrome">
         <Component {...pageProps} />
         <MobileBottomNav />
+        <YandexMetrika />
       </div>
     </>
   );
