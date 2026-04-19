@@ -40,6 +40,11 @@ export default function SiteSelectDropdown({
   toolbarIcon,
   ariaLabel,
   searchable = false,
+  /** Если поиск не дал совпадений — пункт «Добавить …» с введённым текстом */
+  onCreateFromSearch,
+  createActionLabel = "Добавить",
+  /** Блокировка триггера и пункта «Добавить» (например, во время запроса) */
+  busy = false,
 }) {
   const autoId = useId();
   const baseId = id ?? `site-dd-${autoId}`;
@@ -51,12 +56,31 @@ export default function SiteSelectDropdown({
   const selected = options.find((o) => String(o.value) === String(value));
   const displayLabel = selected?.label ?? placeholder;
 
+  const normalizeSearchKey = (s) =>
+    String(s)
+      .trim()
+      .toLowerCase()
+      .replace(/[\u2010-\u2015\u2212\u00AD]/g, "-")
+      .replace(/\s+/g, " ");
+
   const filteredOptions = useMemo(() => {
     if (!searchable) return options;
-    const q = searchQuery.trim().toLowerCase();
+    const q = searchQuery.trim();
     if (!q) return options;
-    return options.filter((o) => String(o.label).toLowerCase().includes(q));
+    const qn = normalizeSearchKey(q);
+    return options.filter((o) => {
+      const lab = String(o.label);
+      return lab.toLowerCase().includes(q.toLowerCase()) || normalizeSearchKey(lab).includes(qn);
+    });
   }, [options, searchQuery, searchable]);
+
+  const searchTrim = searchQuery.trim();
+  const showCreateFromSearch = Boolean(
+    searchable &&
+      typeof onCreateFromSearch === "function" &&
+      searchTrim.length > 0 &&
+      filteredOptions.length === 0
+  );
 
   useEffect(() => {
     if (!open) setSearchQuery("");
@@ -123,8 +147,8 @@ export default function SiteSelectDropdown({
         aria-expanded={open}
         aria-haspopup="listbox"
         aria-label={triggerAria}
-        disabled={disabled}
-        onClick={() => !disabled && setOpen((v) => !v)}
+        disabled={disabled || busy}
+        onClick={() => !(disabled || busy) && setOpen((v) => !v)}
       >
         {variant === "floating" ? (
           <>
@@ -152,6 +176,7 @@ export default function SiteSelectDropdown({
           className={menuCls}
           role="listbox"
           aria-label={ariaLabel ?? label ?? "Варианты"}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           {searchable ? (
             <li className="site-dropdown__search-row" role="presentation">
@@ -168,34 +193,64 @@ export default function SiteSelectDropdown({
               />
             </li>
           ) : null}
-          {filteredOptions.length === 0 ? (
+          {filteredOptions.length === 0 && !showCreateFromSearch ? (
             <li className="site-dropdown__empty" role="presentation">
               Ничего не найдено
             </li>
-          ) : (
-            filteredOptions.map((opt) => {
-              const isSelected = String(opt.value) === String(value);
-              return (
-                <li key={`${String(opt.value)}-${opt.label}`} role="presentation">
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    className={`site-dropdown__option${isSelected ? " site-dropdown__option--active" : ""}`}
-                    onClick={() => {
-                      onChange(opt.value);
+          ) : null}
+          {filteredOptions.map((opt) => {
+            const isSelected = String(opt.value) === String(value);
+            return (
+              <li key={`${String(opt.value)}-${opt.label}`} role="presentation">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`site-dropdown__option${isSelected ? " site-dropdown__option--active" : ""}`}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="site-dropdown__check" aria-hidden>
+                    {isSelected ? "✓" : ""}
+                  </span>
+                  <span className="site-dropdown__option-text">{opt.label}</span>
+                </button>
+              </li>
+            );
+          })}
+          {showCreateFromSearch ? (
+            <li className="site-dropdown__create-row" role="presentation">
+              <button
+                type="button"
+                className="site-dropdown__option site-dropdown__option--create"
+                disabled={busy}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void (async () => {
+                    try {
+                      await onCreateFromSearch(searchTrim);
+                      setSearchQuery("");
                       setOpen(false);
-                    }}
-                  >
-                    <span className="site-dropdown__check" aria-hidden>
-                      {isSelected ? "✓" : ""}
-                    </span>
-                    <span className="site-dropdown__option-text">{opt.label}</span>
-                  </button>
-                </li>
-              );
-            })
-          )}
+                    } catch {
+                      /* ошибки обрабатывает родитель */
+                    }
+                  })();
+                }}
+              >
+                <span className="site-dropdown__option-text">
+                  {createActionLabel} «{searchTrim}»
+                </span>
+              </button>
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </div>

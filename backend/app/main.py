@@ -24,6 +24,7 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, delete, distinct, func, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from .db import Base, engine, get_db, SessionLocal
@@ -83,7 +84,9 @@ from .schemas import (
     CatalogTreeBrandOut,
     CatalogTreeGenerationOut,
     CatalogTreeModelOut,
+    CarBrandCreateIn,
     CarGenerationCreateIn,
+    CarModelCreateIn,
     CarPriceBreakdownItemOut,
     CarPriceBreakdownOut,
     CbrSnapshot,
@@ -1340,18 +1343,22 @@ async def _update_car_from_multipart(
 
 @app.get("/staff/catalog/brands", response_model=list[CarBrandBriefOut])
 def staff_catalog_brands(
+    response: Response,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin", "moderator", "dealer")),
 ):
+    response.headers["Cache-Control"] = "no-store"
     return db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
 
 
 @app.get("/staff/catalog/models", response_model=list[CarModelBriefOut])
 def staff_catalog_models(
+    response: Response,
     brand_id: int = Query(...),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin", "moderator", "dealer")),
 ):
+    response.headers["Cache-Control"] = "no-store"
     return (
         db.execute(
             select(CarModel)
@@ -1368,6 +1375,7 @@ def staff_catalog_models(
     response_model=list[CatalogTreeGenerationOut],
 )
 def staff_catalog_generations(
+    response: Response,
     model_id: int = Query(...),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin", "moderator", "dealer")),
@@ -1389,6 +1397,7 @@ def staff_catalog_generations(
         .scalars()
         .all()
     )
+    response.headers["Cache-Control"] = "no-store"
     return [
         CatalogTreeGenerationOut(
             id=g.id,
@@ -1400,6 +1409,68 @@ def staff_catalog_generations(
     ]
 
 
+@app.post("/admin/car-brands", response_model=CarBrandBriefOut)
+def admin_create_car_brand(
+    payload: CarBrandCreateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Укажите название марки")
+    dup = db.execute(
+        select(CarBrand).where(func.lower(CarBrand.name) == name.lower())
+    ).scalar_one_or_none()
+    if dup:
+        raise HTTPException(status_code=400, detail="Такая марка уже есть в справочнике")
+    row = CarBrand(name=name)
+    db.add(row)
+    try:
+        db.commit()
+        db.refresh(row)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400, detail="Такая марка уже есть в справочнике"
+        ) from None
+    return row
+
+
+@app.post("/admin/car-brands/{brand_id}/models", response_model=CarModelBriefOut)
+def admin_create_car_model(
+    brand_id: int,
+    payload: CarModelCreateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    if not db.get(CarBrand, brand_id):
+        raise HTTPException(status_code=404, detail="Марка не найдена")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Укажите название модели")
+    dup = db.execute(
+        select(CarModel).where(
+            CarModel.brand_id == brand_id,
+            func.lower(CarModel.name) == name.lower(),
+        )
+    ).scalar_one_or_none()
+    if dup:
+        raise HTTPException(
+            status_code=400, detail="Такая модель уже есть у этой марки"
+        )
+    row = CarModel(brand_id=brand_id, name=name, is_active=True)
+    db.add(row)
+    try:
+        db.commit()
+        db.refresh(row)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400, detail="Такая модель уже есть у этой марки"
+        ) from None
+    return row
+
+
 @app.post(
     "/admin/car-models/{model_id}/generations",
     response_model=CatalogTreeGenerationOut,
@@ -1408,7 +1479,7 @@ def admin_create_car_generation(
     model_id: int,
     payload: CarGenerationCreateIn,
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles("admin", "moderator")),
+    _: User = Depends(require_roles("admin")),
 ):
     m = db.execute(select(CarModel).where(CarModel.id == model_id)).scalar_one_or_none()
     if not m:

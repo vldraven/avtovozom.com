@@ -568,6 +568,29 @@ a:hover {
   list-style: none;
 }
 
+.site-dropdown__create-row {
+  list-style: none;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+}
+
+.site-dropdown__option--create {
+  font-weight: 600;
+  color: var(--color-accent, #1976d2);
+}
+
+.site-dropdown__option--create:hover:not(:disabled),
+.site-dropdown__option--create:focus-visible:not(:disabled) {
+  background: var(--color-accent, #1976d2);
+  color: #fff;
+}
+
+.site-dropdown__option--create:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .site-dropdown__option {
   display: flex;
   width: 100%;

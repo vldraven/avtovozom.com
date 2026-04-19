@@ -688,6 +688,9 @@ export default function CatalogTreePage() {
                                 <span className="catalog-card__meta-rest">
                                   {" "}
                                   · {car.year}
+                                  {car.mileage_km != null
+                                    ? ` · ${Number(car.mileage_km).toLocaleString("ru-RU")} км`
+                                    : ""}
                                 </span>
                               </p>
                               <p className="catalog-card__price">

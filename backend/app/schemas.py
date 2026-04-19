@@ -167,6 +167,14 @@ class CarGenerationCreateIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=160)
 
 
+class CarBrandCreateIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+
+
+class CarModelCreateIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+
+
 class CreateRequestIn(BaseModel):
     user_name: str | None = None
     user_contact: str | None = None

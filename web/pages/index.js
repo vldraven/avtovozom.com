@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -12,10 +12,13 @@ import HeaderProfileLink from "../components/HeaderProfileLink";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { clearToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
-import { canCreateListings, isStaffRole } from "../lib/roles";
+import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { absoluteUrl } from "../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+/** Иначе GET справочников может отдаваться из HTTP-кэша без только что созданной записи. */
+const STAFF_GET_INIT = { cache: "no-store" };
 
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
@@ -24,6 +27,41 @@ function parseImportStepMessage(msg) {
   const m = /^(\d)\/(\d)\s/.exec(msg || "");
   if (!m) return null;
   return { cur: Number(m[1]), total: Number(m[2]) };
+}
+
+/** id марки в staff-справочнике по подписи из выпадающего списка (дефис/пробел/регистр). */
+function resolveStaffBrandId(brands, selectedLabel) {
+  if (!selectedLabel || !brands?.length) return undefined;
+  const t = String(selectedLabel).trim();
+  const exact = brands.find((b) => b.name === t);
+  if (exact) return exact.id;
+  const norm = (s) =>
+    String(s)
+      .trim()
+      .toLowerCase()
+      .replace(/[\u2010-\u2015\u2212\u00AD]/g, "-")
+      .replace(/\s+/g, " ");
+  const nt = norm(t);
+  const byNorm = brands.find((b) => norm(b.name) === nt);
+  if (byNorm) return byNorm.id;
+  const compact = (s) => norm(s).replace(/[-\s]/g, "");
+  const ct = compact(t);
+  return brands.find((b) => compact(b.name) === ct)?.id;
+}
+
+function formatApiErrorDetail(body) {
+  if (!body || body.detail == null) return null;
+  const d = body.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) {
+    return d
+      .map((x) =>
+        x && typeof x === "object" && "msg" in x ? String(x.msg) : JSON.stringify(x)
+      )
+      .join(" ");
+  }
+  if (typeof d === "object") return JSON.stringify(d);
+  return String(d);
 }
 
 export default function Home() {
@@ -48,7 +86,18 @@ export default function Home() {
   /** Админка парсера: марка → модель → URL (не путать с фильтром каталога объявлений). */
   const [parserAdminBrand, setParserAdminBrand] = useState("");
   const [parserAdminModelId, setParserAdminModelId] = useState(null);
+  /** Полный справочник марок/моделей для админа в виджете парсера */
+  const [staffBrandsParser, setStaffBrandsParser] = useState([]);
+  const [staffModelsParser, setStaffModelsParser] = useState([]);
+  const [staffGensParser, setStaffGensParser] = useState([]);
+  const [parserAdminGenId, setParserAdminGenId] = useState("");
+  const [parserCatalogBusy, setParserCatalogBusy] = useState(false);
+  const [parserCatalogNotice, setParserCatalogNotice] = useState("");
   const [importListingBusy, setImportListingBusy] = useState(false);
+  /** Защита от гонки: ответ старого GET не перезаписывает список после POST+свежего GET. */
+  const staffBrandsLoadGen = useRef(0);
+  const staffModelsLoadGen = useRef(0);
+  const staffGensLoadGen = useRef(0);
   const [listSort, setListSort] = useState("date_desc");
   const [profileReady, setProfileReady] = useState(false);
   const [requestModalCar, setRequestModalCar] = useState(null);
@@ -93,10 +142,42 @@ export default function Home() {
       );
   }, [whitelistCatalog, parserAdminBrand]);
 
-  const parserAdminSelectedRow = useMemo(() => {
-    if (parserAdminModelId == null) return null;
-    return whitelistCatalog.find((r) => r.model_id === parserAdminModelId) ?? null;
-  }, [whitelistCatalog, parserAdminModelId]);
+  const parserBrandDropdownOptions = useMemo(() => {
+    if (isAdminRole(me?.role) && staffBrandsParser.length > 0) {
+      return [...staffBrandsParser]
+        .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+        .map((b) => ({ value: String(b.id), label: b.name }));
+    }
+    return parserAdminBrandNames.map((name) => ({ value: name, label: name }));
+  }, [me?.role, staffBrandsParser, parserAdminBrandNames]);
+
+  /** id марки в staff-справочнике для импорта (после выбора по id имя совпадает с API). */
+  const parserStaffBrandId = useMemo(() => {
+    if (!isAdminRole(me?.role) || staffBrandsParser.length === 0) return null;
+    const name = String(parserAdminBrand || "").trim();
+    if (!name) return null;
+    return resolveStaffBrandId(staffBrandsParser, parserAdminBrand) ?? null;
+  }, [me?.role, staffBrandsParser, parserAdminBrand]);
+
+  const parserModelDropdownOptions = useMemo(() => {
+    if (isAdminRole(me?.role)) {
+      return staffModelsParser.map((m) => ({
+        value: String(m.id),
+        label: m.name,
+      }));
+    }
+    return parserAdminModelsInBrand.map((row) => ({
+      value: String(row.model_id),
+      label: row.model,
+    }));
+  }, [me?.role, staffModelsParser, parserAdminModelsInBrand]);
+
+  const parserGenDropdownOptions = useMemo(() => {
+    return staffGensParser.map((g) => ({
+      value: String(g.id),
+      label: g.name,
+    }));
+  }, [staffGensParser]);
 
   const loadCars = useCallback(async () => {
     if (!router.isReady) return;
@@ -330,6 +411,313 @@ export default function Home() {
     setCatalogUrlDrafts(draft);
   }
 
+  /** Актуальный список марок из API (для восстановления после 404 «Марка не найдена»). */
+  async function reloadStaffBrandsParser(accessToken) {
+    const currentToken = accessToken || token;
+    if (!currentToken) return null;
+    const r = await fetch(`${API_URL}/staff/catalog/brands`, {
+      ...STAFF_GET_INIT,
+      headers: { Authorization: `Bearer ${currentToken}` },
+    });
+    if (!r.ok) return null;
+    return r.json();
+  }
+
+  useEffect(() => {
+    if (!token || !me || !isAdminRole(me.role)) {
+      setStaffBrandsParser([]);
+      return;
+    }
+    const opGen = (() => {
+      staffBrandsLoadGen.current += 1;
+      return staffBrandsLoadGen.current;
+    })();
+    let cancelled = false;
+    (async () => {
+      const r = await fetch(`${API_URL}/staff/catalog/brands`, {
+        ...STAFF_GET_INIT,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (cancelled || opGen !== staffBrandsLoadGen.current) return;
+      if (r.ok) {
+        setStaffBrandsParser(await r.json());
+      }
+    })();
+    return () => {
+      cancelled = true;
+      staffBrandsLoadGen.current += 1;
+    };
+  }, [token, me?.role]);
+
+  useEffect(() => {
+    if (!token || !me || !isAdminRole(me.role) || !parserAdminBrand) {
+      setStaffModelsParser([]);
+      return;
+    }
+    /* Пока марки ещё не подгрузились, не обнуляем модели — иначе затирается только что добавленная
+     * модель (parserStaffBrandId временно null, bid не находится). */
+    if (staffBrandsParser.length === 0) {
+      return;
+    }
+    const bid = parserStaffBrandId ?? resolveStaffBrandId(staffBrandsParser, parserAdminBrand);
+    if (!bid) {
+      setStaffModelsParser([]);
+      return;
+    }
+    const opGen = (() => {
+      staffModelsLoadGen.current += 1;
+      return staffModelsLoadGen.current;
+    })();
+    let cancelled = false;
+    (async () => {
+      const r = await fetch(`${API_URL}/staff/catalog/models?brand_id=${bid}`, {
+        ...STAFF_GET_INIT,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (cancelled || opGen !== staffModelsLoadGen.current) return;
+      if (r.ok) {
+        setStaffModelsParser(await r.json());
+      }
+    })();
+    return () => {
+      cancelled = true;
+      staffModelsLoadGen.current += 1;
+    };
+  }, [token, me?.role, parserAdminBrand, staffBrandsParser, parserStaffBrandId]);
+
+  useEffect(() => {
+    if (!token || !me || !isAdminRole(me?.role) || !parserAdminModelId) {
+      setStaffGensParser([]);
+      setParserAdminGenId("");
+      return;
+    }
+    const opGen = (() => {
+      staffGensLoadGen.current += 1;
+      return staffGensLoadGen.current;
+    })();
+    let cancelled = false;
+    (async () => {
+      const r = await fetch(`${API_URL}/staff/catalog/generations?model_id=${parserAdminModelId}`, {
+        ...STAFF_GET_INIT,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (cancelled || opGen !== staffGensLoadGen.current) return;
+      if (r.ok) {
+        setStaffGensParser(await r.json());
+      }
+    })();
+    return () => {
+      cancelled = true;
+      staffGensLoadGen.current += 1;
+    };
+  }, [token, me?.role, parserAdminModelId]);
+
+  async function addParserCatalogBrand(name) {
+    const n = String(name || "").trim();
+    if (!token || !n || !isAdminRole(me?.role)) return;
+    setParserCatalogNotice("");
+    setParserCatalogBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/car-brands`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: n }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setParserCatalogNotice(
+          formatApiErrorDetail(body) || `Ошибка ${res.status}: не удалось добавить марку`
+        );
+        return;
+      }
+      /* Сразу после POST: инвалидируем старые GET и показываем новую марку в списке (иначе ответ
+       * старого запроса из useEffect может прийти между POST и bump и затереть список). */
+      staffBrandsLoadGen.current += 1;
+      const opGenBrands = staffBrandsLoadGen.current;
+      const createdBrand = { id: body.id, name: body.name };
+      setStaffBrandsParser((prev) => {
+        const next = prev.filter((b) => b.id !== createdBrand.id);
+        next.push(createdBrand);
+        next.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+        return next;
+      });
+      setParserAdminBrand(body.name);
+      setParserAdminModelId(null);
+      setParserAdminGenId("");
+      setParserCatalogNotice("Марка добавлена. Выберите модель или введите название в поиске.");
+      const r = await fetch(`${API_URL}/staff/catalog/brands`, {
+        ...STAFF_GET_INIT,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (opGenBrands === staffBrandsLoadGen.current && r.ok) {
+        setStaffBrandsParser(await r.json());
+      }
+      await loadWhitelistCatalog(token);
+    } finally {
+      setParserCatalogBusy(false);
+    }
+  }
+
+  async function addParserCatalogModel(name) {
+    const n = String(name || "").trim();
+    let bid = parserStaffBrandId ?? resolveStaffBrandId(staffBrandsParser, parserAdminBrand);
+    if (!token || !n || !isAdminRole(me?.role)) return;
+    if (!bid) {
+      setParserCatalogNotice(
+        "Не удалось определить марку. Откройте «Марка», выберите марку в списке и повторите добавление модели."
+      );
+      return;
+    }
+    setParserCatalogNotice("");
+    setParserCatalogBusy(true);
+    try {
+      const postModel = async (brandId) => {
+        const res = await fetch(`${API_URL}/admin/car-brands/${brandId}/models`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name: n }),
+        });
+        const body = await res.json().catch(() => ({}));
+        return { res, body };
+      };
+
+      let { res, body } = await postModel(bid);
+
+      /* 404: либо устаревший brand_id в UI, либо (часто) в контейнере backend старый образ без маршрута.
+       * Подтягиваем свежий справочник марок и один раз повторяем POST с пересчитанным id. */
+      if (!res.ok && res.status === 404) {
+        const fresh = await reloadStaffBrandsParser(token);
+        if (fresh && Array.isArray(fresh)) {
+          staffBrandsLoadGen.current += 1;
+          setStaffBrandsParser(fresh);
+          const bid2 = resolveStaffBrandId(fresh, parserAdminBrand);
+          if (bid2 != null && bid2 !== bid) {
+            ({ res, body } = await postModel(bid2));
+            bid = bid2;
+          } else if (bid2 == null) {
+            setParserCatalogNotice(
+              "Справочник марок обновлён, но выбранное название марки не найдено. Выберите марку в поле «1. Марка» заново."
+            );
+            return;
+          } else {
+            /* bid2 === bid: пересоберите backend (docker compose build backend) или проверьте, что в образе есть POST /admin/car-brands/{id}/models */
+            setParserCatalogNotice(
+              formatApiErrorDetail(body) ||
+                "404: марка не найдена или устарел справочник. Выполните «docker compose build backend && docker compose up -d backend» и обновите страницу."
+            );
+            return;
+          }
+        }
+      }
+
+      if (!res.ok) {
+        setParserCatalogNotice(
+          formatApiErrorDetail(body) || `Ошибка ${res.status}: не удалось добавить модель`
+        );
+        return;
+      }
+      if (body?.id == null || body?.name == null) {
+        setParserCatalogNotice(
+          "Сервер вернул неполные данные о модели. Обновите страницу и проверьте справочник."
+        );
+        return;
+      }
+      staffModelsLoadGen.current += 1;
+      const opGenModels = staffModelsLoadGen.current;
+      const createdModel = {
+        id: body.id,
+        name: body.name,
+        brand_id: body.brand_id ?? bid,
+      };
+      setStaffModelsParser((prev) => {
+        const next = prev.filter((m) => m.id !== createdModel.id);
+        next.push(createdModel);
+        next.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+        return next;
+      });
+      setParserAdminModelId(createdModel.id);
+      setParserAdminGenId("");
+      setCatalogUrlDrafts((prev) => ({ ...prev, [createdModel.id]: prev[createdModel.id] ?? "" }));
+      setParserCatalogNotice("Модель добавлена и выбрана.");
+      const r = await fetch(`${API_URL}/staff/catalog/models?brand_id=${bid}`, {
+        ...STAFF_GET_INIT,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (opGenModels === staffModelsLoadGen.current && r.ok) {
+        const raw = await r.json();
+        const list = Array.isArray(raw) ? raw : [];
+        let merged = list.slice();
+        if (!merged.some((m) => m.id === createdModel.id)) {
+          merged.push(createdModel);
+          merged.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+        }
+        setStaffModelsParser(merged);
+      }
+      await loadWhitelistCatalog(token);
+    } catch (e) {
+      setParserCatalogNotice(
+        e instanceof Error ? `Сеть или сервер: ${e.message}` : "Не удалось выполнить запрос к API"
+      );
+    } finally {
+      setParserCatalogBusy(false);
+    }
+  }
+
+  async function addParserCatalogGeneration(name) {
+    const n = String(name || "").trim();
+    if (!token || !parserAdminModelId || !n || !isAdminRole(me?.role)) return;
+    setParserCatalogNotice("");
+    setParserCatalogBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/car-models/${parserAdminModelId}/generations`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: n }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setParserCatalogNotice(
+          typeof body.detail === "string" ? body.detail : "Не удалось добавить поколение"
+        );
+        return;
+      }
+      staffGensLoadGen.current += 1;
+      const opGenGens = staffGensLoadGen.current;
+      const createdGen = {
+        id: body.id,
+        name: body.name,
+        slug: body.slug ?? "",
+        listings_count: body.listings_count ?? 0,
+      };
+      setStaffGensParser((prev) => {
+        const next = prev.filter((g) => g.id !== createdGen.id);
+        next.push(createdGen);
+        next.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+        return next;
+      });
+      setParserAdminGenId(String(body.id));
+      setParserCatalogNotice(`Поколение «${body.name}» добавлено в справочник.`);
+      const gr = await fetch(`${API_URL}/staff/catalog/generations?model_id=${parserAdminModelId}`, {
+        ...STAFF_GET_INIT,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (opGenGens === staffGensLoadGen.current && gr.ok) {
+        setStaffGensParser(await gr.json());
+      }
+    } finally {
+      setParserCatalogBusy(false);
+    }
+  }
+
   async function importListingFromChe168() {
     if (!token) {
       alert("Сначала выполните вход");
@@ -443,18 +831,33 @@ export default function Home() {
   }, [selectedBrandId]);
 
   useEffect(() => {
+    if (isAdminRole(me?.role)) return;
     if (parserAdminModelId != null && !whitelistCatalog.some((r) => r.model_id === parserAdminModelId)) {
       setParserAdminModelId(null);
     }
-  }, [whitelistCatalog, parserAdminModelId]);
+  }, [whitelistCatalog, parserAdminModelId, me?.role]);
 
   useEffect(() => {
     if (!parserAdminBrand) return;
+    if (isAdminRole(me?.role)) {
+      if (staffBrandsParser.length === 0) return;
+      const bid = resolveStaffBrandId(staffBrandsParser, parserAdminBrand);
+      if (bid != null) {
+        const row = staffBrandsParser.find((b) => b.id === bid);
+        if (row && row.name !== parserAdminBrand) {
+          setParserAdminBrand(row.name);
+        }
+        return;
+      }
+      setParserAdminBrand("");
+      setParserAdminModelId(null);
+      return;
+    }
     if (!parserAdminBrandNames.includes(parserAdminBrand)) {
       setParserAdminBrand("");
       setParserAdminModelId(null);
     }
-  }, [whitelistCatalog, parserAdminBrand, parserAdminBrandNames]);
+  }, [whitelistCatalog, parserAdminBrand, parserAdminBrandNames, staffBrandsParser, me?.role]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -764,31 +1167,51 @@ export default function Home() {
         </div>
       )}
 
-      {token && isStaffRole(me?.role) && whitelistCatalog.length > 0 && (
+      {token && isStaffRole(me?.role) && (whitelistCatalog.length > 0 || isAdminRole(me?.role)) && (
         <section className="panel admin-parser-panel">
           <h2 className="section-title panel-heading-sm">Импорт объявления с che168</h2>
-          <p className="admin-parser-meta-line">
-            В справочнике <b>{whitelistCatalog.length}</b> моделей ·{" "}
-            <b>{parserAdminBrandNames.length}</b> марок. Ссылка должна вести на{" "}
-            <b>одно объявление</b> (формат <code>…/dealer/…/….html</code> или{" "}
-            <code>i.che168.com/car/…</code>). Модель будет включена в автоматический парсинг.
-          </p>
+          {parserCatalogNotice ? (
+            <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
+              {parserCatalogNotice}
+            </p>
+          ) : null}
           <div className="admin-parser-picker admin-parser-picker--import">
             <div className="admin-parser-label">
               <SiteSelectDropdown
                 className="site-dropdown--block"
                 label="1. Марка"
                 placeholder="— Выберите марку —"
-                value={parserAdminBrand}
+                value={
+                  isAdminRole(me?.role) && staffBrandsParser.length > 0
+                    ? parserStaffBrandId != null
+                      ? String(parserStaffBrandId)
+                      : ""
+                    : parserAdminBrand
+                }
                 searchable
+                busy={parserCatalogBusy}
+                onCreateFromSearch={isAdminRole(me?.role) ? (q) => addParserCatalogBrand(q) : undefined}
+                createActionLabel="Добавить марку"
                 onChange={(v) => {
+                  if (!v) {
+                    setParserAdminBrand("");
+                    setParserAdminModelId(null);
+                    setParserAdminGenId("");
+                    return;
+                  }
+                  if (isAdminRole(me?.role) && staffBrandsParser.length > 0) {
+                    const id = Number(v);
+                    const row = staffBrandsParser.find((b) => b.id === id);
+                    setParserAdminBrand(row?.name ?? "");
+                    setParserAdminModelId(null);
+                    setParserAdminGenId("");
+                    return;
+                  }
                   setParserAdminBrand(v);
                   setParserAdminModelId(null);
+                  setParserAdminGenId("");
                 }}
-                options={[
-                  { value: "", label: "— Выберите марку —" },
-                  ...parserAdminBrandNames.map((name) => ({ value: name, label: name })),
-                ]}
+                options={[{ value: "", label: "— Выберите марку —" }, ...parserBrandDropdownOptions]}
               />
             </div>
             <div className="admin-parser-label">
@@ -800,26 +1223,52 @@ export default function Home() {
                 }
                 disabled={!parserAdminBrand}
                 searchable
+                busy={parserCatalogBusy}
+                onCreateFromSearch={
+                  isAdminRole(me?.role) && parserAdminBrand
+                    ? (q) => addParserCatalogModel(q)
+                    : undefined
+                }
+                createActionLabel="Добавить модель"
                 value={parserAdminModelId != null ? String(parserAdminModelId) : ""}
                 onChange={(v) => {
                   setParserAdminModelId(v ? Number(v) : null);
+                  setParserAdminGenId("");
                 }}
                 options={[
                   {
                     value: "",
                     label: parserAdminBrand ? "— Выберите модель —" : "Сначала выберите марку",
                   },
-                  ...parserAdminModelsInBrand.map((row) => ({
-                    value: String(row.model_id),
-                    label: row.model,
-                  })),
+                  ...parserModelDropdownOptions,
                 ]}
               />
             </div>
-            {parserAdminSelectedRow ? (
+            {isAdminRole(me?.role) && parserAdminModelId != null ? (
+              <div className="admin-parser-label">
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="3. Поколение (необязательно)"
+                  placeholder="— не выбрано —"
+                  searchable
+                  busy={parserCatalogBusy}
+                  onCreateFromSearch={(q) => addParserCatalogGeneration(q)}
+                  createActionLabel="Добавить поколение"
+                  value={parserAdminGenId}
+                  onChange={setParserAdminGenId}
+                  options={[
+                    { value: "", label: "— не выбрано —" },
+                    ...parserGenDropdownOptions,
+                  ]}
+                />
+              </div>
+            ) : null}
+            {parserAdminModelId != null ? (
               <>
                 <label className="admin-parser-label">
-                  <span className="admin-parser-label__text">3. Ссылка на объявление che168</span>
+                  <span className="admin-parser-label__text">
+                    {isAdminRole(me?.role) ? "4." : "3."} Ссылка на объявление che168
+                  </span>
                   <div className="input-with-clear-wrap">
                     <input
                       className="input input-with-clear"
@@ -827,15 +1276,15 @@ export default function Home() {
                       inputMode="url"
                       autoComplete="off"
                       placeholder="https://www.che168.com/dealer/…/….html"
-                      value={catalogUrlDrafts[parserAdminSelectedRow.model_id] ?? ""}
+                      value={catalogUrlDrafts[parserAdminModelId] ?? ""}
                       onChange={(e) =>
                         setCatalogUrlDrafts((prev) => ({
                           ...prev,
-                          [parserAdminSelectedRow.model_id]: e.target.value,
+                          [parserAdminModelId]: e.target.value,
                         }))
                       }
                     />
-                    {(catalogUrlDrafts[parserAdminSelectedRow.model_id] || "").trim() ? (
+                    {(catalogUrlDrafts[parserAdminModelId] || "").trim() ? (
                       <button
                         type="button"
                         className="input-with-clear__btn"
@@ -844,7 +1293,7 @@ export default function Home() {
                         onClick={() =>
                           setCatalogUrlDrafts((prev) => ({
                             ...prev,
-                            [parserAdminSelectedRow.model_id]: "",
+                            [parserAdminModelId]: "",
                           }))
                         }
                       >
@@ -968,6 +1417,9 @@ export default function Home() {
                     <span className="catalog-card__meta-rest">
                       {" "}
                       · {car.year}
+                      {car.mileage_km != null
+                        ? ` · ${Number(car.mileage_km).toLocaleString("ru-RU")} км`
+                        : ""}
                       {car.engine_volume_cc ? ` · ${car.engine_volume_cc} см³` : ""}
                       {car.horsepower != null && car.horsepower > 0
                         ? ` · ${car.horsepower} л.с.`

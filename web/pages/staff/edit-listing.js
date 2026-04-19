@@ -72,6 +72,11 @@ export default function StaffEditListingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [cardPublicHref, setCardPublicHref] = useState("");
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [newBrandName, setNewBrandName] = useState("");
+  const [newModelName, setNewModelName] = useState("");
+  const [newGenName, setNewGenName] = useState("");
+  const [catalogNotice, setCatalogNotice] = useState("");
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -171,6 +176,100 @@ export default function StaffEditListingPage() {
     })();
   }, [token, modelId]);
 
+  async function addCatalogBrand() {
+    const name = newBrandName.trim();
+    if (!token || !name) return;
+    setCatalogNotice("");
+    setCatalogBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/car-brands`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCatalogNotice(typeof body.detail === "string" ? body.detail : "Не удалось добавить марку");
+        return;
+      }
+      setBrands((prev) => [...prev, body].sort((a, b) => a.name.localeCompare(b.name, "ru")));
+      setBrandId(String(body.id));
+      setNewBrandName("");
+      setCatalogNotice("Марка добавлена и выбрана.");
+    } finally {
+      setCatalogBusy(false);
+    }
+  }
+
+  async function addCatalogModel() {
+    const name = newModelName.trim();
+    if (!token || !brandId || !name) return;
+    setCatalogNotice("");
+    setCatalogBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/car-brands/${brandId}/models`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCatalogNotice(typeof body.detail === "string" ? body.detail : "Не удалось добавить модель");
+        return;
+      }
+      const r = await fetch(`${API_URL}/staff/catalog/models?brand_id=${brandId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) {
+        setModels(await r.json());
+      }
+      setModelId(String(body.id));
+      setGenerationId("");
+      setNewModelName("");
+      setCatalogNotice("Модель добавлена и выбрана.");
+    } finally {
+      setCatalogBusy(false);
+    }
+  }
+
+  async function addCatalogGeneration() {
+    const name = newGenName.trim();
+    if (!token || !modelId || !name) return;
+    setCatalogNotice("");
+    setCatalogBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/car-models/${modelId}/generations`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCatalogNotice(
+          typeof body.detail === "string" ? body.detail : "Не удалось добавить поколение"
+        );
+        return;
+      }
+      setGenerations((prev) =>
+        [...prev, body].sort((a, b) => a.name.localeCompare(b.name, "ru"))
+      );
+      setGenerationId(String(body.id));
+      setNewGenName("");
+      setCatalogNotice("Поколение добавлено и выбрано.");
+    } finally {
+      setCatalogBusy(false);
+    }
+  }
+
   async function submit(e) {
     e.preventDefault();
     setError("");
@@ -269,6 +368,12 @@ export default function StaffEditListingPage() {
       <main className="site-main">
         <div className="container" style={{ maxWidth: 640 }}>
           <h1 className="section-title">Редактирование объявления</h1>
+          {isAdminRole(me?.role) ? (
+            <p className="muted" style={{ margin: "0 0 1rem", fontSize: "0.9rem", maxWidth: 560 }}>
+              Нет нужной марки, модели или поколения в списке? Ниже, под соответствующим полем, можно
+              добавить запись в справочник.
+            </p>
+          ) : null}
           {error && <div className="alert alert--danger">{error}</div>}
           {loadError && <div className="alert alert--danger">{loadError}</div>}
           {!me ? (
@@ -290,6 +395,34 @@ export default function StaffEditListingPage() {
                   ...brands.map((b) => ({ value: String(b.id), label: b.name })),
                 ]}
               />
+              {isAdminRole(me?.role) ? (
+                <div
+                  className="panel"
+                  style={{ padding: "0.75rem 1rem", display: "grid", gap: "0.5rem" }}
+                >
+                  <span className="muted" style={{ fontSize: "0.85rem" }}>
+                    Нет нужной марки? Добавьте в справочник:
+                  </span>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      className="input"
+                      style={{ flex: "1 1 200px", minWidth: 0 }}
+                      value={newBrandName}
+                      onChange={(e) => setNewBrandName(e.target.value)}
+                      placeholder="Название марки"
+                      disabled={catalogBusy}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={catalogBusy || !newBrandName.trim()}
+                      onClick={addCatalogBrand}
+                    >
+                      Добавить марку
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <SiteSelectDropdown
                 className="site-dropdown--block"
                 label="Модель"
@@ -306,6 +439,34 @@ export default function StaffEditListingPage() {
                   ...models.map((m) => ({ value: String(m.id), label: m.name })),
                 ]}
               />
+              {isAdminRole(me?.role) && brandId ? (
+                <div
+                  className="panel"
+                  style={{ padding: "0.75rem 1rem", display: "grid", gap: "0.5rem" }}
+                >
+                  <span className="muted" style={{ fontSize: "0.85rem" }}>
+                    Нет нужной модели? Добавьте в справочник:
+                  </span>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      className="input"
+                      style={{ flex: "1 1 200px", minWidth: 0 }}
+                      value={newModelName}
+                      onChange={(e) => setNewModelName(e.target.value)}
+                      placeholder="Название модели"
+                      disabled={catalogBusy}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={catalogBusy || !newModelName.trim()}
+                      onClick={addCatalogModel}
+                    >
+                      Добавить модель
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {generations.length > 0 ? (
                 <SiteSelectDropdown
                   className="site-dropdown--block"
@@ -319,9 +480,43 @@ export default function StaffEditListingPage() {
                     ...generations.map((g) => ({ value: String(g.id), label: g.name })),
                   ]}
                 />
-              ) : modelId ? (
+              ) : null}
+              {isAdminRole(me?.role) && modelId ? (
+                <div
+                  className="panel"
+                  style={{ padding: "0.75rem 1rem", display: "grid", gap: "0.5rem" }}
+                >
+                  <span className="muted" style={{ fontSize: "0.85rem" }}>
+                    Нет нужного поколения? Добавьте в справочник:
+                  </span>
+                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      className="input"
+                      style={{ flex: "1 1 200px", minWidth: 0 }}
+                      value={newGenName}
+                      onChange={(e) => setNewGenName(e.target.value)}
+                      placeholder="Например: VII рестайлинг"
+                      disabled={catalogBusy}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={catalogBusy || !newGenName.trim()}
+                      onClick={addCatalogGeneration}
+                    >
+                      Добавить поколение
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {!isAdminRole(me?.role) && generations.length === 0 && modelId ? (
                 <p className="muted" style={{ margin: 0 }}>
                   Поколение в справочнике для этой модели не задано — объявление будет без привязки к поколению.
+                </p>
+              ) : null}
+              {catalogNotice ? (
+                <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+                  {catalogNotice}
                 </p>
               ) : null}
               <label className="muted" style={{ display: "grid", gap: 4 }}>
