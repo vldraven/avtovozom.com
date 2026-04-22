@@ -8,5 +8,7 @@ python-jose[cryptography]==3.3.0
 # Версию держать в паре с backend/Dockerfile (mcr.microsoft.com/playwright/python:v…-jammy).
 playwright==1.58.0
 httpx==0.27.2
+# IANA-зоны для zoneinfo.ZoneInfo в минимальных Docker-образах (без системного tzdata)
+tzdata>=2024.1
 deep-translator==1.11.4
 tks-api-official

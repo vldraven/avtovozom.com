@@ -285,6 +285,13 @@ export default function CarDetailView({
   );
   const ogImage = hero?.storage_url ? mediaSrc(hero.storage_url) : "";
 
+  const totalRubRf =
+    car.price_breakdown?.total_rub != null
+      ? car.price_breakdown.total_rub
+      : car.estimated_total_rub != null
+        ? car.estimated_total_rub
+        : null;
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Vehicle",
@@ -293,12 +300,12 @@ export default function CarDetailView({
     model: car.model,
     ...(car.year ? { modelDate: `${car.year}-01-01` } : {}),
     ...(ogImage ? { image: [ogImage] } : {}),
-    ...(car.price_breakdown?.total_rub != null
+    ...(totalRubRf != null
       ? {
           offers: {
             "@type": "Offer",
             priceCurrency: "RUB",
-            price: Math.round(Number(car.price_breakdown.total_rub)),
+            price: Math.round(Number(totalRubRf)),
             availability: "https://schema.org/InStock",
             url: canonical,
           },
@@ -412,9 +419,9 @@ export default function CarDetailView({
             ) : null}
             {car.rub_china != null ? (
               <>
-                {car.price_breakdown?.total_rub ? (
+                {totalRubRf != null ? (
                   <p className="detail-price detail-price--rf">
-                    {formatRubInt(car.price_breakdown.total_rub)} ₽
+                    {formatRubInt(totalRubRf)} ₽
                     <span className="detail-price__hint">
                       приблизительная цена в России
                     </span>

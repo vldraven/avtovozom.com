@@ -1,5 +1,6 @@
 .DS_Store
 .env
+web/.env.local
 **/__pycache__/
 **/.pytest_cache/
 **/node_modules/

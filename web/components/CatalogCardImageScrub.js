@@ -19,8 +19,8 @@ function preloadImageSources(sources) {
 /**
  * Фото в карточке каталога: при движении курсора/пальца по горизонтали меняется кадр (как на auto.ru).
  * Клик без жеста ведёт в карточку (родительский Link).
- * Остальные кадры подгружаются в фоне, когда карточка попадает в зону видимости — иначе смена src
- * каждый раз тянет сеть и листание «не работает», пока кэш не прогрет (как после открытия карточки).
+ * Остальные кадры подгружаются только при явном взаимодействии (hover/touch),
+ * чтобы не перегружать сеть на длинных списках.
  */
 export default function CatalogCardImageScrub({ photos }) {
   const urls = useMemo(() => {
@@ -29,11 +29,10 @@ export default function CatalogCardImageScrub({ photos }) {
   }, [photos]);
 
   const allSrcs = useMemo(() => urls.map((u) => mediaSrc(u)), [urls]);
-  const preloadKey = useMemo(() => allSrcs.join("\u0001"), [allSrcs]);
-
   const n = urls.length;
   const wrapRef = useRef(null);
   const allSrcsRef = useRef(allSrcs);
+  const warmedRef = useRef(false);
   allSrcsRef.current = allSrcs;
 
   const [active, setActive] = useState(0);
@@ -42,24 +41,15 @@ export default function CatalogCardImageScrub({ photos }) {
   const startRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
-    if (n <= 1) return;
-    const el = wrapRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (!entries.some((e) => e.isIntersecting)) return;
-        preloadImageSources(allSrcsRef.current);
-      },
-      { root: null, rootMargin: "280px 0px", threshold: 0 }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [n, preloadKey]);
+    warmedRef.current = false;
+  }, [allSrcs]);
 
   const warmOnHover = useCallback(() => {
-    if (n <= 1) return;
-    preloadImageSources(allSrcsRef.current);
+    if (n <= 1 || warmedRef.current) return;
+    const srcs = allSrcsRef.current;
+    // Прогреваем только пару следующих кадров вместо всей галереи.
+    preloadImageSources(srcs.slice(1, 3));
+    warmedRef.current = true;
   }, [n]);
 
   const updateFromClientX = useCallback(
@@ -115,6 +105,7 @@ export default function CatalogCardImageScrub({ photos }) {
       className={`catalog-card__image-wrap${n > 1 ? " catalog-card__image-wrap--scrub" : ""}`}
       onPointerEnter={n > 1 ? warmOnHover : undefined}
       onPointerDown={onPointerDown}
+      onTouchStart={n > 1 ? warmOnHover : undefined}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
@@ -128,6 +119,8 @@ export default function CatalogCardImageScrub({ photos }) {
           src={mediaSrc(show)}
           alt=""
           draggable={false}
+          loading="lazy"
+          fetchPriority="low"
           decoding="async"
         />
       ) : (

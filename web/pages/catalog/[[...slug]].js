@@ -669,7 +669,14 @@ export default function CatalogTreePage() {
 
                   <section className="catalog-section">
                     <div className="catalog-grid">
-                      {cars.map((car) => (
+                      {cars.map((car) => {
+                        const totalRub =
+                          car.price_breakdown?.total_rub != null
+                            ? car.price_breakdown.total_rub
+                            : car.estimated_total_rub != null
+                              ? car.estimated_total_rub
+                              : null;
+                        return (
                         <article key={car.id} className="catalog-card">
                           <Link href={publicCarHref(car)} className="catalog-card__main">
                             <CatalogCardImageScrub photos={car.photos} />
@@ -694,10 +701,10 @@ export default function CatalogTreePage() {
                                 </span>
                               </p>
                               <p className="catalog-card__price">
-                                {car.price_breakdown?.total_rub != null ? (
+                                {totalRub != null ? (
                                   <>
                                     <strong className="catalog-price-rub">
-                                      {Math.round(car.price_breakdown.total_rub).toLocaleString("ru-RU")} ₽
+                                      {Math.round(totalRub).toLocaleString("ru-RU")} ₽
                                     </strong>
                                     <span className="text-muted catalog-price-sub">
                                       в России (расчётная)
@@ -730,7 +737,8 @@ export default function CatalogTreePage() {
                             </Link>
                           </div>
                         </article>
-                      ))}
+                        );
+                      })}
                     </div>
                   </section>
                 </div>

@@ -126,6 +126,12 @@ export default function DealerPublicPage() {
                 <ul className="dealer-public-grid">
                   {data.cars.map((c) => {
                     const ph = [...(c.photos || [])].sort((a, b) => a.sort_order - b.sort_order)[0];
+                    const totalRub =
+                      c.price_breakdown?.total_rub != null
+                        ? c.price_breakdown.total_rub
+                        : c.estimated_total_rub != null
+                          ? c.estimated_total_rub
+                          : null;
                     return (
                       <li key={c.id} className="dealer-public-card">
                         <Link href={publicCarHref(c)} className="dealer-public-card__link">
@@ -144,8 +150,8 @@ export default function DealerPublicPage() {
                               {c.brand} {c.model} · {c.year}
                             </div>
                             <div className="dealer-public-card__price">
-                              {c.price_breakdown?.total_rub != null
-                                ? `${formatRub(c.price_breakdown.total_rub)} (РФ)`
+                              {totalRub != null
+                                ? `${formatRub(totalRub)} (РФ)`
                                 : `${Math.round(c.price_cny)} ¥`}
                             </div>
                           </div>
