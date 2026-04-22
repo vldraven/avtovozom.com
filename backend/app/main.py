@@ -1,10 +1,14 @@
 import os
 import secrets
 import shutil
+import time
 import uuid
+import zlib
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
+from threading import Lock
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -136,17 +140,87 @@ app.add_middleware(
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "/app/media"))
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
+_slug_maps_lock = Lock()
+_slug_maps_cached_at = 0.0
+_slug_maps_cached: tuple[dict[int, str], dict[tuple[int, int], str]] | None = None
+_SLUG_MAPS_TTL_SECONDS = 120.0
+
+# Календарь для возраста авто: полные годы от даты первой регистрации до сегодня (день/месяц важны).
+try:
+    MSK = ZoneInfo("Europe/Moscow")
+except Exception:
+    # В slim Docker часто нет системного tzdata; ставьте пакет tzdata (см. requirements.txt).
+    MSK = timezone(timedelta(hours=3))
+
+
+def _parse_car_registration_date(s: str | None) -> date | None:
+    """Дата в формате YYYY-MM-DD, DD.MM.YYYY или YYYY; иначе None."""
+    if s is None:
+        return None
+    t = (s or "").strip()
+    if not t:
+        return None
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%Y/%m/%d", "%Y.%m.%d"):
+        try:
+            return datetime.strptime(t, fmt).date()
+        except ValueError:
+            continue
+    if len(t) == 4 and t.isdigit():
+        y = int(t, 10)
+        if 1980 <= y <= 2100:
+            return date(y, 1, 1)
+    return None
+
+
+def _subtract_years_safe(d: date, years: int) -> date:
+    """d - N календарных лет с безопасной обработкой 29 февраля."""
+    try:
+        return d.replace(year=d.year - years)
+    except ValueError:
+        # 29 февраля -> 28 февраля в невисокосный год
+        return d.replace(year=d.year - years, day=28)
+
+
+def _get_cached_slug_maps(db: Session) -> tuple[dict[int, str], dict[tuple[int, int], str]]:
+    global _slug_maps_cached_at, _slug_maps_cached
+    now = time.monotonic()
+    with _slug_maps_lock:
+        if _slug_maps_cached is not None and (now - _slug_maps_cached_at) <= _SLUG_MAPS_TTL_SECONDS:
+            return _slug_maps_cached
+    fresh = build_catalog_slug_maps(db)
+    with _slug_maps_lock:
+        _slug_maps_cached = fresh
+        _slug_maps_cached_at = now
+    return fresh
+
 
 def _car_age_group_for_calc(car: Car) -> str:
-    now_year = datetime.now(timezone.utc).year
-    age_years = max(0, int(now_year) - int(car.year))
-    if age_years < 1:
+    today = datetime.now(MSK).date()
+    reg = _parse_car_registration_date(car.registration_date)
+    if reg is None and car.year is not None:
+        try:
+            y = int(car.year)
+            if 1980 <= y <= 2100:
+                reg = date(y, 1, 1)
+        except (TypeError, ValueError):
+            reg = None
+    if reg is None:
         return "new"
-    if age_years <= 3:
+
+    # Границы по полным календарным датам (день/месяц важны):
+    # new: < 1 года; 1-3: [1,3); 3-5: [3,5); 5-7: [5,7); over_7: >= 7.
+    cutoff_1 = _subtract_years_safe(today, 1)
+    cutoff_3 = _subtract_years_safe(today, 3)
+    cutoff_5 = _subtract_years_safe(today, 5)
+    cutoff_7 = _subtract_years_safe(today, 7)
+
+    if reg > cutoff_1:
+        return "new"
+    if reg > cutoff_3:
         return "1-3"
-    if age_years <= 5:
+    if reg > cutoff_5:
         return "3-5"
-    if age_years <= 7:
+    if reg > cutoff_7:
         return "5-7"
     return "over_7"
 
@@ -169,6 +243,97 @@ def _to_rub(amount: float, currency: str, rub_per_cny: float) -> float:
     return float(amount)
 
 
+# Кэш компонентов ETC/ТКС: один и тот же run_estimate() для близких авто/настроек не пересчитывать.
+_ETC_RUBS_CACHE: dict[
+    tuple[int, str, str, int, int, int], tuple[float, float, float]
+] = {}
+_ETC_RUBS_LOCK = Lock()
+_ETC_RUBS_CACHE_MAX = 3000
+
+
+def _estimate_fingerprint(row: CustomsCalcSettings) -> int:
+    h = zlib.crc32((row.config_yaml or "").encode("utf-8", errors="replace"))
+    h = zlib.crc32(
+        (row.util_coefficients_individual or "").encode("utf-8", errors="replace"), h
+    )
+    h = zlib.crc32(
+        (row.util_coefficients_company or "").encode("utf-8", errors="replace"), h
+    )
+    return h & 0xFFFFFFFF
+
+
+def _get_etc_customs_rubs(car: Car, row: CustomsCalcSettings) -> tuple[float, float, float] | None:
+    engine_type = _car_engine_type_for_calc(car)
+    age_group = _car_age_group_for_calc(car)
+    engine_capacity = max(0, int(car.engine_volume_cc or 0))
+    if engine_type != "electric":
+        engine_capacity = max(50, engine_capacity)
+    power = max(1, int(car.horsepower or 1))
+    price_key = int(round(float(car.price_cny) * 100))
+    fp = _estimate_fingerprint(row)
+    key = (fp, age_group, engine_type, engine_capacity, power, price_key)
+    with _ETC_RUBS_LOCK:
+        hit = _ETC_RUBS_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        estimate = run_estimate(
+            row.config_yaml,
+            CustomsCalcEstimateIn(
+                age=age_group,
+                engine_capacity=engine_capacity,
+                engine_type=engine_type,
+                power=power,
+                price=float(car.price_cny),
+                owner_type="individual",
+                currency="CNY",
+            ),
+            util_individual_json=row.util_coefficients_individual,
+            util_company_json=row.util_coefficients_company,
+        )
+        if estimate.summary is None:
+            return None
+        s = estimate.summary
+        hit = (float(s.clearance_fee_rub), float(s.duty_rub), float(s.utilization_fee_rub))
+    except Exception:
+        return None
+    with _ETC_RUBS_LOCK:
+        if len(_ETC_RUBS_CACHE) >= _ETC_RUBS_CACHE_MAX:
+            _ETC_RUBS_CACHE.clear()
+        _ETC_RUBS_CACHE[key] = hit
+    return hit
+
+
+def _compute_estimated_total_rub(
+    car: Car, row: CustomsCalcSettings, cbr: CbrSnapshot
+) -> float | None:
+    rubs = _get_etc_customs_rubs(car, row)
+    if rubs is None:
+        return None
+    clearance, duty, util = rubs
+    rub_china = float(rub_china_for_car(car, cbr))
+    extras = parse_additional_expenses_json(row.additional_expenses_json)
+    export_raw = extras["export_expenses"]
+    russia_raw = extras["russia_expenses"]
+    bank_raw = extras["bank_commission"]
+    company_raw = extras["company_commission"]
+    export_rub = _to_rub(float(export_raw["amount"]), str(export_raw["currency"]), cbr.rub_per_cny)
+    russia_rub = _to_rub(float(russia_raw["amount"]), str(russia_raw["currency"]), cbr.rub_per_cny)
+    company_rub = _to_rub(float(company_raw["amount"]), str(company_raw["currency"]), cbr.rub_per_cny)
+    bank_rub = rub_china * (float(bank_raw["percent"]) / 100.0)
+    total = (
+        rub_china
+        + clearance
+        + duty
+        + util
+        + export_rub
+        + russia_rub
+        + bank_rub
+        + company_rub
+    )
+    return round(float(total), 2)
+
+
 def _build_car_price_breakdown(
     car: Car,
     *,
@@ -181,27 +346,11 @@ def _build_car_price_breakdown(
     rub_china = float(rub_china_for_car(car, cbr))
     engine_type = _car_engine_type_for_calc(car)
     age_group = _car_age_group_for_calc(car)
-    engine_capacity = max(0, int(car.engine_volume_cc or 0))
-    if engine_type != "electric":
-        engine_capacity = max(50, engine_capacity)
 
-    estimate = run_estimate(
-        row.config_yaml,
-        CustomsCalcEstimateIn(
-            age=age_group,
-            engine_capacity=engine_capacity,
-            engine_type=engine_type,
-            power=max(1, int(car.horsepower or 1)),
-            price=float(car.price_cny),
-            owner_type="individual",
-            currency="CNY",
-        ),
-        util_individual_json=row.util_coefficients_individual,
-        util_company_json=row.util_coefficients_company,
-    )
-    summary = estimate.summary
-    if summary is None:
+    rubs = _get_etc_customs_rubs(car, row)
+    if rubs is None:
         return None
+    clearance, duty, util = rubs
 
     extras = parse_additional_expenses_json(row.additional_expenses_json)
     export_raw = extras["export_expenses"]
@@ -224,19 +373,19 @@ def _build_car_price_breakdown(
         CarPriceBreakdownItemOut(
             key="clearance_fee",
             label="Таможенное оформление",
-            amount_rub=round(float(summary.clearance_fee_rub), 2),
+            amount_rub=round(clearance, 2),
             description="Таможенный сбор за оформление.",
         ),
         CarPriceBreakdownItemOut(
             key="duty",
             label="Таможенная пошлина",
-            amount_rub=round(float(summary.duty_rub), 2),
+            amount_rub=round(duty, 2),
             description="Расчет по параметрам автомобиля и возрастной группе.",
         ),
         CarPriceBreakdownItemOut(
             key="utilization_fee",
             label="Утилизационный сбор",
-            amount_rub=round(float(summary.utilization_fee_rub), 2),
+            amount_rub=round(util, 2),
             description="По таблицам коэффициентов, заданным в админке.",
         ),
         CarPriceBreakdownItemOut(
@@ -282,12 +431,16 @@ def _car_to_out(
     has_public_dealer_profile: bool = False,
     slug_maps: tuple[dict[int, str], dict[tuple[int, int], str]],
     price_breakdown: CarPriceBreakdownOut | None = None,
+    estimated_total_rub: float | None = None,
 ) -> CarOut:
     rub = round(rub_china_for_car(car, cbr), 2) if cbr is not None else None
     guide = build_pricing_guide(car, cbr) if full_import and cbr is not None else None
     brand_slug, model_slug = slugs_for_car(car, slug_maps[0], slug_maps[1])
     gen = getattr(car, "generation", None)
     gen_slug = (gen.slug if gen is not None else "") or ""
+    est = estimated_total_rub
+    if est is None and price_breakdown is not None:
+        est = float(price_breakdown.total_rub)
     return CarOut(
         id=car.id,
         brand_id=car.brand_id,
@@ -317,6 +470,7 @@ def _car_to_out(
         rub_china=rub,
         pricing_guide=guide,
         price_breakdown=price_breakdown,
+        estimated_total_rub=est,
     )
 
 
@@ -516,7 +670,7 @@ def public_customs_calculator_estimate(payload: CustomsCalcEstimateIn, db: Sessi
 def public_catalog_brands(db: Session = Depends(get_db)):
     """Публичный список марок с числом объявлений (главная страница, сценарий как на auto.ru)."""
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
-    bmap, _ = build_catalog_slug_maps(db)
+    bmap, _ = _get_cached_slug_maps(db)
     car_counts = {
         row[0]: row[1]
         for row in db.execute(
@@ -561,7 +715,7 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
         .scalars()
         .all()
     )
-    _, mmap = build_catalog_slug_maps(db)
+    _, mmap = _get_cached_slug_maps(db)
     counts = {
         row[0]: row[1]
         for row in db.execute(
@@ -586,7 +740,7 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
 def public_catalog_tree(db: Session = Depends(get_db)):
     """Дерево марок и моделей с ЧПУ-слагами для навигации /catalog/…"""
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
-    bmap, mmap = build_catalog_slug_maps(db)
+    bmap, mmap = _get_cached_slug_maps(db)
     car_counts = {
         row[0]: row[1]
         for row in db.execute(
@@ -832,29 +986,55 @@ def register_verify(payload: RegisterVerifyIn, db: Session = Depends(get_db)):
     user = db.execute(select(User).where(User.email == payload.email.lower())).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    if user.email_verified:
-        return RegisterStartOut(ok=True, message="Email уже подтвержден")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    if not user.verification_code or user.verification_code != payload.code.strip():
-        raise HTTPException(status_code=400, detail="Неверный код подтверждения")
+    code_in = (payload.code or "").strip()
+    if not user.email_verified:
+        if not user.verification_code or user.verification_code != code_in:
+            raise HTTPException(status_code=400, detail="Неверный код подтверждения")
+        if not user.verification_expires_at or user.verification_expires_at < now:
+            raise HTTPException(status_code=400, detail="Код подтверждения истек")
+        temp_password = secrets.token_urlsafe(8)
+        user.password_hash = hash_password(temp_password)
+        user.email_verified = True
+        user.is_active = True
+        user.must_change_password = True
+        user.verification_code = None
+        user.verification_expires_at = None
+        db.commit()
+        send_email(
+            user.email,
+            "Временный пароль avtovozom",
+            "Ваш email подтвержден.\n"
+            f"Временный пароль для входа: {temp_password}\n"
+            "После входа смените пароль в профиле.",
+        )
+        token = create_access_token(str(user.id))
+        return RegisterStartOut(
+            ok=True,
+            message=(
+                "Email подтвержден. Временный пароль отправлен на почту. "
+                "Вы автоматически вошли в аккаунт."
+            ),
+            access_token=token,
+        )
+    if not user.verification_code:
+        return RegisterStartOut(ok=True, message="Email уже подтвержден")
     if not user.verification_expires_at or user.verification_expires_at < now:
+        user.verification_code = None
+        user.verification_expires_at = None
+        db.commit()
         raise HTTPException(status_code=400, detail="Код подтверждения истек")
-    temp_password = secrets.token_urlsafe(8)
-    user.password_hash = hash_password(temp_password)
-    user.email_verified = True
-    user.is_active = True
-    user.must_change_password = True
+    if user.verification_code != code_in:
+        raise HTTPException(status_code=400, detail="Неверный код подтверждения")
     user.verification_code = None
     user.verification_expires_at = None
     db.commit()
-    send_email(
-        user.email,
-        "Временный пароль avtovozom",
-        "Ваш email подтвержден.\n"
-        f"Временный пароль для входа: {temp_password}\n"
-        "После входа смените пароль в профиле.",
+    token = create_access_token(str(user.id))
+    return RegisterStartOut(
+        ok=True,
+        message="Код подтверждён. Вы вошли в аккаунт.",
+        access_token=token,
     )
-    return RegisterStartOut(ok=True, message="Email подтвержден. Временный пароль отправлен на почту.")
 
 
 @app.post("/auth/login", response_model=TokenOut)
@@ -963,6 +1143,10 @@ def list_cars(
         default="date_desc",
         description="date_desc|date_asc|price_asc|price_desc",
     ),
+    include_breakdown: bool = Query(
+        default=False,
+        description="Если true — считать ориентировочную детализацию итоговой цены (тяжелее).",
+    ),
     page: int = 1,
     limit: int = 20,
     db: Session = Depends(get_db),
@@ -1035,15 +1219,24 @@ def list_cars(
     ).unique().scalars().all()
 
     snap, cbr_err = build_cbr_snapshot()
-    slug_maps = build_catalog_slug_maps(db)
+    slug_maps = _get_cached_slug_maps(db)
     settings_row = ensure_settings_row(db)
     items: list[CarOut] = []
     for car in cars:
         pb = None
-        try:
-            pb = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
-        except Exception:
-            pb = None
+        if include_breakdown:
+            try:
+                pb = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
+            except Exception:
+                pb = None
+        est: float | None = None
+        if pb is not None:
+            est = float(pb.total_rub)
+        elif snap is not None:
+            try:
+                est = _compute_estimated_total_rub(car, settings_row, snap)
+            except Exception:
+                est = None
         items.append(
             _car_to_out(
                 car,
@@ -1051,6 +1244,7 @@ def list_cars(
                 full_import=False,
                 slug_maps=slug_maps,
                 price_breakdown=pb,
+                estimated_total_rub=est,
             )
         )
     return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
@@ -1089,7 +1283,15 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
         price_breakdown = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
     except Exception:
         price_breakdown = None
-    slug_maps = build_catalog_slug_maps(db)
+    est: float | None = None
+    if price_breakdown is not None:
+        est = float(price_breakdown.total_rub)
+    elif snap is not None:
+        try:
+            est = _compute_estimated_total_rub(car, settings_row, snap)
+        except Exception:
+            est = None
+    slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(
         car,
         cbr=snap,
@@ -1097,6 +1299,7 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
         has_public_dealer_profile=has_pub,
         slug_maps=slug_maps,
         price_breakdown=price_breakdown,
+        estimated_total_rub=est,
     )
 
 
@@ -1124,22 +1327,24 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
     )
     cars = db.execute(stmt).unique().scalars().all()
     snap, _ = build_cbr_snapshot()
-    slug_maps = build_catalog_slug_maps(db)
+    slug_maps = _get_cached_slug_maps(db)
     settings_row = ensure_settings_row(db)
     items: list[CarOut] = []
     for c in cars:
-        pb = None
-        try:
-            pb = _build_car_price_breakdown(c, row=settings_row, cbr=snap)
-        except Exception:
-            pb = None
+        est: float | None = None
+        if snap is not None:
+            try:
+                est = _compute_estimated_total_rub(c, settings_row, snap)
+            except Exception:
+                est = None
         items.append(
             _car_to_out(
                 c,
                 cbr=snap,
                 full_import=False,
                 slug_maps=slug_maps,
-                price_breakdown=pb,
+                price_breakdown=None,
+                estimated_total_rub=est,
             )
         )
     co = (user.company_name or "").strip()
@@ -1337,7 +1542,7 @@ async def _update_car_from_multipart(
         .scalar_one()
     )
     snap, _ = build_cbr_snapshot()
-    slug_maps = build_catalog_slug_maps(db)
+    slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(car, cbr=snap, full_import=bool(snap), slug_maps=slug_maps)
 
 
@@ -1522,7 +1727,7 @@ def staff_my_posted_cars(
         .all()
     )
     snap, _ = build_cbr_snapshot()
-    slug_maps = build_catalog_slug_maps(db)
+    slug_maps = _get_cached_slug_maps(db)
     return [
         _car_to_out(c, cbr=snap, full_import=False, slug_maps=slug_maps) for c in cars
     ]
@@ -1638,7 +1843,7 @@ async def staff_create_car(
         .scalar_one()
     )
     snap, _ = build_cbr_snapshot()
-    slug_maps = build_catalog_slug_maps(db)
+    slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(car, cbr=snap, full_import=False, slug_maps=slug_maps)
 
 
@@ -1670,7 +1875,7 @@ def staff_get_own_car(
     if not car:
         raise HTTPException(status_code=404, detail="Car not found")
     snap, _ = build_cbr_snapshot()
-    slug_maps = build_catalog_slug_maps(db)
+    slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(car, cbr=snap, full_import=bool(snap), slug_maps=slug_maps)
 
 
@@ -1967,7 +2172,7 @@ def admin_get_car(
     if not car:
         raise HTTPException(status_code=404, detail="Car not found")
     snap, _ = build_cbr_snapshot()
-    slug_maps = build_catalog_slug_maps(db)
+    slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(car, cbr=snap, full_import=bool(snap), slug_maps=slug_maps)
 
 
@@ -2305,7 +2510,8 @@ def admin_update_customs_calculator_config(
 def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_db)):
     """
     Заявка на расчёт без авторизации: сохраняем контакты, создаём неподтверждённого пользователя
-    (если нужно), отправляем код на email. После /auth/register/verify клиент получает временный пароль.
+    (если нужно), отправляем код на email. После /auth/register/verify клиент получает временный пароль
+    (новый пользователь) или access_token (уже существующий подтверждённый email).
     """
     email = payload.email.strip().lower()
     if not email or "@" not in email:
@@ -2320,22 +2526,45 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
     if not car_exists:
         raise HTTPException(status_code=404, detail="Car not found")
 
-    user = _upsert_unverified_user_send_code(
-        db,
-        email=email,
-        phone=phone,
-        full_name=full_name,
-        email_subject="Подтвердите email — заявка на расчёт (avtovozom)",
-        email_body=(
-            "Вы оставили заявку на расчёт на сайте avtovozom.\n\n"
-            "Код подтверждения: {code}\n"
+    existing = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if existing and existing.email_verified:
+        code = f"{secrets.randbelow(900000) + 100000}"
+        expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+        if phone:
+            existing.phone = phone
+        if full_name:
+            existing.full_name = full_name
+        existing.verification_code = code
+        existing.verification_expires_at = expires
+        db.commit()
+        send_email(
+            email,
+            "Код для заявки на расчёт — avtovozom",
+            "Вы оставили заявку на расчёт на сайте avtovozom с этого email (аккаунт уже есть).\n\n"
+            f"Код подтверждения: {code}\n"
             "Срок действия: 15 минут.\n\n"
-            "После подтверждения на этот адрес придёт временный пароль для входа в личный кабинет."
-        ),
-        verified_exists_detail=(
-            "Этот email уже зарегистрирован. Войдите в аккаунт и отправьте заявку со страницы автомобиля."
-        ),
-    )
+            "Введите код в форму на сайте, чтобы подтвердить заявку и войти в личный кабинет.\n"
+            "Вход по коду — без ввода пароля.",
+        )
+        db.refresh(existing)
+        user = existing
+    else:
+        user = _upsert_unverified_user_send_code(
+            db,
+            email=email,
+            phone=phone,
+            full_name=full_name,
+            email_subject="Подтвердите email — заявка на расчёт (avtovozom)",
+            email_body=(
+                "Вы оставили заявку на расчёт на сайте avtovozom.\n\n"
+                "Код подтверждения: {code}\n"
+                "Срок действия: 15 минут.\n\n"
+                "После подтверждения на этот адрес придёт временный пароль для входа в личный кабинет."
+            ),
+            verified_exists_detail=(
+                "Этот email уже зарегистрирован. Войдите в аккаунт и отправьте заявку со страницы автомобиля."
+            ),
+        )
 
     user_name = full_name or email.split("@", 1)[0]
     user_contact = phone or email
@@ -2362,8 +2591,9 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
         ok=True,
         request_id=req.id,
         message=(
-            "Заявка принята. На email отправлен код подтверждения — введите его ниже. "
-            "После подтверждения вы сможете войти в кабинет (временный пароль придёт письмом)."
+            "Заявка принята. На email отправлен код — введите его ниже. "
+            "Для нового аккаунта после кода придёт временный пароль; "
+            "если этот email уже зарегистрирован, после кода откроется вход в кабинет."
         ),
     )
 
@@ -2549,7 +2779,7 @@ def _public_car_page_url(db: Session, car_id: int) -> str:
     )
     if not car or car.brand is None or car.model is None:
         return f"{origin}/cars/{car_id}"
-    slug_maps = build_catalog_slug_maps(db)
+    slug_maps = _get_cached_slug_maps(db)
     bs, ms = slugs_for_car(car, slug_maps[0], slug_maps[1])
     return f"{origin}/catalog/{bs}/{ms}/{car_id}"
 

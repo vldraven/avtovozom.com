@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
 import { publicCarHref } from "../lib/carRoutes";
+import { saveToken } from "../lib/auth";
 import { mediaSrc } from "../lib/media";
 import { formatRuPhoneMask, normalizeRuPhoneDigits, phoneDigitsToApi } from "../lib/ruPhoneMask";
 
@@ -40,6 +41,8 @@ export default function RequestQuotePage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  /** После verify: если есть JWT — пользователь уже в авторизованной зоне. */
+  const [verifyMode, setVerifyMode] = useState(null);
 
   useEffect(() => {
     if (!router.isReady || !carId) return;
@@ -78,6 +81,7 @@ export default function RequestQuotePage() {
         return;
       }
       setMessage(body.message || "Заявка принята.");
+      setVerifyMode(null);
       setStep("verify");
     } finally {
       setBusy(false);
@@ -103,11 +107,21 @@ export default function RequestQuotePage() {
         setError(d || "Неверный или просроченный код.");
         return;
       }
+      if (body.access_token) {
+        saveToken(body.access_token);
+        setVerifyMode("authed");
+        setMessage(
+          body.message ||
+            "Код подтверждён. Вы вошли в аккаунт — заявка в разделе «Мои заявки на расчёт»."
+        );
+      } else {
+        setVerifyMode("new");
+        setMessage(
+          body.message ||
+            "Email подтверждён. Временный пароль отправлен на почту — войдите и при необходимости смените пароль в профиле."
+        );
+      }
       setStep("done");
-      setMessage(
-        body.message ||
-          "Email подтверждён. Временный пароль отправлен на почту — войдите и при необходимости смените пароль в профиле."
-      );
     } finally {
       setBusy(false);
     }
@@ -275,12 +289,18 @@ export default function RequestQuotePage() {
 
           {step === "done" && (
             <div className="panel form-stack">
-              <Link
-                href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`))}`}
-                className="btn btn-primary"
-              >
-                Перейти ко входу
-              </Link>
+              {verifyMode === "authed" ? (
+                <Link href="/profile" className="btn btn-primary">
+                  Мой профиль и заявки
+                </Link>
+              ) : (
+                <Link
+                  href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`))}`}
+                  className="btn btn-primary"
+                >
+                  Перейти ко входу
+                </Link>
+              )}
               <Link href={nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`)} className="btn btn-secondary">
                 Вернуться к объявлению
               </Link>

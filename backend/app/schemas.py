@@ -95,6 +95,8 @@ class CarOut(BaseModel):
     """Курс, сводка для калькуляторов и ссылки — только в GET /cars/{id}."""
     price_breakdown: CarPriceBreakdownOut | None = None
     """Ориентировочная детализация итоговой цены в РФ."""
+    estimated_total_rub: float | None = None
+    """Ориентировочный итог в ₽ (как в разборе по строкам) без детализации; для листингов, когда price_breakdown не считаем."""
 
 
 class CarsListOut(BaseModel):
@@ -497,6 +499,8 @@ class RegisterVerifyIn(BaseModel):
 class RegisterStartOut(BaseModel):
     ok: bool
     message: str
+    access_token: str | None = None
+    token_type: str = "bearer"
 
 
 class ProfileUpdateIn(BaseModel):
