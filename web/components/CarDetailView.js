@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import Breadcrumbs from "./Breadcrumbs";
+import CatalogCardImageScrub from "./CatalogCardImageScrub";
 import CarPhotoLightbox from "./CarPhotoLightbox";
 import HeaderMessagesLink from "./HeaderMessagesLink";
 import HeaderProfileLink from "./HeaderProfileLink";
@@ -54,6 +55,8 @@ export default function CarDetailView({
   const [requestOkMessage, setRequestOkMessage] = useState("");
   const [photoLightboxOpen, setPhotoLightboxOpen] = useState(false);
   const [photoLightboxIndex, setPhotoLightboxIndex] = useState(0);
+  const [similarCars, setSimilarCars] = useState([]);
+  const [similarError, setSimilarError] = useState("");
 
   const isListingOwner =
     car != null &&
@@ -175,6 +178,41 @@ export default function CarDetailView({
     if (!carId) return;
     loadCarDetails();
   }, [carId]);
+
+  useEffect(() => {
+    if (!car?.id || car.price_cny == null) return;
+    const c = Number(car.price_cny);
+    if (!Number.isFinite(c) || c <= 0) return;
+    const band = 0.15;
+    const cnyFrom = Math.max(0, c * (1 - band));
+    const cnyTo = c * (1 + band);
+    let cancelled = false;
+    setSimilarError("");
+    (async () => {
+      const params = new URLSearchParams({
+        cny_from: String(Math.floor(cnyFrom)),
+        cny_to: String(Math.ceil(cnyTo)),
+        exclude_id: String(car.id),
+        limit: "8",
+        page: "1",
+        include_breakdown: "false",
+        sort: "date_desc",
+      });
+      const res = await fetch(`${API_URL}/cars?${params.toString()}`);
+      if (cancelled) return;
+      if (!res.ok) {
+        setSimilarCars([]);
+        setSimilarError("Не удалось подобрать похожие объявления.");
+        return;
+      }
+      const data = await res.json();
+      if (cancelled) return;
+      setSimilarCars(Array.isArray(data.items) ? data.items : []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [car?.id, car?.price_cny]);
 
   useEffect(() => {
     if (!car || !router.isReady) return;
@@ -332,7 +370,11 @@ export default function CarDetailView({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </Head>
-      <div className="layout">
+      <div
+        className={`layout layout--car-detail${
+          me?.role !== "dealer" ? " layout--car-detail-cta" : ""
+        }`}
+      >
       <header className="site-header">
         <div className="container site-header__inner">
           <div className="site-header__brand">
@@ -449,6 +491,14 @@ export default function CarDetailView({
                 </span>
               </p>
             )}
+            {me?.role !== "dealer" && (requestOkMessage || authError) ? (
+              <div className="detail-hero-cta">
+                {requestOkMessage ? (
+                  <div className="alert alert--success detail-hero-cta__message">{requestOkMessage}</div>
+                ) : null}
+                {authError ? <p className="muted detail-hero-cta__message">{authError}</p> : null}
+              </div>
+            ) : null}
           </div>
 
           {profileReady && token && me && isStaffRole(me?.role) && (
@@ -702,20 +752,55 @@ export default function CarDetailView({
             </section>
           ) : null}
 
-          {me?.role !== "dealer" && (
-            <section style={{ marginTop: 24 }}>
-              <button type="button" className="btn btn-primary" onClick={openRequestModal}>
-                Заказать расчёт
-              </button>
-              {requestOkMessage ? (
-                <div className="alert alert--success" style={{ marginTop: 12 }}>
-                  {requestOkMessage}
-                </div>
-              ) : null}
-              {authError ? (
-                <p className="muted" style={{ marginTop: 12 }}>
-                  {authError}
-                </p>
+          {(similarError || similarCars.length > 0) && (
+            <section className="car-detail-similar" aria-label="Рекомендуем">
+              <h2 className="section-title car-detail-similar__title">Рекомендуем</h2>
+              {similarError ? <p className="muted">{similarError}</p> : null}
+              {similarCars.length > 0 ? (
+              <div className="car-detail-similar__scroller">
+                {similarCars.map((c) => {
+                  const simTotal =
+                    c.price_breakdown?.total_rub != null
+                      ? c.price_breakdown.total_rub
+                      : c.estimated_total_rub != null
+                        ? c.estimated_total_rub
+                        : null;
+                  return (
+                    <article key={c.id} className="catalog-card car-detail-similar__card">
+                      <Link href={publicCarHref(c)} className="catalog-card__main">
+                        <CatalogCardImageScrub photos={c.photos} />
+                        <div className="catalog-card__content">
+                          <h3 className="catalog-card__title">{c.title}</h3>
+                          <p className="catalog-card__meta">
+                            <span className="catalog-card__model-line">
+                              {c.brand} · <strong>{c.model}</strong>
+                            </span>
+                            <span className="catalog-card__meta-rest">
+                              {" "}
+                              · {c.year}
+                            </span>
+                          </p>
+                          <p className="catalog-card__price">
+                            {simTotal != null ? (
+                              <>
+                                <strong className="catalog-price-rub">
+                                  {Math.round(simTotal).toLocaleString("ru-RU")} ₽
+                                </strong>
+                                <span className="text-muted catalog-price-sub">в России (расчётная)</span>
+                              </>
+                            ) : (
+                              <>
+                                {Math.round(c.price_cny).toLocaleString("ru-RU")} ¥
+                                <span className="text-muted catalog-price-cny-note"> CNY</span>
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </Link>
+                    </article>
+                  );
+                })}
+              </div>
               ) : null}
             </section>
           )}
@@ -731,6 +816,24 @@ export default function CarDetailView({
           />
         </div>
       </main>
+      {me?.role !== "dealer" && car ? (
+        <div className="car-detail-cta-bar" role="region" aria-label="Действия с объявлением">
+          <div className="container car-detail-cta-bar__inner">
+            <div className="car-detail-cta-bar__price">
+              {totalRubRf != null ? (
+                <span className="car-detail-cta-bar__amount">{formatRubInt(totalRubRf)} ₽</span>
+              ) : (
+                <span className="car-detail-cta-bar__amount">
+                  {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
+                </span>
+              )}
+            </div>
+            <button type="button" className="btn btn-primary car-detail-cta-bar__btn" onClick={openRequestModal}>
+              Заказать расчёт
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
     </>
   );

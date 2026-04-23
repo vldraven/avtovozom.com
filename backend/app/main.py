@@ -1138,6 +1138,9 @@ def list_cars(
     engine_to: int | None = None,
     hp_from: int | None = None,
     hp_to: int | None = None,
+    cny_from: float | None = None,
+    cny_to: float | None = None,
+    exclude_id: int | None = None,
     manufacturer: str | None = None,
     sort: str | None = Query(
         default="date_desc",
@@ -1201,6 +1204,12 @@ def list_cars(
         stmt = stmt.where(Car.horsepower >= hp_from)
     if hp_to is not None:
         stmt = stmt.where(Car.horsepower <= hp_to)
+    if cny_from is not None:
+        stmt = stmt.where(Car.price_cny >= cny_from)
+    if cny_to is not None:
+        stmt = stmt.where(Car.price_cny <= cny_to)
+    if exclude_id is not None:
+        stmt = stmt.where(Car.id != exclude_id)
 
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     s = (sort or "date_desc").strip().lower()

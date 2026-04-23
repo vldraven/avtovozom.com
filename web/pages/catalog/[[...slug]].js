@@ -29,7 +29,11 @@ function segmentsFromQuery(slug) {
 
 export default function CatalogTreePage() {
   const router = useRouter();
-  const segments = router.isReady ? segmentsFromQuery(router.query.slug) : null;
+  /* Без useMemo сегменты — новый массив на каждом рендере, и useEffect с fetch(/cars) зацикливается. */
+  const segments = useMemo(() => {
+    if (!router.isReady) return null;
+    return segmentsFromQuery(router.query.slug);
+  }, [router.isReady, router.asPath]);
 
   const [tree, setTree] = useState([]);
   const [cars, setCars] = useState([]);

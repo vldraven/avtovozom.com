@@ -993,6 +993,128 @@ button.detail-back {
   white-space: nowrap;
 }
 
+.detail-hero-cta {
+  margin-top: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .detail-hero-cta {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .detail-hero-cta .btn-lg {
+    min-width: 200px;
+  }
+}
+
+.detail-hero-cta__message {
+  margin: 0;
+  width: 100%;
+}
+
+/* Карточка авто: нижняя панель с ценой и CTA (над моб. доком) */
+.car-detail-cta-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.12);
+  padding: 0.6rem 0;
+  padding-bottom: max(0.6rem, env(safe-area-inset-bottom, 0px));
+  bottom: calc(3.55rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 768px) {
+  .car-detail-cta-bar {
+    bottom: 0;
+  }
+}
+
+.car-detail-cta-bar__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+.car-detail-cta-bar__price {
+  min-width: 0;
+  flex: 1;
+}
+
+.car-detail-cta-bar__amount {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.car-detail-cta-bar__btn {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding-left: 1.15rem;
+  padding-right: 1.15rem;
+}
+
+@media (max-width: 767px) {
+  .layout.layout--car-detail-cta:not(.layout--no-mobile-dock) {
+    padding-bottom: calc(3.55rem + 3.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (min-width: 768px) {
+  .layout.layout--car-detail-cta {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.car-detail-similar {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.car-detail-similar__title {
+  font-size: 1.15rem;
+  margin-bottom: 1rem;
+}
+
+.car-detail-similar__scroller {
+  display: flex;
+  gap: 0.9rem;
+  overflow-x: auto;
+  padding: 0 0 0.5rem;
+  margin: 0;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+}
+
+.car-detail-similar__scroller::after {
+  content: "";
+  flex: 0 0 0.35rem;
+}
+
+.car-detail-similar__card {
+  flex: 0 0 min(280px, 78vw);
+  scroll-snap-align: start;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.car-detail-similar__card .catalog-card__main {
+  flex: 1;
+}
+
 /* Галерея */
 .photo-gallery {
   margin: 1rem 0 1.5rem;
