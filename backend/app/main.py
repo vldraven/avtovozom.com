@@ -1,5 +1,6 @@
 import os
 import secrets
+from typing import Any
 import shutil
 import time
 import uuid
@@ -54,7 +55,13 @@ from .model_resolver import resolve_model_id_for_listing
 from .parser_logic import run_parser_job
 from .translator_ru import translate_to_ru
 from .email_utils import send_email
-from .media_storage import delete_car_photo_files, save_chat_attachment, save_uploaded_car_photos
+from .media_storage import (
+    delete_brand_logo_files,
+    delete_car_photo_files,
+    save_brand_logo,
+    save_chat_attachment,
+    save_uploaded_car_photos,
+)
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
 from .customs_calc import ensure_settings_row, run_estimate, validate_config_yaml
@@ -89,6 +96,7 @@ from .schemas import (
     CatalogTreeGenerationOut,
     CatalogTreeModelOut,
     CarBrandCreateIn,
+    CarBrandUpdateIn,
     CarGenerationCreateIn,
     CarModelCreateIn,
     CarPriceBreakdownItemOut,
@@ -192,6 +200,12 @@ def _get_cached_slug_maps(db: Session) -> tuple[dict[int, str], dict[tuple[int, 
         _slug_maps_cached = fresh
         _slug_maps_cached_at = now
     return fresh
+
+
+def _invalidate_slug_maps_cache() -> None:
+    global _slug_maps_cached
+    with _slug_maps_lock:
+        _slug_maps_cached = None
 
 
 def _car_age_group_for_calc(car: Car) -> str:
@@ -305,14 +319,19 @@ def _get_etc_customs_rubs(car: Car, row: CustomsCalcSettings) -> tuple[float, fl
 
 
 def _compute_estimated_total_rub(
-    car: Car, row: CustomsCalcSettings, cbr: CbrSnapshot
+    car: Car,
+    row: CustomsCalcSettings,
+    cbr: CbrSnapshot,
+    *,
+    extras: dict[str, Any] | None = None,
 ) -> float | None:
     rubs = _get_etc_customs_rubs(car, row)
     if rubs is None:
         return None
     clearance, duty, util = rubs
     rub_china = float(rub_china_for_car(car, cbr))
-    extras = parse_additional_expenses_json(row.additional_expenses_json)
+    if extras is None:
+        extras = parse_additional_expenses_json(row.additional_expenses_json)
     export_raw = extras["export_expenses"]
     russia_raw = extras["russia_expenses"]
     bank_raw = extras["bank_commission"]
@@ -432,6 +451,7 @@ def _car_to_out(
     slug_maps: tuple[dict[int, str], dict[tuple[int, int], str]],
     price_breakdown: CarPriceBreakdownOut | None = None,
     estimated_total_rub: float | None = None,
+    photo_limit: int | None = None,
 ) -> CarOut:
     rub = round(rub_china_for_car(car, cbr), 2) if cbr is not None else None
     guide = build_pricing_guide(car, cbr) if full_import and cbr is not None else None
@@ -441,6 +461,11 @@ def _car_to_out(
     est = estimated_total_rub
     if est is None and price_breakdown is not None:
         est = float(price_breakdown.total_rub)
+    photos_out = car.photos
+    if photo_limit is not None and photo_limit > 0 and photos_out:
+        photos_out = sorted(photos_out, key=lambda p: (p.sort_order, p.id))[
+            :photo_limit
+        ]
     return CarOut(
         id=car.id,
         brand_id=car.brand_id,
@@ -466,7 +491,7 @@ def _car_to_out(
         model=car.model.name,
         created_by_user_id=car.created_by_user_id,
         has_public_dealer_profile=has_public_dealer_profile,
-        photos=car.photos,
+        photos=photos_out,
         rub_china=rub,
         pricing_guide=guide,
         price_breakdown=price_breakdown,
@@ -638,6 +663,12 @@ def startup() -> None:
                 "additional_expenses_json TEXT"
             )
         )
+        conn.execute(
+            text("ALTER TABLE car_brands ADD COLUMN IF NOT EXISTS logo_storage_url VARCHAR(512)")
+        )
+        conn.execute(
+            text("ALTER TABLE car_brands ADD COLUMN IF NOT EXISTS quick_filter_rank INTEGER")
+        )
     db = next(get_db())
     try:
         seed_initial_data(db)
@@ -667,7 +698,7 @@ def public_customs_calculator_estimate(payload: CustomsCalcEstimateIn, db: Sessi
 
 
 @app.get("/catalog/brands", response_model=list[CatalogBrandOut])
-def public_catalog_brands(db: Session = Depends(get_db)):
+def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
     """Публичный список марок с числом объявлений (главная страница, сценарий как на auto.ru)."""
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
     bmap, _ = _get_cached_slug_maps(db)
@@ -694,10 +725,13 @@ def public_catalog_brands(db: Session = Depends(get_db)):
             slug=bmap.get(b.id, ""),
             listings_count=car_counts.get(b.id, 0),
             models_with_listings=model_counts.get(b.id, 0),
+            logo_storage_url=b.logo_storage_url,
+            quick_filter_rank=b.quick_filter_rank,
         )
         for b in brands
     ]
     items.sort(key=lambda x: (-x.listings_count, x.name.lower()))
+    response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return items
 
 
@@ -1150,6 +1184,12 @@ def list_cars(
         default=False,
         description="Если true — считать ориентировочную детализацию итоговой цены (тяжелее).",
     ),
+    photo_limit: int | None = Query(
+        default=None,
+        ge=1,
+        le=30,
+        description="Ограничить число фото в каждом объявлении (меньше ответ для списков).",
+    ),
     page: int = 1,
     limit: int = 20,
     db: Session = Depends(get_db),
@@ -1230,6 +1270,11 @@ def list_cars(
     snap, cbr_err = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
     settings_row = ensure_settings_row(db)
+    extras_for_est: dict[str, Any] | None = None
+    if snap is not None:
+        extras_for_est = parse_additional_expenses_json(
+            settings_row.additional_expenses_json
+        )
     items: list[CarOut] = []
     for car in cars:
         pb = None
@@ -1243,7 +1288,9 @@ def list_cars(
             est = float(pb.total_rub)
         elif snap is not None:
             try:
-                est = _compute_estimated_total_rub(car, settings_row, snap)
+                est = _compute_estimated_total_rub(
+                    car, settings_row, snap, extras=extras_for_est
+                )
             except Exception:
                 est = None
         items.append(
@@ -1254,6 +1301,7 @@ def list_cars(
                 slug_maps=slug_maps,
                 price_breakdown=pb,
                 estimated_total_rub=est,
+                photo_limit=photo_limit,
             )
         )
     return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
@@ -1338,12 +1386,19 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
     snap, _ = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
     settings_row = ensure_settings_row(db)
+    extras_est: dict[str, Any] | None = None
+    if snap is not None:
+        extras_est = parse_additional_expenses_json(
+            settings_row.additional_expenses_json
+        )
     items: list[CarOut] = []
     for c in cars:
         est: float | None = None
         if snap is not None:
             try:
-                est = _compute_estimated_total_rub(c, settings_row, snap)
+                est = _compute_estimated_total_rub(
+                    c, settings_row, snap, extras=extras_est
+                )
             except Exception:
                 est = None
         items.append(
@@ -1623,6 +1678,100 @@ def staff_catalog_generations(
     ]
 
 
+@app.get("/admin/car-brands", response_model=list[CarBrandBriefOut])
+def admin_list_car_brands(
+    response: Response,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    response.headers["Cache-Control"] = "no-store"
+    return (
+        db.execute(select(CarBrand).order_by(CarBrand.name.asc()))
+        .scalars()
+        .all()
+    )
+
+
+@app.patch("/admin/car-brands/{brand_id}", response_model=CarBrandBriefOut)
+def admin_patch_car_brand(
+    brand_id: int,
+    payload: CarBrandUpdateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    row = db.get(CarBrand, brand_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Марка не найдена")
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        name = str(data["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Пустое название")
+        dup = db.execute(
+            select(CarBrand).where(
+                func.lower(CarBrand.name) == name.lower(),
+                CarBrand.id != brand_id,
+            )
+        ).scalar_one_or_none()
+        if dup:
+            raise HTTPException(status_code=400, detail="Такая марка уже есть в справочнике")
+        row.name = name
+    if "quick_filter_rank" in data:
+        row.quick_filter_rank = data["quick_filter_rank"]
+    db.commit()
+    db.refresh(row)
+    _invalidate_slug_maps_cache()
+    return row
+
+
+@app.post("/admin/car-brands/{brand_id}/logo", response_model=CarBrandBriefOut)
+async def admin_upload_car_brand_logo(
+    brand_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    row = db.get(CarBrand, brand_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Марка не найдена")
+    data = await file.read()
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл не больше 2 МБ")
+    old = row.logo_storage_url
+    try:
+        path = save_brand_logo(brand_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not path:
+        raise HTTPException(
+            status_code=400,
+            detail="Недопустимый формат (нужен JPEG, PNG, WebP или GIF)",
+        )
+    if old and old != path:
+        delete_brand_logo_files(brand_id, [old])
+    row.logo_storage_url = path
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.delete("/admin/car-brands/{brand_id}/logo", response_model=CarBrandBriefOut)
+def admin_delete_car_brand_logo(
+    brand_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    row = db.get(CarBrand, brand_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Марка не найдена")
+    if row.logo_storage_url:
+        delete_brand_logo_files(brand_id, [row.logo_storage_url])
+        row.logo_storage_url = None
+        db.commit()
+        db.refresh(row)
+    return row
+
+
 @app.post("/admin/car-brands", response_model=CarBrandBriefOut)
 def admin_create_car_brand(
     payload: CarBrandCreateIn,
@@ -1647,6 +1796,7 @@ def admin_create_car_brand(
         raise HTTPException(
             status_code=400, detail="Такая марка уже есть в справочнике"
         ) from None
+    _invalidate_slug_maps_cache()
     return row
 
 

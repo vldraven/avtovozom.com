@@ -323,7 +323,10 @@ export default function ProfilePage() {
                   <Link href="/staff/admin-users" className="btn btn-primary btn-inline">
                     Открыть управление УЗ
                   </Link>
-                  <div style={{ marginTop: "0.65rem" }}>
+                  <div style={{ marginTop: "0.65rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                    <Link href="/staff/admin-brands" className="btn btn-secondary btn-inline">
+                      Справочник марок и логотипы
+                    </Link>
                     <Link href="/staff/admin-customs-calculator" className="btn btn-secondary btn-inline">
                       Редактировать коэффициенты
                     </Link>

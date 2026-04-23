@@ -49,6 +49,10 @@ class CarBrand(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    # Относительный URL вида /media/brands/{id}/… для быстрых фильтров на главной.
+    logo_storage_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Меньше — левее в ряду логотипов; NULL — не показывать в быстром фильтре.
+    quick_filter_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class CarModel(Base):

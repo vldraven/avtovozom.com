@@ -29,9 +29,12 @@ export async function getServerSideProps({ req, res }) {
 
   try {
     while ((page - 1) * limit < total) {
-      const r = await fetch(`${API_URL}/cars?page=${page}&limit=${limit}&sort=date_desc`, {
-        headers: { Accept: "application/json" },
-      });
+      const r = await fetch(
+        `${API_URL}/cars?page=${page}&limit=${limit}&sort=date_desc&photo_limit=1`,
+        {
+          headers: { Accept: "application/json" },
+        }
+      );
       if (!r.ok) break;
       const data = await r.json();
       total = Number(data.total) || 0;

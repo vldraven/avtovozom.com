@@ -119,6 +119,53 @@ def save_uploaded_car_photos(
     return saved
 
 
+_BRAND_LOGO_MAX_BYTES = 2 * 1024 * 1024
+
+
+def delete_brand_logo_files(brand_id: int, storage_urls: list[str]) -> None:
+    """Удаляет файлы /media/brands/{brand_id}/… из MEDIA_ROOT."""
+    root = media_root()
+    prefix = f"/media/brands/{brand_id}/"
+    for u in storage_urls:
+        if not u or not u.startswith(prefix):
+            continue
+        rel = u[len("/media/") :].lstrip("/")
+        path = root.joinpath(*rel.split("/"))
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def save_brand_logo(brand_id: int, data: bytes) -> str | None:
+    """
+    Сохраняет один логотип марки в MEDIA_ROOT/brands/{id}/logo.{ext}, возвращает /media/... или None.
+    """
+    if len(data) > _BRAND_LOGO_MAX_BYTES:
+        raise ValueError("Логотип не больше 2 МБ.")
+    if not _looks_like_image(data):
+        return None
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        ext = ".png"
+    elif len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        ext = ".webp"
+    else:
+        ext = ".jpg"
+    root = media_root()
+    brand_dir = root / "brands" / str(brand_id)
+    brand_dir.mkdir(parents=True, exist_ok=True)
+    for old in brand_dir.iterdir():
+        if old.is_file():
+            try:
+                old.unlink()
+            except OSError:
+                pass
+    fname = f"logo{ext}"
+    path = brand_dir / fname
+    path.write_bytes(data)
+    return f"/media/brands/{brand_id}/{fname}"
+
+
 _CHAT_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
 _CHAT_ALLOWED_EXT = frozenset(
     {

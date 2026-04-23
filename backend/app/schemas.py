@@ -109,9 +109,18 @@ class CarsListOut(BaseModel):
 class CarBrandBriefOut(BaseModel):
     id: int
     name: str
+    logo_storage_url: str | None = None
+    quick_filter_rank: int | None = None
 
     class Config:
         from_attributes = True
+
+
+class CarBrandUpdateIn(BaseModel):
+    """Частичное обновление марки (только переданные поля)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    quick_filter_rank: int | None = None
 
 
 class CarModelBriefOut(BaseModel):
@@ -131,6 +140,8 @@ class CatalogBrandOut(BaseModel):
     slug: str = ""
     listings_count: int = 0
     models_with_listings: int = 0
+    logo_storage_url: str | None = None
+    quick_filter_rank: int | None = None
 
 
 class CatalogModelOut(BaseModel):

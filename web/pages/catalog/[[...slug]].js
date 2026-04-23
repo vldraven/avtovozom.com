@@ -252,6 +252,7 @@ export default function CatalogTreePage() {
     if (listSort && listSort !== "date_desc") {
       params.set("sort", listSort);
     }
+    params.set("photo_limit", "8");
     let cancelled = false;
     (async () => {
       setCarsError(null);

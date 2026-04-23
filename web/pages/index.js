@@ -200,6 +200,7 @@ export default function Home() {
     if (listSort && listSort !== "date_desc") {
       params.set("sort", listSort);
     }
+    params.set("photo_limit", "8");
     try {
       const res = await fetch(`${API_URL}/cars?${params.toString()}`);
       const data = await res.json();
@@ -805,11 +806,13 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => {
-    (async () => {
+  const loadCatalogBrandsOnly = useCallback(async () => {
+    try {
       const res = await fetch(`${API_URL}/catalog/brands`);
       if (res.ok) setCatalogBrands(await res.json());
-    })();
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   useEffect(() => {
@@ -887,9 +890,17 @@ export default function Home() {
     }
   }, [router.isReady, router.query.brand, router.query.model, router.query.q, router.query.sort]);
 
+  const loadHomeCatalogParallel = useCallback(async () => {
+    if (!router.isReady) {
+      await loadCatalogBrandsOnly();
+      return;
+    }
+    await Promise.all([loadCatalogBrandsOnly(), loadCars()]);
+  }, [router.isReady, loadCatalogBrandsOnly, loadCars]);
+
   useEffect(() => {
-    loadCars();
-  }, [loadCars]);
+    loadHomeCatalogParallel();
+  }, [loadHomeCatalogParallel]);
 
   useEffect(() => {
     setMobileHeaderMenuOpen(false);
@@ -912,14 +923,14 @@ export default function Home() {
               : "Парсер завершил работу. Каталог обновлён."
             : `Парсер завершился с ошибкой: ${job.message || "см. логи"}`
         );
-        loadCars();
+        loadHomeCatalogParallel();
         loadWhitelistCatalog(token);
       }
     };
     tick();
     const t = setInterval(tick, 1500);
     return () => clearInterval(t);
-  }, [token, latestParserJob?.id, latestParserJob?.status]);
+  }, [token, latestParserJob?.id, latestParserJob?.status, loadHomeCatalogParallel]);
 
   return (
     <>

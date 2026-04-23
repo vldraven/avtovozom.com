@@ -206,6 +206,7 @@ export default function CarDetailView({
         page: "1",
         include_breakdown: "false",
         sort: "date_desc",
+        photo_limit: "6",
       });
       const res = await fetch(`${API_URL}/cars?${params.toString()}`);
       if (cancelled) return;
