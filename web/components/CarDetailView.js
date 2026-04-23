@@ -33,6 +33,15 @@ function formatRuDate(iso) {
   return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
+/** Не показываем «поколение», если в данных заглушка вроде «Поколение не указано». */
+function hasMeaningfulGeneration(gen) {
+  const s = (gen == null ? "" : String(gen)).trim();
+  if (!s) return false;
+  const low = s.toLowerCase();
+  if (low === "поколение не указано" || low === "не указано") return false;
+  return true;
+}
+
 /**
  * @param {{ carId: string, pathBrandSlug?: string | null, pathModelSlug?: string | null }} props
  */
@@ -284,6 +293,31 @@ export default function CarDetailView({
     router.back();
   }, [router, catalogFallbackHref]);
 
+  const showGenerationInCopy = hasMeaningfulGeneration(car?.generation);
+  const detailBreadcrumbItems = useMemo(() => {
+    if (!car) return [];
+    const showGen = hasMeaningfulGeneration(car.generation);
+    const genStep =
+      showGen && car.generation_slug
+        ? [
+            {
+              label: car.generation,
+              href: `/catalog/${car.brand_slug}/${car.model_slug}/${car.generation_slug}`,
+            },
+          ]
+        : [];
+    if (car.brand_slug && car.model_slug) {
+      return [
+        { label: "Главная", href: "/" },
+        { label: car.brand, href: `/catalog/${car.brand_slug}` },
+        { label: car.model, href: `/catalog/${car.brand_slug}/${car.model_slug}` },
+        ...genStep,
+        { label: car.title || `Объявление №${car.id}` },
+      ];
+    }
+    return [{ label: "Главная", href: "/" }, { label: car.title || `Объявление №${car.id}` }];
+  }, [car]);
+
   if (error) {
     return (
       <div className="layout">
@@ -409,96 +443,178 @@ export default function CarDetailView({
         </div>
       </header>
 
-      <main className="site-main">
+      <main className="site-main site-main--car-detail">
         <div className="container">
-          {car.brand_slug && car.model_slug ? (
-            <Breadcrumbs
-              items={[
-                { label: "Главная", href: "/" },
-                { label: car.brand, href: `/catalog/${car.brand_slug}` },
-                {
-                  label: car.model,
-                  href: `/catalog/${car.brand_slug}/${car.model_slug}`,
-                },
-                ...(car.generation && car.generation_slug
-                  ? [
-                      {
-                        label: car.generation,
-                        href: `/catalog/${car.brand_slug}/${car.model_slug}/${car.generation_slug}`,
-                      },
-                    ]
-                  : []),
-                { label: car.title || `Объявление №${car.id}` },
-              ]}
-            />
-          ) : (
-            <Breadcrumbs
-              items={[
-                { label: "Главная", href: "/" },
-                { label: car.title || `Объявление №${car.id}` },
-              ]}
-            />
-          )}
-          <button type="button" className="detail-back" onClick={handleBack}>
-            ← Назад
-          </button>
+          <div className="detail-top">
+            <button
+              type="button"
+              className="detail-back detail-back--inline"
+              onClick={handleBack}
+              aria-label="Назад"
+            >
+              <span className="detail-back__arr" aria-hidden>
+                ←
+              </span>
+              <span className="detail-back__label">Назад</span>
+            </button>
+            {detailBreadcrumbItems.length ? (
+              <Breadcrumbs className="breadcrumbs--car-detail" items={detailBreadcrumbItems} />
+            ) : null}
+          </div>
 
-          <div className="detail-hero">
-            <h1 className="detail-title">{car.title}</h1>
-            <p className="detail-subtitle">
-              {car.brand} · модель <strong>{car.model}</strong>
-              {car.generation ? (
-                <>
-                  {" "}
-                  · поколение <strong>{car.generation}</strong>
-                </>
-              ) : null}
-            </p>
-            {car.has_public_dealer_profile && car.created_by_user_id ? (
-              <p className="muted" style={{ marginTop: 10 }}>
-                <Link href={`/dealers/${car.created_by_user_id}`}>Профиль дилера</Link>
-              </p>
-            ) : null}
-            {car.rub_china != null ? (
-              <>
-                {totalRubRf != null ? (
-                  <p className="detail-price detail-price--rf">
-                    {formatRubInt(totalRubRf)} ₽
-                    <span className="detail-price__hint">
-                      приблизительная цена в России
-                    </span>
-                  </p>
+          <div className="detail-hero-gall-wrap">
+            <div className="detail-hero">
+              <h1 className="detail-title">{car.title}</h1>
+              <p className="detail-subtitle">
+                {car.brand} · модель <strong>{car.model}</strong>
+                {showGenerationInCopy ? (
+                  <>
+                    {" "}
+                    · поколение <strong>{car.generation}</strong>
+                  </>
                 ) : null}
-                <p className="muted" style={{ marginTop: 8, fontSize: 15 }}>
-                  {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
-                  {car.pricing_guide ? (
-                    <>
-                      {" "}
-                      · курс на {car.pricing_guide.cbr_date}: 1 ¥ ={" "}
-                      <strong>{car.pricing_guide.cbr_rub_per_cny.toFixed(2)} ₽</strong>
-                    </>
-                  ) : null}
+              </p>
+              {car.has_public_dealer_profile && car.created_by_user_id ? (
+                <p className="detail-dealer-link muted">
+                  <Link href={`/dealers/${car.created_by_user_id}`}>Профиль дилера</Link>
                 </p>
-              </>
-            ) : (
-              <p className="detail-price">
-                {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥{" "}
-                <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem" }}>
-                  CNY
-                </span>
-                <span className="muted" style={{ display: "block", fontSize: 14, marginTop: 8, fontWeight: 500 }}>
-                  Пересчёт в ₽ по ЦБ сейчас недоступен.
-                </span>
-              </p>
-            )}
-            {me?.role !== "dealer" && (requestOkMessage || authError) ? (
-              <div className="detail-hero-cta">
-                {requestOkMessage ? (
-                  <div className="alert alert--success detail-hero-cta__message">{requestOkMessage}</div>
-                ) : null}
-                {authError ? <p className="muted detail-hero-cta__message">{authError}</p> : null}
-              </div>
-            ) : null}
+              ) : null}
+              {car.rub_china != null ? (
+                <>
+                  {totalRubRf != null ? (
+                    <p className="detail-price detail-price--rf">
+                      {formatRubInt(totalRubRf)} ₽
+                      <span className="detail-price__hint">приблизительная цена в России</span>
+                    </p>
+                  ) : null}
+                  {totalRubRf == null ? (
+                    <p className="detail-price">
+                      {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥{" "}
+                      <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem" }}>
+                        CNY
+                      </span>
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="detail-price">
+                  {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥{" "}
+                  <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem" }}>
+                    CNY
+                  </span>
+                </p>
+              )}
+              {me?.role !== "dealer" && (requestOkMessage || authError) ? (
+                <div className="detail-hero-cta">
+                  {requestOkMessage ? (
+                    <div className="alert alert--success detail-hero-cta__message">{requestOkMessage}</div>
+                  ) : null}
+                  {authError ? <p className="muted detail-hero-cta__message">{authError}</p> : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="photo-gallery photo-gallery--lead">
+              {hero?.storage_url ? (
+                <div
+                  className="photo-gallery__stage-wrap photo-gallery__stage-wrap--openable"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setPhotoLightboxIndex(safeIndex);
+                    setPhotoLightboxOpen(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setPhotoLightboxIndex(safeIndex);
+                      setPhotoLightboxOpen(true);
+                    }
+                  }}
+                >
+                  <img
+                    className="photo-gallery__stage"
+                    src={mediaSrc(hero.storage_url)}
+                    alt={`${car.title} — фото ${safeIndex + 1}`}
+                  />
+                  {nPhotos > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        className="photo-gallery__nav photo-gallery__nav--prev"
+                        aria-label="Предыдущее фото"
+                        disabled={safeIndex <= 0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActivePhoto((i) => Math.max(0, i - 1));
+                        }}
+                      >
+                        ‹
+                      </button>
+                      <button
+                        type="button"
+                        className="photo-gallery__nav photo-gallery__nav--next"
+                        aria-label="Следующее фото"
+                        disabled={safeIndex >= nPhotos - 1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActivePhoto((i) => Math.min(nPhotos - 1, i + 1));
+                        }}
+                      >
+                        ›
+                      </button>
+                      <div className="photo-gallery__counter">
+                        {safeIndex + 1} / {nPhotos}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div
+                  className="photo-gallery__stage-wrap"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "#e2e8f0",
+                    minHeight: 200,
+                  }}
+                >
+                  <span className="muted">Нет фотографий</span>
+                </div>
+              )}
+              {nPhotos > 0 && (
+                <div className="photo-gallery__thumbs">
+                  {sortedPhotos.map((photo, idx) => (
+                    <button
+                      key={photo.id}
+                      type="button"
+                      className={`photo-gallery__thumb ${idx === safeIndex ? "photo-gallery__thumb--active" : ""}`}
+                      onClick={() => setActivePhoto(idx)}
+                      aria-label={`Миниатюра ${idx + 1}`}
+                    >
+                      <img src={mediaSrc(photo.storage_url)} alt="" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {nPhotos > 0 ? (
+                <p className="photo-gallery__hint">Нажмите на фото для просмотра во весь экран. Свайп влево/вправо в режиме просмотра.</p>
+              ) : null}
+            </div>
+
+            <CarPhotoLightbox
+              open={photoLightboxOpen}
+              onClose={(lastIdx) => {
+                setPhotoLightboxOpen(false);
+                if (typeof lastIdx === "number" && sortedPhotos.length) {
+                  setActivePhoto(Math.min(sortedPhotos.length - 1, Math.max(0, lastIdx)));
+                }
+              }}
+              urls={sortedPhotos.map((p) => p.storage_url)}
+              title={car.title}
+              initialIndex={photoLightboxIndex}
+            />
           </div>
 
           {profileReady && token && me && isStaffRole(me?.role) && (
@@ -526,125 +642,6 @@ export default function CarDetailView({
                 Редактировать объявление
               </Link>
             </div>
-          )}
-
-          <div className="photo-gallery">
-            {hero?.storage_url ? (
-              <div
-                className="photo-gallery__stage-wrap photo-gallery__stage-wrap--openable"
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  setPhotoLightboxIndex(safeIndex);
-                  setPhotoLightboxOpen(true);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setPhotoLightboxIndex(safeIndex);
-                    setPhotoLightboxOpen(true);
-                  }
-                }}
-              >
-                <img
-                  className="photo-gallery__stage"
-                  src={mediaSrc(hero.storage_url)}
-                  alt={`${car.title} — фото ${safeIndex + 1}`}
-                />
-                {nPhotos > 1 && (
-                  <>
-                    <button
-                      type="button"
-                      className="photo-gallery__nav photo-gallery__nav--prev"
-                      aria-label="Предыдущее фото"
-                      disabled={safeIndex <= 0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActivePhoto((i) => Math.max(0, i - 1));
-                      }}
-                    >
-                      ‹
-                    </button>
-                    <button
-                      type="button"
-                      className="photo-gallery__nav photo-gallery__nav--next"
-                      aria-label="Следующее фото"
-                      disabled={safeIndex >= nPhotos - 1}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActivePhoto((i) => Math.min(nPhotos - 1, i + 1));
-                      }}
-                    >
-                      ›
-                    </button>
-                    <div className="photo-gallery__counter">
-                      {safeIndex + 1} / {nPhotos}
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div
-                className="photo-gallery__stage-wrap"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "#e2e8f0",
-                  minHeight: 200,
-                }}
-              >
-                <span className="muted">Нет фотографий</span>
-              </div>
-            )}
-            {nPhotos > 0 && (
-              <div className="photo-gallery__thumbs">
-                {sortedPhotos.map((photo, idx) => (
-                  <button
-                    key={photo.id}
-                    type="button"
-                    className={`photo-gallery__thumb ${idx === safeIndex ? "photo-gallery__thumb--active" : ""}`}
-                    onClick={() => setActivePhoto(idx)}
-                    aria-label={`Миниатюра ${idx + 1}`}
-                  >
-                    <img src={mediaSrc(photo.storage_url)} alt="" />
-                  </button>
-                ))}
-              </div>
-            )}
-            {nPhotos > 0 ? (
-              <p className="photo-gallery__hint">Нажмите на фото для просмотра во весь экран. Свайп влево/вправо в режиме просмотра.</p>
-            ) : null}
-          </div>
-
-          <CarPhotoLightbox
-            open={photoLightboxOpen}
-            onClose={(lastIdx) => {
-              setPhotoLightboxOpen(false);
-              if (typeof lastIdx === "number" && sortedPhotos.length) {
-                setActivePhoto(Math.min(sortedPhotos.length - 1, Math.max(0, lastIdx)));
-              }
-            }}
-            urls={sortedPhotos.map((p) => p.storage_url)}
-            title={car.title}
-            initialIndex={photoLightboxIndex}
-          />
-
-          {car.pricing_guide && (
-            <section className="panel" style={{ marginTop: 20 }}>
-              <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
-                Общая информация
-              </h2>
-              <ul className="pricing-guide-params" style={{ margin: "12px 0", paddingLeft: "1.25rem", lineHeight: 1.55 }}>
-                {car.pricing_guide.params_lines
-                  .filter((line) => !line.startsWith("Для калькуляторов обычно нужны:"))
-                  .map((line) => (
-                  <li key={line} style={{ marginBottom: 6 }}>
-                    {line}
-                  </li>
-                  ))}
-              </ul>
-            </section>
           )}
 
           <section className="panel">
@@ -702,53 +699,94 @@ export default function CarDetailView({
             <p className="description-text">{car.description || "Описание отсутствует."}</p>
           </section>
 
+          {car.rub_china == null ? (
+            <section className="panel">
+              <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
+                Курс и пересчёт в ₽
+              </h2>
+              <p className="muted" style={{ margin: 0, lineHeight: 1.55 }}>
+                Пересчёт в рубли по курсу ЦБ для этого объявления сейчас недоступен. В карточке указана
+                ориентировочная цена в юанях.
+              </p>
+            </section>
+          ) : null}
+
           {car.price_breakdown?.components?.length ? (
             <section className="panel">
               <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
                 Детализация цены в России
               </h2>
+              {car.rub_china != null && (
+                <p className="detail-calc-cny muted">
+                  Цена в Китае: {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
+                  {car.pricing_guide ? (
+                    <>
+                      . Курс ЦБ на {car.pricing_guide.cbr_date}: 1 ¥ ={" "}
+                      <strong>{car.pricing_guide.cbr_rub_per_cny.toFixed(2)} ₽</strong>
+                    </>
+                  ) : null}
+                </p>
+              )}
               <div className="price-breakdown-card">
                 <div className="price-breakdown-card__total">
                   <span>Средняя стоимость автомобиля со всеми расходами:</span>
                   <strong>{formatRubInt(car.price_breakdown.total_rub)} ₽</strong>
                 </div>
-                <div className="price-breakdown-card__rows">
-                  {(() => {
-                    const customsItems = car.price_breakdown.components.filter((item) => customsGroupKeys.has(item.key));
-                    const otherItems = car.price_breakdown.components.filter((item) => !customsGroupKeys.has(item.key));
-                    const customsTotal = customsItems.reduce((acc, item) => acc + Number(item.amount_rub || 0), 0);
-                    return (
-                      <>
-                        {customsItems.length ? (
-                          <>
-                            <div className="price-breakdown-card__row" key="customs_total">
-                              <div className="price-breakdown-card__label">Таможенные платежи</div>
-                              <div className="price-breakdown-card__amount">{formatRubInt(customsTotal)} ₽</div>
-                            </div>
-                            {customsItems.map((item) => (
-                              <div className="price-breakdown-card__row price-breakdown-card__row--sub" key={item.key}>
-                                <div className="price-breakdown-card__label">{item.label}</div>
-                                <div className="price-breakdown-card__amount">{formatRubInt(item.amount_rub)} ₽</div>
+                <details className="price-breakdown-details">
+                  <summary className="price-breakdown-details__summary">Показать детализацию</summary>
+                  <div className="price-breakdown-card__rows">
+                    {(() => {
+                      const customsItems = car.price_breakdown.components.filter((item) => customsGroupKeys.has(item.key));
+                      const otherItems = car.price_breakdown.components.filter((item) => !customsGroupKeys.has(item.key));
+                      const customsTotal = customsItems.reduce((acc, item) => acc + Number(item.amount_rub || 0), 0);
+                      return (
+                        <>
+                          {customsItems.length ? (
+                            <>
+                              <div className="price-breakdown-card__row" key="customs_total">
+                                <div className="price-breakdown-card__label">Таможенные платежи</div>
+                                <div className="price-breakdown-card__amount">{formatRubInt(customsTotal)} ₽</div>
                               </div>
-                            ))}
-                          </>
-                        ) : null}
-                        {otherItems.map((item) => (
-                          <div className="price-breakdown-card__row" key={item.key}>
-                            <div>
-                              <div className="price-breakdown-card__label">{item.label}</div>
-                              {item.description ? (
-                                <div className="price-breakdown-card__desc">{item.description}</div>
-                              ) : null}
+                              {customsItems.map((item) => (
+                                <div className="price-breakdown-card__row price-breakdown-card__row--sub" key={item.key}>
+                                  <div className="price-breakdown-card__label">{item.label}</div>
+                                  <div className="price-breakdown-card__amount">{formatRubInt(item.amount_rub)} ₽</div>
+                                </div>
+                              ))}
+                            </>
+                          ) : null}
+                          {otherItems.map((item) => (
+                            <div className="price-breakdown-card__row" key={item.key}>
+                              <div>
+                                <div className="price-breakdown-card__label">{item.label}</div>
+                                {item.description ? (
+                                  <div className="price-breakdown-card__desc">{item.description}</div>
+                                ) : null}
+                              </div>
+                              <div className="price-breakdown-card__amount">{formatRubInt(item.amount_rub)} ₽</div>
                             </div>
-                            <div className="price-breakdown-card__amount">{formatRubInt(item.amount_rub)} ₽</div>
-                          </div>
-                        ))}
-                      </>
-                    );
-                  })()}
-                </div>
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </details>
               </div>
+            </section>
+          ) : car.rub_china != null ? (
+            <section className="panel">
+              <h2 className="section-title" style={{ fontSize: "1.15rem", marginTop: 0 }}>
+                Расчёт и курс
+              </h2>
+              <p className="detail-calc-cny muted">
+                Цена в Китае: {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
+                {car.pricing_guide ? (
+                  <>
+                    . Курс ЦБ на {car.pricing_guide.cbr_date}: 1 ¥ ={" "}
+                    <strong>{car.pricing_guide.cbr_rub_per_cny.toFixed(2)} ₽</strong>
+                  </>
+                ) : null}
+              </p>
             </section>
           ) : null}
 
