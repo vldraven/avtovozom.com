@@ -31,6 +31,7 @@ function segmentsFromQuery(slug) {
 export default function CatalogTreePage() {
   const router = useRouter();
   const catalogPathRef = useRef("");
+  const lastExplicitScrollSaveRef = useRef({ path: "", at: 0 });
   /* Без useMemo сегменты — новый массив на каждом рендере, и useEffect с fetch(/cars) зацикливается. */
   const segments = useMemo(() => {
     if (!router.isReady) return null;
@@ -202,25 +203,10 @@ export default function CatalogTreePage() {
   const writeCatalogScrollPosition = useCallback((path, carId = null, cardTop = null) => {
     if (typeof window === "undefined" || !path) return;
     const storageKey = `${CATALOG_SCROLL_STORAGE_PREFIX}${path}`;
-    const nextY = window.scrollY;
-    try {
-      const previous = JSON.parse(sessionStorage.getItem(storageKey) || "null");
-      const previousAge = Date.now() - Number(previous?.savedAt || 0);
-      if (
-        carId == null &&
-        previousAge < 2000 &&
-        Number(previous?.y) > nextY &&
-        previous?.carId != null
-      ) {
-        return;
-      }
-    } catch {
-      /* Если старое значение битое, просто перезапишем его свежим состоянием. */
-    }
     sessionStorage.setItem(
       storageKey,
       JSON.stringify({
-        y: nextY,
+        y: window.scrollY,
         carId,
         cardTop,
         savedAt: Date.now(),
@@ -245,6 +231,7 @@ export default function CatalogTreePage() {
       const card = event.currentTarget?.closest?.("[data-catalog-car-id]");
       const rect = card?.getBoundingClientRect?.();
       writeCatalogScrollPosition(router.asPath, carId, rect ? rect.top : null);
+      lastExplicitScrollSaveRef.current = { path: router.asPath, at: Date.now() };
     },
     [isCatalogListRoute, router.asPath, writeCatalogScrollPosition]
   );
@@ -263,6 +250,8 @@ export default function CatalogTreePage() {
     catalogPathRef.current = router.asPath;
 
     const saveCurrentCatalogScroll = () => {
+      const explicit = lastExplicitScrollSaveRef.current;
+      if (explicit.path === catalogPathRef.current && Date.now() - explicit.at < 1000) return;
       writeCatalogScrollPosition(catalogPathRef.current);
     };
 
