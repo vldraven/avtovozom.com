@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -20,6 +20,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
+const CATALOG_SCROLL_STORAGE_PREFIX = "avt_catalog_scroll:";
 
 function segmentsFromQuery(slug) {
   if (slug == null) return [];
@@ -29,6 +30,7 @@ function segmentsFromQuery(slug) {
 
 export default function CatalogTreePage() {
   const router = useRouter();
+  const catalogPathRef = useRef("");
   /* Без useMemo сегменты — новый массив на каждом рендере, и useEffect с fetch(/cars) зацикливается. */
   const segments = useMemo(() => {
     if (!router.isReady) return null;
@@ -133,6 +135,9 @@ export default function CatalogTreePage() {
   }, [segments, tree]);
 
   const isBrandFocus = Boolean(brand && !unknownSlug);
+  const isCarDetailRoute =
+    segments != null && segments.length === 3 && /^\d+$/.test(String(segments[2]));
+  const isCatalogListRoute = segments != null && !isCarDetailRoute && !unknownSlug;
 
   const loadTree = useCallback(async () => {
     setTreeError(null);
@@ -193,6 +198,88 @@ export default function CatalogTreePage() {
     if (requestModalBusy) return;
     setRequestModalCar(null);
   }
+
+  const writeCatalogScrollPosition = useCallback((path, carId = null, cardTop = null) => {
+    if (typeof window === "undefined" || !path) return;
+    const storageKey = `${CATALOG_SCROLL_STORAGE_PREFIX}${path}`;
+    const nextY = window.scrollY;
+    try {
+      const previous = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+      const previousAge = Date.now() - Number(previous?.savedAt || 0);
+      if (
+        carId == null &&
+        previousAge < 2000 &&
+        Number(previous?.y) > nextY &&
+        previous?.carId != null
+      ) {
+        return;
+      }
+    } catch {
+      /* Если старое значение битое, просто перезапишем его свежим состоянием. */
+    }
+    sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        y: nextY,
+        carId,
+        cardTop,
+        savedAt: Date.now(),
+      })
+    );
+  }, []);
+
+  const saveCatalogScrollPosition = useCallback(
+    (event, carId) => {
+      if (typeof window === "undefined" || !router.asPath || !isCatalogListRoute) return;
+      if (
+        (event?.button != null && event.button !== 0) ||
+        event?.metaKey ||
+        event?.ctrlKey ||
+        event?.shiftKey ||
+        event?.altKey ||
+        event?.defaultPrevented
+      ) {
+        return;
+      }
+
+      const card = event.currentTarget?.closest?.("[data-catalog-car-id]");
+      const rect = card?.getBoundingClientRect?.();
+      writeCatalogScrollPosition(router.asPath, carId, rect ? rect.top : null);
+    },
+    [isCatalogListRoute, router.asPath, writeCatalogScrollPosition]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("scrollRestoration" in window.history)) return;
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => {
+      window.history.scrollRestoration = previous;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!router.isReady || !isCatalogListRoute) return;
+    catalogPathRef.current = router.asPath;
+
+    const saveCurrentCatalogScroll = () => {
+      writeCatalogScrollPosition(catalogPathRef.current);
+    };
+
+    router.events.on("routeChangeStart", saveCurrentCatalogScroll);
+    window.addEventListener("pagehide", saveCurrentCatalogScroll);
+
+    return () => {
+      router.events.off("routeChangeStart", saveCurrentCatalogScroll);
+      window.removeEventListener("pagehide", saveCurrentCatalogScroll);
+    };
+  }, [
+    router.events,
+    router.isReady,
+    router.asPath,
+    isCatalogListRoute,
+    writeCatalogScrollPosition,
+  ]);
 
   async function confirmRequestFromModal() {
     if (!requestModalCar || !token) return;
@@ -303,6 +390,64 @@ export default function CatalogTreePage() {
     }
   }, [router.isReady, router.query.sort]);
 
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !router.isReady ||
+      segments == null ||
+      !isCatalogListRoute ||
+      cars.length === 0
+    ) {
+      return;
+    }
+
+    const storageKey = `${CATALOG_SCROLL_STORAGE_PREFIX}${router.asPath}`;
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return;
+
+    let saved;
+    try {
+      saved = JSON.parse(raw);
+    } catch {
+      sessionStorage.removeItem(storageKey);
+      return;
+    }
+
+    sessionStorage.removeItem(storageKey);
+    const timeoutIds = [];
+    let frameId = null;
+    let nestedFrameId = null;
+
+    const restore = () => {
+      const fallbackY = Number(saved?.y);
+      let targetY = Number.isFinite(fallbackY) ? fallbackY : 0;
+      const savedCardTop = Number(saved?.cardTop);
+      if (saved?.carId != null && Number.isFinite(savedCardTop)) {
+        const card = document.querySelector(`[data-catalog-car-id="${String(saved.carId)}"]`);
+        if (card) {
+          card.scrollIntoView({ block: "center", behavior: "auto" });
+          targetY = window.scrollY + card.getBoundingClientRect().top - savedCardTop;
+        }
+      }
+      window.scrollTo({ top: Math.max(0, targetY), behavior: "auto" });
+    };
+
+    frameId = window.requestAnimationFrame(() => {
+      nestedFrameId = window.requestAnimationFrame(() => {
+        restore();
+        [100, 300, 700, 1200].forEach((delay) => {
+          timeoutIds.push(window.setTimeout(restore, delay));
+        });
+      });
+    });
+
+    return () => {
+      if (frameId != null) window.cancelAnimationFrame(frameId);
+      if (nestedFrameId != null) window.cancelAnimationFrame(nestedFrameId);
+      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    };
+  }, [router.isReady, router.asPath, segments, isCatalogListRoute, cars.length]);
+
   function logout() {
     clearToken();
     setToken("");
@@ -370,11 +515,7 @@ export default function CatalogTreePage() {
     );
   }
 
-  if (
-    segments != null &&
-    segments.length === 3 &&
-    /^\d+$/.test(String(segments[2]))
-  ) {
+  if (isCarDetailRoute) {
     return (
       <CarDetailView
         carId={String(segments[2])}
@@ -682,8 +823,16 @@ export default function CatalogTreePage() {
                               ? car.estimated_total_rub
                               : null;
                         return (
-                        <article key={car.id} className="catalog-card">
-                          <Link href={publicCarHref(car)} className="catalog-card__main">
+                        <article
+                          key={car.id}
+                          className="catalog-card"
+                          data-catalog-car-id={car.id}
+                        >
+                          <Link
+                            href={publicCarHref(car)}
+                            className="catalog-card__main"
+                            onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
+                          >
                             <CatalogCardImageScrub photos={car.photos} />
                             <div className="catalog-card__content">
                               <h3 className="catalog-card__title">{car.title}</h3>
@@ -737,7 +886,11 @@ export default function CatalogTreePage() {
                                 Заказать расчёт
                               </button>
                             ) : null}
-                            <Link href={publicCarHref(car)} className="btn btn-secondary btn-sm">
+                            <Link
+                              href={publicCarHref(car)}
+                              className="btn btn-secondary btn-sm"
+                              onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
+                            >
                               Подробнее
                             </Link>
                           </div>
