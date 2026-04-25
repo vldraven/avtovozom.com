@@ -134,7 +134,12 @@ export default function DealerPublicPage() {
                           : null;
                     return (
                       <li key={c.id} className="dealer-public-card">
-                        <Link href={publicCarHref(c)} className="dealer-public-card__link">
+                        <Link
+                          href={publicCarHref(c)}
+                          className="dealer-public-card__link"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
                           {ph ? (
                             <img
                               className="dealer-public-card__img"

@@ -22,6 +22,7 @@ const STAFF_GET_INIT = { cache: "no-store" };
 
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
+const HOME_SCROLL_STORAGE_PREFIX = "avt_home_scroll:";
 
 function parseImportStepMessage(msg) {
   const m = /^(\d)\/(\d)\s/.exec(msg || "");
@@ -66,6 +67,8 @@ function formatApiErrorDetail(body) {
 
 export default function Home() {
   const router = useRouter();
+  const homePathRef = useRef("");
+  const lastExplicitHomeScrollSaveRef = useRef({ path: "", at: 0 });
   const [mobileHeaderMenuOpen, setMobileHeaderMenuOpen] = useState(false);
   const [cars, setCars] = useState([]);
   const [total, setTotal] = useState(0);
@@ -325,6 +328,69 @@ export default function Home() {
     if (requestModalBusy) return;
     setRequestModalCar(null);
   }
+
+  const writeHomeScrollPosition = useCallback((path, carId = null, cardTop = null) => {
+    if (typeof window === "undefined" || !path) return;
+    sessionStorage.setItem(
+      `${HOME_SCROLL_STORAGE_PREFIX}${path}`,
+      JSON.stringify({
+        y: window.scrollY,
+        carId,
+        cardTop,
+        savedAt: Date.now(),
+      })
+    );
+  }, []);
+
+  const saveHomeScrollPosition = useCallback(
+    (event, carId) => {
+      if (typeof window === "undefined" || !router.asPath) return;
+      if (
+        (event?.button != null && event.button !== 0) ||
+        event?.metaKey ||
+        event?.ctrlKey ||
+        event?.shiftKey ||
+        event?.altKey ||
+        event?.defaultPrevented
+      ) {
+        return;
+      }
+
+      const card = event.currentTarget?.closest?.("[data-home-car-id]");
+      const rect = card?.getBoundingClientRect?.();
+      writeHomeScrollPosition(router.asPath, carId, rect ? rect.top : null);
+      lastExplicitHomeScrollSaveRef.current = { path: router.asPath, at: Date.now() };
+    },
+    [router.asPath, writeHomeScrollPosition]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("scrollRestoration" in window.history)) return;
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => {
+      window.history.scrollRestoration = previous;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    homePathRef.current = router.asPath;
+
+    const saveCurrentHomeScroll = () => {
+      const explicit = lastExplicitHomeScrollSaveRef.current;
+      if (explicit.path === homePathRef.current && Date.now() - explicit.at < 1000) return;
+      writeHomeScrollPosition(homePathRef.current);
+    };
+
+    router.events.on("routeChangeStart", saveCurrentHomeScroll);
+    window.addEventListener("pagehide", saveCurrentHomeScroll);
+
+    return () => {
+      router.events.off("routeChangeStart", saveCurrentHomeScroll);
+      window.removeEventListener("pagehide", saveCurrentHomeScroll);
+    };
+  }, [router.events, router.isReady, router.asPath, writeHomeScrollPosition]);
 
   async function confirmRequestFromModal() {
     if (!requestModalCar || !token) return;
@@ -903,6 +969,56 @@ export default function Home() {
   }, [loadHomeCatalogParallel]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !router.isReady || cars.length === 0) return;
+
+    const storageKey = `${HOME_SCROLL_STORAGE_PREFIX}${router.asPath}`;
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return;
+
+    let saved;
+    try {
+      saved = JSON.parse(raw);
+    } catch {
+      sessionStorage.removeItem(storageKey);
+      return;
+    }
+
+    sessionStorage.removeItem(storageKey);
+    const timeoutIds = [];
+    let frameId = null;
+    let nestedFrameId = null;
+
+    const restore = () => {
+      const fallbackY = Number(saved?.y);
+      let targetY = Number.isFinite(fallbackY) ? fallbackY : 0;
+      const savedCardTop = Number(saved?.cardTop);
+      if (saved?.carId != null && Number.isFinite(savedCardTop)) {
+        const card = document.querySelector(`[data-home-car-id="${String(saved.carId)}"]`);
+        if (card) {
+          card.scrollIntoView({ block: "center", behavior: "auto" });
+          targetY = window.scrollY + card.getBoundingClientRect().top - savedCardTop;
+        }
+      }
+      window.scrollTo({ top: Math.max(0, targetY), behavior: "auto" });
+    };
+
+    frameId = window.requestAnimationFrame(() => {
+      nestedFrameId = window.requestAnimationFrame(() => {
+        restore();
+        [100, 300, 700, 1200].forEach((delay) => {
+          timeoutIds.push(window.setTimeout(restore, delay));
+        });
+      });
+    });
+
+    return () => {
+      if (frameId != null) window.cancelAnimationFrame(frameId);
+      if (nestedFrameId != null) window.cancelAnimationFrame(nestedFrameId);
+      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    };
+  }, [router.isReady, router.asPath, cars.length]);
+
+  useEffect(() => {
     setMobileHeaderMenuOpen(false);
   }, [router.asPath]);
 
@@ -1417,8 +1533,14 @@ export default function Home() {
                   ? car.estimated_total_rub
                   : null;
             return (
-            <article key={car.id} className="catalog-card">
-              <Link href={publicCarHref(car)} className="catalog-card__main">
+            <article key={car.id} className="catalog-card" data-home-car-id={car.id}>
+              <Link
+                href={publicCarHref(car)}
+                className="catalog-card__main"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
+              >
                 <CatalogCardImageScrub photos={car.photos} />
                 <div className="catalog-card__content">
                   <h3 className="catalog-card__title">{car.title}</h3>
@@ -1478,7 +1600,13 @@ export default function Home() {
                 >
                   Заказать расчёт
                 </button>
-                <Link href={publicCarHref(car)} className="btn btn-secondary btn-sm">
+                <Link
+                  href={publicCarHref(car)}
+                  className="btn btn-secondary btn-sm"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
+                >
                   Подробнее
                 </Link>
                 {profileReady && isStaffRole(me?.role) && (

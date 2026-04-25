@@ -806,7 +806,12 @@ export default function CarDetailView({
                         : null;
                   return (
                     <article key={c.id} className="catalog-card car-detail-similar__card">
-                      <Link href={publicCarHref(c)} className="catalog-card__main">
+                      <Link
+                        href={publicCarHref(c)}
+                        className="catalog-card__main"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
                         <CatalogCardImageScrub photos={c.photos} />
                         <div className="catalog-card__content">
                           <h3 className="catalog-card__title">{c.title}</h3>

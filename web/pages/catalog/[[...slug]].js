@@ -820,6 +820,8 @@ export default function CatalogTreePage() {
                           <Link
                             href={publicCarHref(car)}
                             className="catalog-card__main"
+                            target="_blank"
+                            rel="noopener noreferrer"
                             onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
                           >
                             <CatalogCardImageScrub photos={car.photos} />
@@ -878,6 +880,8 @@ export default function CatalogTreePage() {
                             <Link
                               href={publicCarHref(car)}
                               className="btn btn-secondary btn-sm"
+                              target="_blank"
+                              rel="noopener noreferrer"
                               onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
                             >
                               Подробнее
