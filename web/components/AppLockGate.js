@@ -68,7 +68,7 @@ export default function AppLockGate({ children }) {
   if (!ready || !locked) return children;
 
   async function unlockWithPinSubmit(e) {
-    e.preventDefault();
+    e?.preventDefault?.();
     setBusy(true);
     setError("");
     try {
@@ -112,10 +112,27 @@ export default function AppLockGate({ children }) {
           <p>Разблокируйте avtovozom на этом устройстве.</p>
         </div>
         {error ? <div className="alert alert--danger">{error}</div> : null}
+        <form className="app-lock__desktop-form" onSubmit={unlockWithPinSubmit}>
+          <input
+            className="input"
+            inputMode="numeric"
+            autoComplete="current-password"
+            autoFocus
+            type="password"
+            maxLength={6}
+            placeholder="ПИН-код"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+          />
+          <button type="submit" className="btn btn-primary" disabled={busy || pin.length < 4}>
+            {busy ? "Проверяем..." : "Войти"}
+          </button>
+        </form>
         <PinPad
+          className="app-lock__mobile-pad"
           value={pin}
           onChange={setPin}
-          onSubmit={(e) => unlockWithPinSubmit(e)}
+          onSubmit={unlockWithPinSubmit}
           submitLabel={busy ? "Проверяем..." : "Войти"}
           disabled={busy}
         />

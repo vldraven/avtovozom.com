@@ -12,25 +12,19 @@ export default function PinSetupPanel({ onComplete }) {
   const [error, setError] = useState("");
   const [bioWarning, setBioWarning] = useState("");
 
-  async function submit() {
-    setError("");
-    setBioWarning("");
-    if (step === "create") {
-      if (!/^\d{4,6}$/.test(pin)) {
-        setError("Введите ПИН из 4-6 цифр.");
-        return;
-      }
-      setStep("confirm");
-      return;
-    }
+  function validatePinPair() {
     if (!/^\d{4,6}$/.test(pin)) {
       setError("Введите ПИН из 4-6 цифр.");
-      return;
+      return false;
     }
     if (pin !== pinConfirm) {
       setError("ПИН-коды не совпадают.");
-      return;
+      return false;
     }
+    return true;
+  }
+
+  async function completeSetup() {
     setBusy(true);
     try {
       await setupPin(pin);
@@ -51,6 +45,29 @@ export default function PinSetupPanel({ onComplete }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitMobile() {
+    setError("");
+    setBioWarning("");
+    if (step === "create") {
+      if (!/^\d{4,6}$/.test(pin)) {
+        setError("Введите ПИН из 4-6 цифр.");
+        return;
+      }
+      setStep("confirm");
+      return;
+    }
+    if (!validatePinPair()) return;
+    await completeSetup();
+  }
+
+  async function submitDesktop(e) {
+    e.preventDefault();
+    setError("");
+    setBioWarning("");
+    if (!validatePinPair()) return;
+    await completeSetup();
   }
 
   function resetPin() {
@@ -81,10 +98,46 @@ export default function PinSetupPanel({ onComplete }) {
           </button>
         </div>
       ) : null}
+      <form className="pin-panel__desktop-form" onSubmit={submitDesktop}>
+        <input
+          className="input"
+          inputMode="numeric"
+          autoComplete="new-password"
+          maxLength={6}
+          placeholder="ПИН-код"
+          type="password"
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+        />
+        <input
+          className="input"
+          inputMode="numeric"
+          autoComplete="new-password"
+          maxLength={6}
+          placeholder="Повторите ПИН"
+          type="password"
+          value={pinConfirm}
+          onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ""))}
+        />
+        {canUseWebAuthn() ? (
+          <label className="pin-panel__check">
+            <input
+              type="checkbox"
+              checked={enableBio}
+              onChange={(e) => setEnableBio(e.target.checked)}
+            />
+            Включить вход по Face ID, Touch ID или биометрии устройства
+          </label>
+        ) : null}
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? "Сохраняем..." : "Сохранить ПИН"}
+        </button>
+      </form>
       <PinPad
+        className="pin-panel__mobile-pad"
         value={step === "confirm" ? pinConfirm : pin}
         onChange={step === "confirm" ? setPinConfirm : setPin}
-        onSubmit={submit}
+        onSubmit={submitMobile}
         submitLabel={busy ? "Сохраняем..." : step === "confirm" ? "Сохранить" : "Продолжить"}
         disabled={busy}
       />

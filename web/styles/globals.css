@@ -171,6 +171,25 @@ a:hover {
   gap: 1rem;
 }
 
+.pin-panel__mobile-pad,
+.app-lock__mobile-pad {
+  display: none;
+}
+
+.pin-panel__desktop-form,
+.app-lock__desktop-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pin-panel__desktop-form .input,
+.app-lock__desktop-form .input {
+  text-align: center;
+  letter-spacing: 0.12em;
+  font-size: 1rem;
+}
+
 .pin-dots {
   display: flex;
   justify-content: center;
@@ -4047,6 +4066,16 @@ code {
     box-shadow: none;
   }
 
+  .pin-panel__desktop-form,
+  .app-lock__desktop-form {
+    display: none;
+  }
+
+  .pin-panel__mobile-pad,
+  .app-lock__mobile-pad {
+    display: flex;
+  }
+
   .pin-keypad {
     gap: 0.55rem;
   }
@@ -4469,6 +4498,32 @@ code {
 
 .catalog-tree-brand:last-child {
   border-bottom: none;
+}
+
+.catalog-tree-more {
+  width: calc(100% - 1.3rem);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin: 0.65rem 0.65rem 0.2rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.catalog-tree-more:hover {
+  background: var(--color-bg);
+}
+
+.catalog-tree-more__chev {
+  font-size: 0.7rem;
 }
 
 .catalog-tree-brand__summary {

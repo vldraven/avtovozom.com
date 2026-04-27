@@ -16,6 +16,7 @@ export default function PinPad({
   value,
   onChange,
   onSubmit,
+  className = "",
   submitLabel = "Продолжить",
   minLength = 4,
   maxLength = 6,
@@ -35,7 +36,7 @@ export default function PinPad({
   const digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
   return (
-    <div className="pin-pad">
+    <div className={`pin-pad ${className}`.trim()}>
       <PinDots value={value} maxLength={maxLength} />
       <div className="pin-keypad" aria-label="Цифровая клавиатура">
         {digits.map((digit) => (

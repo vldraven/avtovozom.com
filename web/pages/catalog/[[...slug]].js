@@ -17,6 +17,7 @@ import { canCreateListings } from "../../lib/roles";
 import { absoluteUrl } from "../../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const CATALOG_BRANDS_COLLAPSED_LIMIT = 12;
 
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
@@ -46,6 +47,7 @@ export default function CatalogTreePage() {
   const [treeError, setTreeError] = useState(null);
   const [carsError, setCarsError] = useState(null);
   const [listSort, setListSort] = useState("date_desc");
+  const [brandsExpanded, setBrandsExpanded] = useState(false);
   const [requestModalCar, setRequestModalCar] = useState(null);
   const [requestModalComment, setRequestModalComment] = useState("");
   const [requestModalBusy, setRequestModalBusy] = useState(false);
@@ -136,6 +138,10 @@ export default function CatalogTreePage() {
   }, [segments, tree]);
 
   const isBrandFocus = Boolean(brand && !unknownSlug);
+  const visibleTree = brandsExpanded
+    ? tree
+    : tree.slice(0, CATALOG_BRANDS_COLLAPSED_LIMIT);
+  const hiddenBrandsCount = Math.max(0, tree.length - CATALOG_BRANDS_COLLAPSED_LIMIT);
   const isCarDetailRoute =
     segments != null && segments.length === 3 && /^\d+$/.test(String(segments[2]));
   const isCatalogListRoute = segments != null && !isCarDetailRoute && !unknownSlug;
@@ -709,7 +715,7 @@ export default function CatalogTreePage() {
                   ) : (
                     <>
                       <h2 className="catalog-tree-panel__title">Марки и модели</h2>
-                      {tree.map((b) => (
+                      {visibleTree.map((b) => (
                         <details
                           key={b.id}
                           className="catalog-tree-brand"
@@ -772,6 +778,19 @@ export default function CatalogTreePage() {
                           </ul>
                         </details>
                       ))}
+                      {hiddenBrandsCount > 0 ? (
+                        <button
+                          type="button"
+                          className="catalog-tree-more"
+                          onClick={() => setBrandsExpanded((v) => !v)}
+                          aria-expanded={brandsExpanded}
+                        >
+                          {brandsExpanded ? "Свернуть марки" : `Показать ещё ${hiddenBrandsCount}`}
+                          <span className="catalog-tree-more__chev" aria-hidden>
+                            {brandsExpanded ? "▴" : "▾"}
+                          </span>
+                        </button>
+                      ) : null}
                     </>
                   )}
                 </aside>
