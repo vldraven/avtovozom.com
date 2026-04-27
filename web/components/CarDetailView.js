@@ -9,7 +9,7 @@ import CarPhotoLightbox from "./CarPhotoLightbox";
 import HeaderMessagesLink from "./HeaderMessagesLink";
 import HeaderProfileLink from "./HeaderProfileLink";
 import RequestConfirmModal from "./RequestConfirmModal";
-import { clearToken } from "../lib/auth";
+import { clearToken, getStoredToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 import { absoluteUrl } from "../lib/siteUrl";
@@ -250,7 +250,7 @@ export default function CarDetailView({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const stored = localStorage.getItem("avt_token");
+      const stored = getStoredToken();
       if (stored) {
         setToken(stored);
         await loadMe(stored);

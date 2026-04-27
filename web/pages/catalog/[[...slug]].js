@@ -11,7 +11,7 @@ import CarDetailView from "../../components/CarDetailView";
 import HeaderMessagesLink from "../../components/HeaderMessagesLink";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import RequestConfirmModal from "../../components/RequestConfirmModal";
-import { clearToken } from "../../lib/auth";
+import { clearToken, getStoredToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
 import { canCreateListings } from "../../lib/roles";
 import { absoluteUrl } from "../../lib/siteUrl";
@@ -167,7 +167,7 @@ export default function CatalogTreePage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const stored = localStorage.getItem("avt_token");
+      const stored = getStoredToken();
       if (stored) {
         setToken(stored);
         try {

@@ -1,7 +1,10 @@
 import Head from "next/head";
 import { useRouter } from "next/router";
 
+import AppLockGate from "../components/AppLockGate";
 import MobileBottomNav from "../components/MobileBottomNav";
+import PwaInstallPrompt from "../components/PwaInstallPrompt";
+import PwaServiceWorker from "../components/PwaServiceWorker";
 import YandexMetrika from "../components/YandexMetrika";
 import "../styles/globals.css";
 
@@ -24,10 +27,15 @@ export default function App({ Component, pageProps }) {
           content="width=device-width, initial-scale=1, viewport-fit=cover"
         />
         <meta name="theme-color" content="#0f172a" />
+        <meta name="application-name" content="avtovozom" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="avtovozom" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta
           name="description"
           content="Каталог автомобилей из Китая: подбор, доставка и сопровождение сделки."
         />
+        <link rel="manifest" href="/manifest.webmanifest" />
         {noindex ? <meta name="robots" content="noindex, nofollow" /> : null}
         <meta property="og:site_name" content="avtovozom" />
         <meta property="og:locale" content="ru_RU" />
@@ -41,8 +49,12 @@ export default function App({ Component, pageProps }) {
         />
       </Head>
       <div className="app-chrome">
-        <Component {...pageProps} />
+        <AppLockGate>
+          <Component {...pageProps} />
+        </AppLockGate>
         <MobileBottomNav />
+        <PwaInstallPrompt />
+        <PwaServiceWorker />
         <YandexMetrika />
       </div>
     </>

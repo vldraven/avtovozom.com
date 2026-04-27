@@ -10,7 +10,7 @@ import SiteSelectDropdown from "../components/SiteSelectDropdown";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import HeaderProfileLink from "../components/HeaderProfileLink";
 import RequestConfirmModal from "../components/RequestConfirmModal";
-import { clearToken } from "../lib/auth";
+import { clearToken, getStoredToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { absoluteUrl } from "../lib/siteUrl";
@@ -860,7 +860,7 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const stored = localStorage.getItem("avt_token");
+      const stored = getStoredToken();
       if (stored) {
         setToken(stored);
         await loadMe(stored);
@@ -1067,6 +1067,19 @@ export default function Home() {
       <div className="layout">
       <header className="site-header">
         <div className="container site-header__inner">
+          <button
+            type="button"
+            className="site-header__burger site-header__burger--desktop"
+            aria-label="Открыть меню"
+            aria-expanded={mobileHeaderMenuOpen}
+            onClick={() => setMobileHeaderMenuOpen((v) => !v)}
+          >
+            <span className={`site-header__burger-icon${mobileHeaderMenuOpen ? " is-open" : ""}`} aria-hidden>
+              <span />
+              <span />
+              <span />
+            </span>
+          </button>
           <div className="site-header__brand">
             <Link href="/" className="site-logo">
               avtovozom
@@ -1075,7 +1088,7 @@ export default function Home() {
           </div>
           <button
             type="button"
-            className="site-header__burger"
+            className="site-header__burger site-header__burger--mobile"
             aria-label="Открыть меню"
             aria-expanded={mobileHeaderMenuOpen}
             onClick={() => setMobileHeaderMenuOpen((v) => !v)}
@@ -1119,6 +1132,41 @@ export default function Home() {
               onClick={() => setMobileHeaderMenuOpen(false)}
             />
             <div className="container site-header-mobile-menu__container">
+              <nav className="site-header-desktop-menu" aria-label="Меню сайта">
+                <div className="site-header-desktop-menu__column">
+                  <Link href="/catalog" className="site-header-desktop-menu__lead">
+                    Каталог
+                  </Link>
+                  <Link href="/customs-calculator">Калькулятор растаможки</Link>
+                  <Link href="/dostavka-avto-iz-kitaya">Доставка авто из Китая</Link>
+                  <Link href="/dostavka-avto-iz-korei">Доставка авто из Кореи</Link>
+                </div>
+                <div className="site-header-desktop-menu__column">
+                  <p className="site-header-desktop-menu__title">Покупателю</p>
+                  <Link href="/catalog">Автомобили под заказ</Link>
+                  <Link href="/request-quote">Заказать расчёт</Link>
+                  <Link href="/customs-calculator">Рассчитать стоимость</Link>
+                </div>
+                <div className="site-header-desktop-menu__column">
+                  <p className="site-header-desktop-menu__title">Направления</p>
+                  <Link href="/dostavka-avto-iz-kitaya">Авто из Китая</Link>
+                  <Link href="/dostavka-avto-iz-korei">Авто из Кореи</Link>
+                </div>
+                <div className="site-header-desktop-menu__column">
+                  <p className="site-header-desktop-menu__title">Аккаунт</p>
+                  {!token ? (
+                    <Link href="/auth">Войти</Link>
+                  ) : (
+                    <>
+                      <Link href="/profile">Профиль</Link>
+                      {canCreateListings(me?.role) ? <Link href="/staff/new-listing">Добавить объявление</Link> : null}
+                      <button type="button" className="site-header-desktop-menu__btn" onClick={logout}>
+                        Выйти
+                      </button>
+                    </>
+                  )}
+                </div>
+              </nav>
               <nav className="site-header-mobile-menu" aria-label="Меню сайта">
                 <Link href="/customs-calculator" className="site-header-mobile-menu__link">
                   Калькулятор растаможки

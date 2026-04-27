@@ -63,16 +63,18 @@ export default function RequestQuotePage() {
     setMessage("");
     setBusy(true);
     try {
-      const res = await fetch(`${API_URL}/requests/lead`, {
+      const endpoint = carId ? "/requests/lead" : "/requests/freeform-lead";
+      const payload = {
+        email: email.trim().toLowerCase(),
+        phone: phoneDigitsToApi(phoneDigits).trim(),
+        full_name: fullName.trim(),
+        comment: comment.trim(),
+      };
+      if (carId) payload.car_id = Number(carId);
+      const res = await fetch(`${API_URL}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          phone: phoneDigitsToApi(phoneDigits).trim(),
-          full_name: fullName.trim(),
-          car_id: Number(carId),
-          comment: comment.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -81,6 +83,11 @@ export default function RequestQuotePage() {
         return;
       }
       setMessage(body.message || "Заявка принята.");
+      if (!carId) {
+        setStep("done");
+        setVerifyMode("freeform");
+        return;
+      }
       setVerifyMode(null);
       setStep("verify");
     } finally {
@@ -108,7 +115,7 @@ export default function RequestQuotePage() {
         return;
       }
       if (body.access_token) {
-        saveToken(body.access_token);
+        saveToken(body.access_token, body.refresh_token);
         setVerifyMode("authed");
         setMessage(
           body.message ||
@@ -133,25 +140,6 @@ export default function RequestQuotePage() {
         <main className="site-main">
           <div className="container">
             <p className="muted">Загрузка…</p>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  if (!carId) {
-    return (
-      <div className="layout">
-        <header className="site-header">
-          <div className="container site-header__inner">
-            <Link href="/" className="site-logo">
-              avtovozom
-            </Link>
-          </div>
-        </header>
-        <main className="site-main">
-          <div className="container">
-            <p>Не указан автомобиль. Вернитесь в <Link href="/">каталог</Link>.</p>
           </div>
         </main>
       </div>
@@ -213,7 +201,7 @@ export default function RequestQuotePage() {
             </div>
           )}
 
-          {step === "form" && car && (
+          {step === "form" && (car || !carId) && (
             <form className="panel form-stack" onSubmit={submitLead}>
               <label className="muted form-label">
                 Имя
@@ -249,8 +237,15 @@ export default function RequestQuotePage() {
                 />
               </label>
               <label className="muted form-label">
-                Комментарий к заявке
-                <textarea className="input" rows={4} value={comment} onChange={(e) => setComment(e.target.value)} />
+                {carId ? "Комментарий к заявке" : "Какой автомобиль вас интересует"}
+                <textarea
+                  className="input"
+                  rows={5}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Например: BMW X5, 2021-2023, бензин, до 5 млн ₽, нужна доставка под ключ."
+                  required={!carId}
+                />
               </label>
               <button type="submit" className="btn btn-primary" disabled={busy}>
                 {busy ? "Отправка…" : "Отправить заявку"}
@@ -258,7 +253,7 @@ export default function RequestQuotePage() {
               <p className="muted request-quote-footnote">
                 Уже есть аккаунт?{" "}
                 <Link
-                  href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`))}`}
+                  href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : "/"))}`}
                 >
                   Войдите
                 </Link>{" "}
@@ -289,21 +284,27 @@ export default function RequestQuotePage() {
 
           {step === "done" && (
             <div className="panel form-stack">
-              {verifyMode === "authed" ? (
+              {verifyMode === "freeform" ? (
+                <Link href="/" className="btn btn-primary">
+                  На главную
+                </Link>
+              ) : verifyMode === "authed" ? (
                 <Link href="/profile" className="btn btn-primary">
                   Мой профиль и заявки
                 </Link>
               ) : (
                 <Link
-                  href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`))}`}
+                  href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : "/"))}`}
                   className="btn btn-primary"
                 >
                   Перейти ко входу
                 </Link>
               )}
-              <Link href={nextUrl || (car ? publicCarHref(car) : `/cars/${carId}`)} className="btn btn-secondary">
-                Вернуться к объявлению
-              </Link>
+              {car ? (
+                <Link href={nextUrl || publicCarHref(car)} className="btn btn-secondary">
+                  Вернуться к объявлению
+                </Link>
+              ) : null}
             </div>
           )}
         </div>

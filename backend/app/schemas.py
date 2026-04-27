@@ -211,6 +211,18 @@ class PublicRequestLeadOut(BaseModel):
     message: str
 
 
+class FreeformRequestLeadIn(BaseModel):
+    email: str
+    phone: str = ""
+    full_name: str = ""
+    comment: str
+
+
+class FreeformRequestLeadOut(BaseModel):
+    ok: bool = True
+    message: str
+
+
 class CalculationRequestOut(BaseModel):
     id: int
     user_name: str
@@ -483,10 +495,12 @@ class LoginIn(BaseModel):
 
     email: str
     password: str
+    device_name: str | None = None
 
 
 class TokenOut(BaseModel):
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
 
 
@@ -511,7 +525,27 @@ class RegisterStartOut(BaseModel):
     ok: bool
     message: str
     access_token: str | None = None
+    refresh_token: str | None = None
     token_type: str = "bearer"
+
+
+class RefreshTokenIn(BaseModel):
+    refresh_token: str
+    device_name: str | None = None
+
+
+class LogoutSessionIn(BaseModel):
+    refresh_token: str | None = None
+
+
+class WebAuthnOptionsIn(BaseModel):
+    device_name: str | None = None
+
+
+class WebAuthnVerifyIn(BaseModel):
+    credential: dict
+    challenge_id: str
+    device_name: str | None = None
 
 
 class ProfileUpdateIn(BaseModel):
@@ -532,6 +566,15 @@ class DealerPublicProfileOut(BaseModel):
 
 class PasswordChangeIn(BaseModel):
     old_password: str
+    new_password: str
+
+
+class PasswordResetStartIn(BaseModel):
+    email: str
+
+
+class PasswordResetConfirmIn(BaseModel):
+    token: str
     new_password: str
 
 

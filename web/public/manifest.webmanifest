@@ -1,0 +1,28 @@
+{
+  "name": "avtovozom",
+  "short_name": "avtovozom",
+  "description": "Каталог автомобилей из Китая: подбор, доставка и сопровождение сделки.",
+  "lang": "ru-RU",
+  "dir": "ltr",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0f172a",
+  "background_color": "#f1f5f9",
+  "categories": ["shopping", "business", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

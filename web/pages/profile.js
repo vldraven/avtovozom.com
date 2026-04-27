@@ -5,7 +5,7 @@ import { useRouter } from "next/router";
 import AdminParserPanel from "../components/AdminParserPanel";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
-import { clearToken, getStoredToken } from "../lib/auth";
+import { canUseWebAuthn, clearToken, getStoredToken, registerPasskey } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
@@ -48,6 +48,8 @@ export default function ProfilePage() {
   const [newPassword, setNewPassword] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [supportsPasskey, setSupportsPasskey] = useState(false);
   const [removingCarId, setRemovingCarId] = useState(null);
   const [expandedRequestId, setExpandedRequestId] = useState(null);
   const [openingChatOfferId, setOpeningChatOfferId] = useState(null);
@@ -65,6 +67,10 @@ export default function ProfilePage() {
     }
     setToken(t);
     loadMe(t);
+  }, []);
+
+  useEffect(() => {
+    setSupportsPasskey(canUseWebAuthn());
   }, []);
 
   async function loadMe(t) {
@@ -194,6 +200,20 @@ export default function ProfilePage() {
     setNewPassword("");
     setMessage("Пароль изменен");
     loadMe(token);
+  }
+
+  async function enablePasskey() {
+    setError("");
+    setMessage("");
+    setPasskeyBusy(true);
+    try {
+      await registerPasskey(token);
+      setMessage("Биометрический вход включён для этого устройства.");
+    } catch (err) {
+      setError(err?.message || "Не удалось включить биометрию");
+    } finally {
+      setPasskeyBusy(false);
+    }
   }
 
   function logout() {
@@ -356,6 +376,23 @@ export default function ProfilePage() {
                   </button>
                 </div>
               </section>
+
+              {supportsPasskey ? (
+                <section className="panel">
+                  <h2 className="section-title panel-heading-sm">Быстрый вход</h2>
+                  <p className="muted section-title--flush-top">
+                    Включите вход через Face ID, Touch ID, отпечаток или системный PIN устройства.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={enablePasskey}
+                    disabled={passkeyBusy}
+                  >
+                    {passkeyBusy ? "Настраиваем..." : "Включить биометрию"}
+                  </button>
+                </section>
+              ) : null}
 
               {me.role === "user" && (
                 <section className="panel">

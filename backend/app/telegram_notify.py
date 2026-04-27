@@ -39,3 +39,34 @@ def notify_new_calculation_request(
             logger.warning("Telegram sendMessage failed: %s %s", r.status_code, r.text[:300])
     except Exception as e:
         logger.warning("Telegram sendMessage error: %s", e)
+
+
+def notify_freeform_calculation_request(
+    *,
+    user_name: str,
+    user_contact: str,
+    comment: str,
+) -> None:
+    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat_id = (os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID") or "").strip()
+    if not token or not chat_id:
+        return
+    lines = [
+        "Новая заявка на расчёт без выбранного авто",
+        f"Клиент: {user_name}",
+        f"Контакт: {user_contact}",
+    ]
+    c = (comment or "").strip()
+    if c:
+        lines.append(f"Описание авто/комментарий: {c[:1200]}")
+    text = "\n".join(lines)
+    try:
+        r = httpx.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
+            timeout=12.0,
+        )
+        if r.status_code >= 400:
+            logger.warning("Telegram sendMessage failed: %s %s", r.status_code, r.text[:300])
+    except Exception as e:
+        logger.warning("Telegram sendMessage error: %s", e)

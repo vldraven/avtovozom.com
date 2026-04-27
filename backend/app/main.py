@@ -1,5 +1,8 @@
 import os
 import secrets
+import hashlib
+import base64
+import json
 from typing import Any
 import shutil
 import time
@@ -48,6 +51,8 @@ from .models import (
     ParseJob,
     Role,
     User,
+    UserSession,
+    UserWebAuthnCredential,
 )
 from .che168_parser import che168_detail_url_from_source_listing_id, parse_che168_detail
 from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru, russian_listing_title
@@ -109,11 +114,14 @@ from .schemas import (
     DealerPublicProfileOut,
     CustomsCalcConfigIn,
     CustomsCalcConfigOut,
+    FreeformRequestLeadIn,
+    FreeformRequestLeadOut,
     UtilCoeffDefaultsOut,
     CustomsCalcEstimateIn,
     CustomsCalcEstimateOut,
     DealerOfferOut,
     LoginIn,
+    LogoutSessionIn,
     OpenChatOut,
     MeOut,
     CarModelCatalogIn,
@@ -121,17 +129,51 @@ from .schemas import (
     ParseJobOut,
     ParserImportListingIn,
     PasswordChangeIn,
+    PasswordResetConfirmIn,
+    PasswordResetStartIn,
     ProfileUpdateIn,
     PublicRequestLeadIn,
     PublicRequestLeadOut,
     RegisterIn,
     RegisterStartOut,
     RegisterVerifyIn,
+    RefreshTokenIn,
     TokenOut,
+    WebAuthnOptionsIn,
+    WebAuthnVerifyIn,
 )
 from .security import create_access_token, decode_access_token, hash_password, verify_password
 from .seed import seed_initial_data
-from .telegram_notify import notify_new_calculation_request
+from .telegram_notify import notify_freeform_calculation_request, notify_new_calculation_request
+
+try:
+    from webauthn import (
+        generate_authentication_options,
+        generate_registration_options,
+        verify_authentication_response,
+        verify_registration_response,
+    )
+    from webauthn.helpers.structs import (
+        AuthenticatorSelectionCriteria,
+        AuthenticationCredential,
+        PublicKeyCredentialDescriptor,
+        RegistrationCredential,
+        ResidentKeyRequirement,
+        UserVerificationRequirement,
+    )
+    from webauthn.helpers import options_to_json
+except Exception:  # pragma: no cover - dependency may be absent in local dev until installed.
+    generate_authentication_options = None
+    generate_registration_options = None
+    verify_authentication_response = None
+    verify_registration_response = None
+    AuthenticatorSelectionCriteria = None
+    AuthenticationCredential = None
+    PublicKeyCredentialDescriptor = None
+    RegistrationCredential = None
+    ResidentKeyRequirement = None
+    UserVerificationRequirement = None
+    options_to_json = None
 
 app = FastAPI(title="Avtovozom API", version="0.1.0")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -611,6 +653,12 @@ def startup() -> None:
         conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires_at TIMESTAMP NULL")
         )
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token_hash VARCHAR(64)")
+        )
+        conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMP NULL")
+        )
         conn.execute(text("UPDATE users SET email_verified = TRUE WHERE email_verified IS NULL"))
         conn.execute(text("UPDATE users SET must_change_password = FALSE WHERE must_change_password IS NULL"))
         conn.execute(
@@ -944,6 +992,115 @@ def _upsert_unverified_user_send_code(
     return db.execute(select(User).where(User.email == email)).scalar_one()
 
 
+def _password_reset_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _public_web_origin() -> str:
+    return (os.getenv("PUBLIC_WEB_ORIGIN") or os.getenv("NEXT_PUBLIC_SITE_URL") or "http://localhost:3000").rstrip("/")
+
+
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+_webauthn_challenges: dict[str, dict[str, Any]] = {}
+
+
+def _refresh_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _issue_session_tokens(db: Session, user: User, device_name: str | None = None) -> TokenOut:
+    refresh_token = secrets.token_urlsafe(48)
+    now = datetime.utcnow()
+    db.add(
+        UserSession(
+            user_id=user.id,
+            token_hash=_refresh_token_hash(refresh_token),
+            device_name=(device_name or "")[:128],
+            last_used_at=now,
+            expires_at=now + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        )
+    )
+    db.commit()
+    return TokenOut(access_token=create_access_token(str(user.id)), refresh_token=refresh_token)
+
+
+def _find_active_session(db: Session, refresh_token: str) -> UserSession:
+    token_hash = _refresh_token_hash(refresh_token.strip())
+    sess = db.execute(select(UserSession).where(UserSession.token_hash == token_hash)).scalar_one_or_none()
+    now = datetime.utcnow()
+    if not sess or sess.revoked_at is not None or sess.expires_at <= now:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    return sess
+
+
+def _reissue_from_session(
+    db: Session, sess: UserSession, device_name: str | None = None
+) -> TokenOut:
+    user = db.execute(
+        select(User).options(joinedload(User.role)).where(User.id == sess.user_id)
+    ).scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User is not active")
+    sess.revoked_at = datetime.utcnow()
+    db.flush()
+    return _issue_session_tokens(db, user, device_name or sess.device_name)
+
+
+def _webauthn_rp_id() -> str:
+    parsed = urlparse(_public_web_origin())
+    return os.getenv("WEBAUTHN_RP_ID") or parsed.hostname or "localhost"
+
+
+def _webauthn_origin() -> str:
+    return os.getenv("WEBAUTHN_ORIGIN") or _public_web_origin()
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_to_bytes(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def _json_b64(data: bytes) -> str:
+    return _b64url(data)
+
+
+def _json_b64_to_bytes(value: str) -> bytes:
+    return _b64url_to_bytes(value)
+
+
+def _webauthn_options_payload(options: Any, kind: str, user_id: int) -> dict[str, Any]:
+    challenge_id = secrets.token_urlsafe(24)
+    payload = json.loads(options_to_json(options))
+    _webauthn_challenges[challenge_id] = {
+        "challenge": options.challenge,
+        "kind": kind,
+        "user_id": user_id,
+        "expires_at": time.time() + 300,
+    }
+    payload["challenge_id"] = challenge_id
+    return payload
+
+
+def _consume_webauthn_challenge(challenge_id: str, kind: str, user_id: int | None = None) -> bytes:
+    row = _webauthn_challenges.pop(challenge_id, None)
+    if not row or row.get("kind") != kind or row.get("expires_at", 0) < time.time():
+        raise HTTPException(status_code=400, detail="WebAuthn challenge expired")
+    if user_id is not None and row.get("user_id") != user_id:
+        raise HTTPException(status_code=400, detail="WebAuthn challenge mismatch")
+    return row["challenge"]
+
+
+def _credential_from_payload(cls: Any, payload: dict[str, Any]) -> Any:
+    raw = json.dumps(payload)
+    if hasattr(cls, "model_validate_json"):
+        return cls.model_validate_json(raw)
+    return cls.parse_raw(raw)
+
+
 @app.post("/auth/register", response_model=TokenOut)
 def register(payload: RegisterIn, db: Session = Depends(get_db)):
     # Backward-compatible one-step registration for integrations.
@@ -1042,14 +1199,15 @@ def register_verify(payload: RegisterVerifyIn, db: Session = Depends(get_db)):
             f"Временный пароль для входа: {temp_password}\n"
             "После входа смените пароль в профиле.",
         )
-        token = create_access_token(str(user.id))
+        tokens = _issue_session_tokens(db, user, "Регистрация")
         return RegisterStartOut(
             ok=True,
             message=(
                 "Email подтвержден. Временный пароль отправлен на почту. "
                 "Вы автоматически вошли в аккаунт."
             ),
-            access_token=token,
+            access_token=tokens.access_token,
+            refresh_token=tokens.refresh_token,
         )
     if not user.verification_code:
         return RegisterStartOut(ok=True, message="Email уже подтвержден")
@@ -1063,11 +1221,12 @@ def register_verify(payload: RegisterVerifyIn, db: Session = Depends(get_db)):
     user.verification_code = None
     user.verification_expires_at = None
     db.commit()
-    token = create_access_token(str(user.id))
+    tokens = _issue_session_tokens(db, user, "Email подтверждение")
     return RegisterStartOut(
         ok=True,
         message="Код подтверждён. Вы вошли в аккаунт.",
-        access_token=token,
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
     )
 
 
@@ -1090,8 +1249,75 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Email is not verified")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is not active")
-    token = create_access_token(str(user.id))
-    return TokenOut(access_token=token)
+    return _issue_session_tokens(db, user, payload.device_name)
+
+
+@app.post("/auth/refresh", response_model=TokenOut)
+def refresh_auth_session(payload: RefreshTokenIn, db: Session = Depends(get_db)):
+    sess = _find_active_session(db, payload.refresh_token)
+    return _reissue_from_session(db, sess, payload.device_name)
+
+
+@app.post("/auth/logout-session")
+def logout_auth_session(payload: LogoutSessionIn, db: Session = Depends(get_db)):
+    if payload.refresh_token:
+        try:
+            sess = _find_active_session(db, payload.refresh_token)
+            sess.revoked_at = datetime.utcnow()
+            db.commit()
+        except HTTPException:
+            pass
+    return {"ok": True}
+
+
+@app.post("/auth/password-reset/start", response_model=RegisterStartOut)
+def password_reset_start(payload: PasswordResetStartIn, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Укажите корректный email")
+    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    # Не раскрываем наличие аккаунта по email.
+    generic = RegisterStartOut(
+        ok=True,
+        message="Если такой email зарегистрирован, мы отправили ссылку для восстановления пароля.",
+    )
+    if not user or not user.email_verified or not user.is_active:
+        return generic
+
+    token = secrets.token_urlsafe(32)
+    user.password_reset_token_hash = _password_reset_hash(token)
+    user.password_reset_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=30)
+    db.commit()
+    reset_url = f"{_public_web_origin()}/reset-password?token={token}"
+    send_email(
+        user.email,
+        "Восстановление пароля avtovozom",
+        "Вы запросили восстановление пароля.\n\n"
+        f"Ссылка для создания нового пароля: {reset_url}\n\n"
+        "Ссылка действует 30 минут. Если вы не запрашивали восстановление, просто проигнорируйте письмо.",
+    )
+    return generic
+
+
+@app.post("/auth/password-reset/confirm", response_model=RegisterStartOut)
+def password_reset_confirm(payload: PasswordResetConfirmIn, db: Session = Depends(get_db)):
+    token = payload.token.strip()
+    new_password = payload.new_password
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Пароль должен быть не короче 8 символов")
+    token_hash = _password_reset_hash(token)
+    user = db.execute(
+        select(User).where(User.password_reset_token_hash == token_hash)
+    ).scalar_one_or_none()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not user or not user.password_reset_expires_at or user.password_reset_expires_at < now:
+        raise HTTPException(status_code=400, detail="Ссылка недействительна или устарела")
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = False
+    user.password_reset_token_hash = None
+    user.password_reset_expires_at = None
+    db.commit()
+    return RegisterStartOut(ok=True, message="Пароль обновлён. Теперь можно войти.")
 
 
 @app.get("/auth/me", response_model=MeOut)
@@ -1107,6 +1333,132 @@ def me(current_user: User = Depends(get_current_user)):
         email_verified=current_user.email_verified,
         must_change_password=current_user.must_change_password,
     )
+
+
+@app.post("/auth/webauthn/register/options")
+def webauthn_register_options(
+    payload: WebAuthnOptionsIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if generate_registration_options is None:
+        raise HTTPException(status_code=503, detail="WebAuthn support is not installed")
+    existing = db.execute(
+        select(UserWebAuthnCredential).where(UserWebAuthnCredential.user_id == current_user.id)
+    ).scalars().all()
+    exclude = [
+        PublicKeyCredentialDescriptor(id=_b64url_to_bytes(c.credential_id))
+        for c in existing
+    ]
+    options = generate_registration_options(
+        rp_id=_webauthn_rp_id(),
+        rp_name="avtovozom",
+        user_id=str(current_user.id).encode("utf-8"),
+        user_name=current_user.email,
+        user_display_name=current_user.display_name or current_user.full_name or current_user.email,
+        exclude_credentials=exclude,
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.PREFERRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+    )
+    return _webauthn_options_payload(options, "register", current_user.id)
+
+
+@app.post("/auth/webauthn/register/verify")
+def webauthn_register_verify(
+    payload: WebAuthnVerifyIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if verify_registration_response is None:
+        raise HTTPException(status_code=503, detail="WebAuthn support is not installed")
+    expected_challenge = _consume_webauthn_challenge(
+        payload.challenge_id, "register", current_user.id
+    )
+    verification = verify_registration_response(
+        credential=_credential_from_payload(RegistrationCredential, payload.credential),
+        expected_challenge=expected_challenge,
+        expected_origin=_webauthn_origin(),
+        expected_rp_id=_webauthn_rp_id(),
+        require_user_verification=True,
+    )
+    credential_id = _b64url(verification.credential_id)
+    exists = db.execute(
+        select(UserWebAuthnCredential).where(
+            UserWebAuthnCredential.credential_id == credential_id
+        )
+    ).scalar_one_or_none()
+    transports = ",".join(payload.credential.get("response", {}).get("transports", []) or [])
+    if exists:
+        exists.user_id = current_user.id
+        exists.public_key = _json_b64(verification.credential_public_key)
+        exists.sign_count = verification.sign_count
+        exists.transports = transports
+    else:
+        db.add(
+            UserWebAuthnCredential(
+                user_id=current_user.id,
+                credential_id=credential_id,
+                public_key=_json_b64(verification.credential_public_key),
+                sign_count=verification.sign_count,
+                transports=transports,
+            )
+        )
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/auth/webauthn/login/options")
+def webauthn_login_options(payload: WebAuthnOptionsIn, db: Session = Depends(get_db)):
+    if generate_authentication_options is None:
+        raise HTTPException(status_code=503, detail="WebAuthn support is not installed")
+    credentials = db.execute(select(UserWebAuthnCredential)).scalars().all()
+    allow_credentials = [
+        PublicKeyCredentialDescriptor(id=_b64url_to_bytes(c.credential_id))
+        for c in credentials
+    ]
+    options = generate_authentication_options(
+        rp_id=_webauthn_rp_id(),
+        allow_credentials=allow_credentials,
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+    return _webauthn_options_payload(options, "login", 0)
+
+
+@app.post("/auth/webauthn/login/verify", response_model=TokenOut)
+def webauthn_login_verify(payload: WebAuthnVerifyIn, db: Session = Depends(get_db)):
+    if verify_authentication_response is None:
+        raise HTTPException(status_code=503, detail="WebAuthn support is not installed")
+    expected_challenge = _consume_webauthn_challenge(payload.challenge_id, "login")
+    credential_id = payload.credential.get("id") or payload.credential.get("rawId")
+    stored = None
+    if credential_id:
+        # Browsers send `id` as base64url; rawId may be equivalent depending on the wrapper.
+        stored = db.execute(
+            select(UserWebAuthnCredential).where(
+                UserWebAuthnCredential.credential_id == credential_id
+            )
+        ).scalar_one_or_none()
+    if not stored:
+        raise HTTPException(status_code=401, detail="Unknown WebAuthn credential")
+    verification = verify_authentication_response(
+        credential=_credential_from_payload(AuthenticationCredential, payload.credential),
+        expected_challenge=expected_challenge,
+        expected_origin=_webauthn_origin(),
+        expected_rp_id=_webauthn_rp_id(),
+        credential_public_key=_json_b64_to_bytes(stored.public_key),
+        credential_current_sign_count=stored.sign_count,
+        require_user_verification=True,
+    )
+    stored.sign_count = verification.new_sign_count
+    stored.last_used_at = datetime.utcnow()
+    user = db.execute(
+        select(User).options(joinedload(User.role)).where(User.id == stored.user_id)
+    ).scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User is not active")
+    return _issue_session_tokens(db, user, payload.device_name or "Passkey")
 
 
 @app.patch("/profile", response_model=MeOut)
@@ -2754,6 +3106,30 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
             "Для нового аккаунта после кода придёт временный пароль; "
             "если этот email уже зарегистрирован, после кода откроется вход в кабинет."
         ),
+    )
+
+
+@app.post("/requests/freeform-lead", response_model=FreeformRequestLeadOut)
+def create_freeform_request_lead(payload: FreeformRequestLeadIn):
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Укажите корректный email")
+    full_name = (payload.full_name or "").strip()
+    phone = (payload.phone or "").strip()
+    comment = (payload.comment or "").strip()
+    if len(comment) < 3:
+        raise HTTPException(status_code=400, detail="Опишите автомобиль, который вас интересует")
+    user_name = full_name or email.split("@", 1)[0]
+    user_contact = phone or email
+    contact = user_contact if user_contact == email else f"{user_contact}; email: {email}"
+    notify_freeform_calculation_request(
+        user_name=user_name,
+        user_contact=contact,
+        comment=comment,
+    )
+    return FreeformRequestLeadOut(
+        ok=True,
+        message="Заявка отправлена. Мы свяжемся с вами и уточним детали автомобиля.",
     )
 
 
