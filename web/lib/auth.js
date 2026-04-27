@@ -269,18 +269,34 @@ export function canUseWebAuthn() {
   return typeof window !== "undefined" && "PublicKeyCredential" in window && navigator.credentials;
 }
 
+async function authFetch(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    throw new Error(
+      "Не удалось связаться с сервером после биометрии. Проверьте HTTPS, NEXT_PUBLIC_API_URL и CORS для мобильного домена."
+    );
+  }
+}
+
+async function readApiError(res, fallback) {
+  const body = await res.json().catch(() => null);
+  if (body?.detail) return typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+  return fallback;
+}
+
 export async function registerPasskey(accessToken) {
-  const optionsRes = await fetch(`${API_URL}/auth/webauthn/register/options`, {
+  const optionsRes = await authFetch(`${API_URL}/auth/webauthn/register/options`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ device_name: navigator.userAgent.slice(0, 120) }),
   });
-  if (!optionsRes.ok) throw new Error("Не удалось начать настройку биометрии");
+  if (!optionsRes.ok) throw new Error(await readApiError(optionsRes, "Не удалось начать настройку биометрии"));
   const options = await optionsRes.json();
   const credential = await navigator.credentials.create({
     publicKey: prepareCreationOptions(options),
   });
-  const verifyRes = await fetch(`${API_URL}/auth/webauthn/register/verify`, {
+  const verifyRes = await authFetch(`${API_URL}/auth/webauthn/register/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({
@@ -289,21 +305,21 @@ export async function registerPasskey(accessToken) {
       device_name: navigator.userAgent.slice(0, 120),
     }),
   });
-  if (!verifyRes.ok) throw new Error("Не удалось сохранить биометрию");
+  if (!verifyRes.ok) throw new Error(await readApiError(verifyRes, "Не удалось сохранить биометрию"));
 }
 
 export async function loginWithPasskey() {
-  const optionsRes = await fetch(`${API_URL}/auth/webauthn/login/options`, {
+  const optionsRes = await authFetch(`${API_URL}/auth/webauthn/login/options`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ device_name: navigator.userAgent.slice(0, 120) }),
   });
-  if (!optionsRes.ok) throw new Error("Биометрический вход недоступен");
+  if (!optionsRes.ok) throw new Error(await readApiError(optionsRes, "Биометрический вход недоступен"));
   const options = await optionsRes.json();
   const credential = await navigator.credentials.get({
     publicKey: prepareRequestOptions(options),
   });
-  const verifyRes = await fetch(`${API_URL}/auth/webauthn/login/verify`, {
+  const verifyRes = await authFetch(`${API_URL}/auth/webauthn/login/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -312,7 +328,7 @@ export async function loginWithPasskey() {
       device_name: navigator.userAgent.slice(0, 120),
     }),
   });
-  if (!verifyRes.ok) throw new Error("Не удалось войти по биометрии");
+  if (!verifyRes.ok) throw new Error(await readApiError(verifyRes, "Не удалось войти по биометрии"));
   const data = await verifyRes.json();
   saveToken(data.access_token, data.refresh_token);
   return data.access_token;

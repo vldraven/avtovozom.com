@@ -184,7 +184,7 @@ export default function AuthPage() {
           {error && <div className="alert alert--danger">{error}</div>}
 
           {pinSetupRequired ? (
-            <div className="panel">
+            <div className="panel panel--pin-setup">
               <PinSetupPanel onComplete={() => router.push(nextUrl)} />
             </div>
           ) : null}

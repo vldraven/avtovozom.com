@@ -11,6 +11,7 @@ import {
   markAppUnlocked,
   rotatePinnedSession,
 } from "../lib/auth";
+import PinPad from "./PinPad";
 
 const LOCK_AFTER_MS = 10 * 60 * 1000;
 
@@ -104,23 +105,20 @@ export default function AppLockGate({ children }) {
 
   return (
     <div className="app-lock">
-      <form className="app-lock__card" onSubmit={unlockWithPinSubmit}>
-        <h1>Введите ПИН-код</h1>
-        <p>Разблокируйте avtovozom на этом устройстве.</p>
+      <div className="app-lock__card">
+        <div className="pin-panel__hero">
+          <div className="pin-panel__app-icon">A</div>
+          <h1>Введите ПИН-код</h1>
+          <p>Разблокируйте avtovozom на этом устройстве.</p>
+        </div>
         {error ? <div className="alert alert--danger">{error}</div> : null}
-        <input
-          className="input app-lock__pin"
-          inputMode="numeric"
-          autoFocus
-          type="password"
-          maxLength={6}
-          placeholder="ПИН"
+        <PinPad
           value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+          onChange={setPin}
+          onSubmit={(e) => unlockWithPinSubmit(e)}
+          submitLabel={busy ? "Проверяем..." : "Войти"}
+          disabled={busy}
         />
-        <button type="submit" className="btn btn-primary" disabled={busy || pin.length < 4}>
-          Войти
-        </button>
         {canUseWebAuthn() ? (
           <button type="button" className="btn btn-secondary" onClick={unlockWithBio} disabled={busy}>
             Войти по биометрии
@@ -129,7 +127,7 @@ export default function AppLockGate({ children }) {
         <button type="button" className="btn btn-ghost" onClick={passwordLogin}>
           Войти по паролю
         </button>
-      </form>
+      </div>
     </div>
   );
 }
