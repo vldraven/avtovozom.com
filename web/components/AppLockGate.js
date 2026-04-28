@@ -2,18 +2,19 @@ import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  APP_LOCK_TIMEOUT_MS,
   canUseWebAuthn,
   clearToken,
   hasPinLock,
   isAppUnlocked,
   loginWithPasskey,
   lockApp,
+  markAppHidden,
   markAppUnlocked,
   rotatePinnedSession,
+  shouldLockAfterHidden,
 } from "../lib/auth";
 import PinPad from "./PinPad";
-
-const LOCK_AFTER_MS = 10 * 60 * 1000;
 
 function isProtectedPath(pathname) {
   return /^(?:\/profile|\/messages)(?:\/|$)/.test(pathname || "") || pathname?.startsWith("/staff/");
@@ -33,6 +34,9 @@ export default function AppLockGate({ children }) {
     (async () => {
       const hasLock = await hasPinLock().catch(() => false);
       if (cancelled) return;
+      if (hasLock && (shouldLockAfterHidden() || !isAppUnlocked())) {
+        lockApp();
+      }
       setLocked(Boolean(protectedPath && hasLock && !isAppUnlocked()));
       setReady(true);
     })();
@@ -47,9 +51,10 @@ export default function AppLockGate({ children }) {
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
         hiddenAt = Date.now();
+        markAppHidden();
         return;
       }
-      if (hiddenAt && Date.now() - hiddenAt > LOCK_AFTER_MS) {
+      if ((hiddenAt && Date.now() - hiddenAt > APP_LOCK_TIMEOUT_MS) || shouldLockAfterHidden()) {
         lockApp();
         if (protectedPath) setLocked(true);
       }

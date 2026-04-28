@@ -2,11 +2,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "avt_token";
 const PENDING_REFRESH_KEY = "avt_refresh_pending";
 const UNLOCKED_KEY = "avt_app_unlocked";
+const HIDDEN_AT_KEY = "avt_app_hidden_at";
 const DB_NAME = "avtovozom-auth";
 const DB_VERSION = 1;
 const STORE = "secrets";
 const PIN_RECORD = "pin-session";
 const PIN_ITERATIONS = 250000;
+export const APP_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 
 export function getStoredToken() {
   if (typeof window === "undefined") return "";
@@ -40,18 +42,36 @@ export function clearToken() {
 
 export function markAppUnlocked() {
   if (typeof window === "undefined") return;
-  sessionStorage.setItem(UNLOCKED_KEY, "1");
+  sessionStorage.setItem(UNLOCKED_KEY, String(Date.now()));
+  sessionStorage.removeItem(HIDDEN_AT_KEY);
 }
 
 export function lockApp() {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem(UNLOCKED_KEY);
+  sessionStorage.removeItem(HIDDEN_AT_KEY);
   window.dispatchEvent(new Event("avt-app-lock-changed"));
 }
 
 export function isAppUnlocked() {
   if (typeof window === "undefined") return false;
-  return sessionStorage.getItem(UNLOCKED_KEY) === "1";
+  const unlockedAt = Number(sessionStorage.getItem(UNLOCKED_KEY) || "0");
+  if (!unlockedAt || Date.now() - unlockedAt > APP_LOCK_TIMEOUT_MS) {
+    lockApp();
+    return false;
+  }
+  return true;
+}
+
+export function markAppHidden() {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(HIDDEN_AT_KEY, String(Date.now()));
+}
+
+export function shouldLockAfterHidden() {
+  if (typeof window === "undefined") return false;
+  const hiddenAt = Number(sessionStorage.getItem(HIDDEN_AT_KEY) || "0");
+  return Boolean(hiddenAt && Date.now() - hiddenAt > APP_LOCK_TIMEOUT_MS);
 }
 
 function openDb() {

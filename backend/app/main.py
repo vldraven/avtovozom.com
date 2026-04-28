@@ -1376,13 +1376,16 @@ def webauthn_register_verify(
     expected_challenge = _consume_webauthn_challenge(
         payload.challenge_id, "register", current_user.id
     )
-    verification = verify_registration_response(
-        credential=_credential_from_payload(RegistrationCredential, payload.credential),
-        expected_challenge=expected_challenge,
-        expected_origin=_webauthn_origin(),
-        expected_rp_id=_webauthn_rp_id(),
-        require_user_verification=True,
-    )
+    try:
+        verification = verify_registration_response(
+            credential=_credential_from_payload(RegistrationCredential, payload.credential),
+            expected_challenge=expected_challenge,
+            expected_origin=_webauthn_origin(),
+            expected_rp_id=_webauthn_rp_id(),
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"WebAuthn registration failed: {exc}") from exc
     credential_id = _b64url(verification.credential_id)
     exists = db.execute(
         select(UserWebAuthnCredential).where(
@@ -1442,15 +1445,18 @@ def webauthn_login_verify(payload: WebAuthnVerifyIn, db: Session = Depends(get_d
         ).scalar_one_or_none()
     if not stored:
         raise HTTPException(status_code=401, detail="Unknown WebAuthn credential")
-    verification = verify_authentication_response(
-        credential=_credential_from_payload(AuthenticationCredential, payload.credential),
-        expected_challenge=expected_challenge,
-        expected_origin=_webauthn_origin(),
-        expected_rp_id=_webauthn_rp_id(),
-        credential_public_key=_json_b64_to_bytes(stored.public_key),
-        credential_current_sign_count=stored.sign_count,
-        require_user_verification=True,
-    )
+    try:
+        verification = verify_authentication_response(
+            credential=_credential_from_payload(AuthenticationCredential, payload.credential),
+            expected_challenge=expected_challenge,
+            expected_origin=_webauthn_origin(),
+            expected_rp_id=_webauthn_rp_id(),
+            credential_public_key=_json_b64_to_bytes(stored.public_key),
+            credential_current_sign_count=stored.sign_count,
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"WebAuthn authentication failed: {exc}") from exc
     stored.sign_count = verification.new_sign_count
     stored.last_used_at = datetime.utcnow()
     user = db.execute(

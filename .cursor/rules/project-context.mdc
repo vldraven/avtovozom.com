@@ -1,0 +1,14 @@
+---
+description: Core project context and engineering guardrails
+alwaysApply: true
+---
+
+# Avtovozom Project Context
+
+- Frontend lives in `web/` and uses Next.js Pages Router with React.
+- Backend lives in `backend/app/` and uses FastAPI, SQLAlchemy, and PostgreSQL.
+- Prefer existing local helpers and styling patterns before adding new abstractions.
+- Do not commit local spreadsheet/data files unless explicitly requested.
+- After code changes, run focused checks where practical: `npm --prefix web run build` for frontend and `python3 -m py_compile` for changed backend Python files.
+- Production URLs are configured through environment variables such as `NEXT_PUBLIC_API_URL`, `PUBLIC_WEB_ORIGIN`, and `CORS_ORIGINS`.
+

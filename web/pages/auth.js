@@ -178,8 +178,8 @@ export default function AuthPage() {
         </div>
       </header>
       <main className="site-main">
-        <div className="container page-narrow page-narrow--auth">
-          <h1 className="section-title">Вход и регистрация</h1>
+        <div className={`container page-narrow page-narrow--auth${pinSetupRequired ? " page-narrow--pin-auth" : ""}`}>
+          {!pinSetupRequired ? <h1 className="section-title">Вход и регистрация</h1> : null}
           {message && <div className="alert alert--success">{message}</div>}
           {error && <div className="alert alert--danger">{error}</div>}
 
