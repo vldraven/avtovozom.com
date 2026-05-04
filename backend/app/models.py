@@ -165,6 +165,8 @@ class Car(Base):
     horsepower: Mapped[int] = mapped_column(Integer)
     fuel_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     transmission: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    body_color_slug: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    """Справочное значение: white, black, silver, … см. BODY_COLOR_OPTIONS."""
     location_city: Mapped[str | None] = mapped_column(String(128), nullable=True)
     price_cny: Mapped[float] = mapped_column(Float)
     registration_date: Mapped[str | None] = mapped_column(String(32), nullable=True)

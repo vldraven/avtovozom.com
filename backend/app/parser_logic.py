@@ -2,19 +2,22 @@ from collections.abc import Callable
 from datetime import datetime
 import os
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
 from .che168_parser import (
     ParsedCar,
+    car_source_for_marketplace,
     filter_vehicle_photo_urls,
-    normalize_che168_detail_url,
+    marketplace_from_detail_url,
+    normalize_import_detail_url,
     parse_che168_detail,
     parse_che168_listing_links,
     source_listing_id_from_url,
 )
 from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru
-from .media_storage import download_car_photos
+from .body_colors import label_for_slug
+from .media_storage import delete_car_photo_files, download_car_photos
 from .models import Car, CarPhoto, CarModel, ModelWhitelist, ParseJob
 from .model_resolver import resolve_model_id_for_listing
 from .parser_timeout import call_with_timeout
@@ -27,6 +30,7 @@ def _insert_car_from_parsed(
     parsed: ParsedCar,
     download_timeout: float,
     progress_cb: Callable[[str], None] | None = None,
+    car_source: str = "che168",
 ) -> tuple[Car | None, str | None]:
     resolved_model_id = resolve_model_id_for_listing(
         db,
@@ -62,9 +66,11 @@ def _insert_car_from_parsed(
         fuel_ru,
         trans_ru,
         city_ru,
+        body_color_label=label_for_slug(parsed.body_color_slug),
     )
 
     car = Car(
+        source=(car_source or "che168")[:32],
         source_listing_id=parsed.source_listing_id,
         brand_id=model.brand_id,
         model_id=resolved_model_id,
@@ -77,12 +83,115 @@ def _insert_car_from_parsed(
         fuel_type=fuel_ru,
         transmission=trans_ru,
         location_city=city_ru,
+        body_color_slug=parsed.body_color_slug,
         price_cny=parsed.price_cny if parsed.price_cny is not None else 0.01,
         registration_date=parsed.registration_date,
         production_date=parsed.production_date,
     )
     db.add(car)
     db.flush()
+    if progress_cb:
+        progress_cb("3/3 Загрузка фото на сервер…")
+    photo_urls = filter_vehicle_photo_urls(list(parsed.photos or []))
+    try:
+        local_urls = call_with_timeout(
+            lambda: download_car_photos(car.id, photo_urls),
+            timeout_sec=download_timeout,
+        )
+    except Exception as e:
+        db.rollback()
+        return None, str(e)
+
+    for i, storage_url in enumerate(local_urls):
+        if not storage_url:
+            continue
+        db.add(
+            CarPhoto(
+                car_id=car.id,
+                storage_url=storage_url,
+                sort_order=i,
+            )
+        )
+    db.commit()
+    db.refresh(car)
+    return car, None
+
+
+def _revive_inactive_car_from_parsed(
+    db: Session,
+    car: Car,
+    model: CarModel,
+    parsed: ParsedCar,
+    download_timeout: float,
+    progress_cb: Callable[[str], None] | None = None,
+    car_source: str = "che168",
+) -> tuple[Car | None, str | None]:
+    """
+    То же содержание карточки, что при новом импорте: обновляет поля, меняет фото,
+    выставляет is_active=True (после «удаления» из каталога остаётся строка с тем же source_listing_id).
+    """
+    resolved_model_id = resolve_model_id_for_listing(
+        db,
+        brand_name=model.brand.name,
+        brand_id=model.brand_id,
+        fallback_model_id=model.id,
+        title=parsed.title,
+        description=parsed.description,
+        series_raw=parsed.series_raw,
+    )
+    resolved_row = db.get(CarModel, resolved_model_id)
+    display_model_name = resolved_row.name if resolved_row else model.name
+
+    fuel_ru = translate_to_ru(parsed.fuel_type) if parsed.fuel_type else None
+    trans_ru = translate_to_ru(parsed.transmission) if parsed.transmission else None
+    city_ru = translate_to_ru(parsed.location_city) if parsed.location_city else None
+
+    title_tr = translate_to_ru(parsed.title) or parsed.title
+    title_ru = pick_title_ru(
+        model.brand.name,
+        display_model_name,
+        parsed.year or 2020,
+        parsed.title,
+        title_tr,
+    )
+    desc_ru = basic_neutral_description_ru(
+        model.brand.name,
+        display_model_name,
+        parsed.year or 2020,
+        parsed.mileage_km,
+        parsed.engine_volume_cc,
+        parsed.horsepower,
+        fuel_ru,
+        trans_ru,
+        city_ru,
+        body_color_label=label_for_slug(parsed.body_color_slug),
+    )
+
+    car.source = (car_source or "che168")[:32]
+    car.brand_id = model.brand_id
+    car.model_id = resolved_model_id
+    car.title = title_ru
+    car.description = desc_ru
+    car.year = parsed.year or 2020
+    car.engine_volume_cc = parsed.engine_volume_cc or 0
+    car.horsepower = parsed.horsepower or 0
+    car.mileage_km = parsed.mileage_km
+    car.fuel_type = fuel_ru
+    car.transmission = trans_ru
+    car.location_city = city_ru
+    car.body_color_slug = parsed.body_color_slug
+    car.price_cny = parsed.price_cny if parsed.price_cny is not None else 0.01
+    car.registration_date = parsed.registration_date
+    car.production_date = parsed.production_date
+    car.is_active = True
+
+    old_urls = list(
+        db.execute(select(CarPhoto.storage_url).where(CarPhoto.car_id == car.id)).scalars().all()
+    )
+    db.execute(delete(CarPhoto).where(CarPhoto.car_id == car.id))
+    db.flush()
+    delete_car_photo_files(car.id, old_urls)
+
     if progress_cb:
         progress_cb("3/3 Загрузка фото на сервер…")
     photo_urls = filter_vehicle_photo_urls(list(parsed.photos or []))
@@ -150,16 +259,20 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
         db.refresh(job)
         return job
 
-    detail_url = normalize_che168_detail_url(raw_url)
+    detail_url = normalize_import_detail_url(raw_url)
     if not detail_url:
         job.status = "failed"
         job.finished_at = datetime.utcnow()
         job.message = (
-            "Нужна прямая ссылка на объявление che168: …/dealer/…/….html или https://i.che168.com/car/…"
+            "Нужна прямая ссылка: che168 — …/dealer/…/….html или i.che168.com/car/…; "
+            "global.che168 — …/detail/…; dongchedi — …/usedcar/…"
         )
         db.commit()
         db.refresh(job)
         return job
+
+    mp = marketplace_from_detail_url(detail_url)
+    car_src = car_source_for_marketplace(mp)
 
     model = db.execute(
         select(CarModel).options(joinedload(CarModel.brand)).where(CarModel.id == mid)
@@ -177,12 +290,18 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
         db.add(ModelWhitelist(model_id=mid, enabled=True))
     else:
         wl.enabled = True
-    model.che168_url = detail_url
+    if mp == "che168":
+        model.che168_url = detail_url
     db.commit()
     db.refresh(model)
 
     existing_ids = set(
-        db.execute(select(Car.source_listing_id).where(Car.source_listing_id.isnot(None))).scalars().all()
+        db.execute(
+            select(Car.source_listing_id).where(
+                Car.source_listing_id.isnot(None),
+                Car.is_active.is_(True),
+            )
+        ).scalars().all()
     )
 
     try:
@@ -232,14 +351,51 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
         car = db.execute(
             select(Car).where(Car.source_listing_id == parsed.source_listing_id)
         ).scalar_one_or_none()
-        if car:
+        if car and car.is_active:
             job.finished_at = datetime.utcnow()
             job.total_processed = total_processed
             job.total_created = 0
             job.total_updated = total_updated
             job.total_errors = total_errors
             job.status = "success"
-            job.message = "Объявление уже есть в каталоге."
+            job.message = "Это объявление уже есть в каталоге."
+            db.commit()
+            db.refresh(job)
+            return job
+
+        if car and not car.is_active:
+            car_new, err = _revive_inactive_car_from_parsed(
+                db,
+                car,
+                model,
+                parsed,
+                download_timeout,
+                progress_cb=lambda m: flush_progress(m),
+                car_source=car_src,
+            )
+            if err:
+                total_errors = 1
+                job.status = "failed"
+                job.message = f"Не удалось восстановить объявление: {err}"[:500]
+                job.finished_at = datetime.utcnow()
+                job.total_processed = total_processed
+                job.total_created = total_created
+                job.total_updated = total_updated
+                job.total_errors = total_errors
+                db.commit()
+                db.refresh(job)
+                return job
+
+            total_updated = 1
+            job.finished_at = datetime.utcnow()
+            job.total_processed = total_processed
+            job.total_created = total_created
+            job.total_updated = total_updated
+            job.total_errors = total_errors
+            job.status = "success"
+            job.message = (
+                f"Объявление восстановлено #{car_new.id}: {model.brand.name} {model.name}."
+            )[:512]
             db.commit()
             db.refresh(job)
             return job
@@ -250,6 +406,7 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             parsed,
             download_timeout,
             progress_cb=lambda m: flush_progress(m),
+            car_source=car_src,
         )
         if err:
             total_errors = 1
@@ -364,7 +521,12 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
         whitelist_models = whitelist_models[:1]
 
     existing_ids = set(
-        db.execute(select(Car.source_listing_id).where(Car.source_listing_id.isnot(None))).scalars().all()
+        db.execute(
+            select(Car.source_listing_id).where(
+                Car.source_listing_id.isnot(None),
+                Car.is_active.is_(True),
+            )
+        ).scalars().all()
     )
 
     try:
@@ -431,9 +593,23 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
                     select(Car).where(Car.source_listing_id == parsed.source_listing_id)
                 ).scalar_one_or_none()
 
-                if car:
+                if car and car.is_active:
                     flush_progress(
-                        f"{model.name}: объявление {parsed.source_listing_id} уже в базе, пропуск."
+                        f"{model.name}: объявление {parsed.source_listing_id} уже в каталоге, пропуск."
+                    )
+                    continue
+
+                if car and not car.is_active:
+                    revived, err = _revive_inactive_car_from_parsed(db, car, model, parsed, download_timeout)
+                    if err:
+                        total_errors += 1
+                        flush_progress(f"Ошибка восстановления ({model.name}): {err}")
+                        continue
+                    total_updated += 1
+                    existing_ids.add(parsed.source_listing_id)
+                    flush_progress(
+                        f"{model.name}: восстановлено {parsed.source_listing_id}; "
+                        f"новых {total_created}, восстановлено {total_updated}."
                     )
                     continue
 
@@ -469,7 +645,8 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
         else:
             job.status = "success"
             job.message = (
-                f"Готово: добавлено новых {total_created}, попыток разбора {total_processed}, ошибок {total_errors}."
+                f"Готово: добавлено новых {total_created}, восстановлено {total_updated}, "
+                f"попыток разбора {total_processed}, ошибок {total_errors}."
             )
         db.commit()
         db.refresh(job)

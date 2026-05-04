@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -82,6 +83,10 @@ class CarOut(BaseModel):
     horsepower: int
     fuel_type: str | None = None
     transmission: str | None = None
+    body_color_slug: str | None = None
+    """Ключ цвета (white/black/…); null — не указан."""
+    body_color_label: str | None = None
+    """Подпись на русском для отображения (по slug)."""
     location_city: str | None = None
     price_cny: float
     registration_date: str | None = None
@@ -104,6 +109,13 @@ class CarsListOut(BaseModel):
     total: int
     cbr: CbrSnapshot | None = None
     cbr_error: str | None = None
+
+
+class BodyColorOptionOut(BaseModel):
+    """Элемент выпадающего списка «цвет кузова» (создание/редактирование объявления)."""
+
+    slug: str
+    label: str
 
 
 class CarBrandBriefOut(BaseModel):
@@ -459,9 +471,10 @@ class CarModelCatalogIn(BaseModel):
 
 
 class ParserImportListingIn(BaseModel):
-    """Разовый импорт одной карточки: ссылка на объявление che168 (dealer/… или i.che168.com/car/…)."""
+    """Разовый импорт одной карточки: ссылка на объявление (che168, global.che168 или dongchedi)."""
     model_id: int
     che168_url: str
+    marketplace: Literal["che168", "global_che168", "dongchedi"] = "che168"
 
 
 class ParseJobOut(BaseModel):

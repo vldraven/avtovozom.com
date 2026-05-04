@@ -8,14 +8,15 @@ from pathlib import Path
 
 import httpx
 
-_HEADERS = {
+from .che168_parser import http_referer_for_request_url
+
+_HEADERS_BASE = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/120.0.0.0 Safari/537.36"
     ),
     "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-    "Referer": "https://www.che168.com/",
     "Accept-Language": "zh-CN,zh;q=0.9",
 }
 
@@ -49,12 +50,16 @@ def download_car_photos(car_id: int, urls: list[str], max_count: int = 12) -> li
     car_dir = root / "cars" / str(car_id)
     car_dir.mkdir(parents=True, exist_ok=True)
     saved: list[str] = []
-    with httpx.Client(timeout=45.0, follow_redirects=True, headers=_HEADERS) as client:
+    with httpx.Client(timeout=45.0, follow_redirects=True) as client:
         for i, url in enumerate(urls[:max_count]):
             if not url or not url.startswith("http"):
                 continue
             try:
-                r = client.get(url)
+                headers = {
+                    **_HEADERS_BASE,
+                    "Referer": http_referer_for_request_url(url),
+                }
+                r = client.get(url, headers=headers)
                 r.raise_for_status()
                 data = r.content
                 if not _looks_like_image(data):

@@ -66,6 +66,8 @@ export default function StaffEditListingPage() {
   const [priceCny, setPriceCny] = useState("");
   const [registrationDate, setRegistrationDate] = useState("");
   const [productionDate, setProductionDate] = useState("");
+  const [bodyColorSlug, setBodyColorSlug] = useState("");
+  const [bodyColorOptions, setBodyColorOptions] = useState([]);
   const [existingPhotos, setExistingPhotos] = useState([]);
   const [photoIdsToRemove, setPhotoIdsToRemove] = useState(() => new Set());
   const [files, setFiles] = useState([]);
@@ -107,6 +109,17 @@ export default function StaffEditListingPage() {
   }, [router.isReady, carId, router]);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API_URL}/catalog/body-colors`);
+        if (r.ok) setBodyColorOptions(await r.json());
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
     if (!router.isReady || !token || !carId || !me || !canCreateListings(me.role)) return;
     const url = isAdminRole(me.role)
       ? `${API_URL}/admin/cars/${carId}`
@@ -141,6 +154,7 @@ export default function StaffEditListingPage() {
       setPriceCny(String(c.price_cny ?? ""));
       setRegistrationDate(c.registration_date || "");
       setProductionDate(c.production_date || "");
+      setBodyColorSlug(c.body_color_slug || "");
       const ph = [...(c.photos || [])].sort((a, b) => a.sort_order - b.sort_order);
       setExistingPhotos(ph);
       setPhotoIdsToRemove(new Set());
@@ -297,6 +311,7 @@ export default function StaffEditListingPage() {
     fd.append("price_cny", priceCny);
     fd.append("registration_date", registrationDate);
     fd.append("production_date", productionDate);
+    fd.append("body_color_slug", bodyColorSlug);
     for (const f of files) fd.append("photos", f);
     if (photoIdsToRemove.size > 0) {
       fd.append("remove_photo_ids", [...photoIdsToRemove].join(","));
@@ -595,6 +610,21 @@ export default function StaffEditListingPage() {
                   />
                 </label>
               </div>
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="Цвет кузова"
+                placeholder="— не указан —"
+                searchable
+                value={bodyColorSlug}
+                onChange={setBodyColorSlug}
+                options={[
+                  { value: "", label: "— не указан —" },
+                  ...bodyColorOptions.map((x) => ({
+                    value: x.slug,
+                    label: x.label,
+                  })),
+                ]}
+              />
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Город
                 <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />

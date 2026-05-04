@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .cbr_rates import get_cny_rub_rate
+from .body_colors import label_for_slug
 from .models import Car
 from .schemas import CarPricingGuideOut, CbrSnapshot, FreeCalculatorLink
 
@@ -34,6 +35,7 @@ def build_pricing_guide(car: Car, snap: CbrSnapshot) -> CarPricingGuideOut:
     reg = (car.registration_date or "").strip() or "не указана"
     prod = (car.production_date or "").strip() or "не указана"
     fuel = (car.fuel_type or "").strip() or "не указано"
+    color_lbl = label_for_slug(getattr(car, "body_color_slug", None))
     params_lines = [
         f"Стоимость в объявлении: {float(car.price_cny):,.0f} CNY".replace(",", " "),
         f"Ориентир в рублях по курсу ЦБ на {snap.rate_date}: ~{rub:,.0f} RUB".replace(",", " "),
@@ -43,8 +45,12 @@ def build_pricing_guide(car: Car, snap: CbrSnapshot) -> CarPricingGuideOut:
         f"Объём двигателя: {car.engine_volume_cc} см³",
         f"Мощность: {car.horsepower} л.с.",
         f"Тип топлива / силовая установка: {fuel}",
-        "Для калькуляторов обычно нужны: возраст авто, объём, мощность, тип двигателя, стоимость в валюте и сценарий (личное использование / коммерция).",
     ]
+    if color_lbl:
+        params_lines.append(f"Цвет кузова: {color_lbl}")
+    params_lines.append(
+        "Для калькуляторов обычно нужны: возраст авто, объём, мощность, тип двигателя, стоимость в валюте и сценарий (личное использование / коммерция)."
+    )
     return CarPricingGuideOut(
         cbr_rub_per_cny=snap.rub_per_cny,
         cbr_date=snap.rate_date,

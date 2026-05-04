@@ -54,7 +54,13 @@ from .models import (
     UserSession,
     UserWebAuthnCredential,
 )
-from .che168_parser import che168_detail_url_from_source_listing_id, parse_che168_detail
+from .che168_parser import (
+    che168_detail_url_from_source_listing_id,
+    http_referer_for_request_url,
+    marketplace_from_detail_url,
+    normalize_import_detail_url,
+    parse_che168_detail,
+)
 from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru, russian_listing_title
 from .model_resolver import resolve_model_id_for_listing
 from .parser_logic import run_parser_job
@@ -68,6 +74,7 @@ from .media_storage import (
     save_uploaded_car_photos,
 )
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
+from .body_colors import BODY_COLOR_OPTIONS, label_for_slug, slug_from_form
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
 from .customs_calc import ensure_settings_row, run_estimate, validate_config_yaml
 from .additional_expenses import (
@@ -102,6 +109,7 @@ from .schemas import (
     CatalogTreeModelOut,
     CarBrandCreateIn,
     CarBrandUpdateIn,
+    BodyColorOptionOut,
     CarGenerationCreateIn,
     CarModelCreateIn,
     CarPriceBreakdownItemOut,
@@ -525,6 +533,8 @@ def _car_to_out(
         horsepower=car.horsepower,
         fuel_type=car.fuel_type,
         transmission=car.transmission,
+        body_color_slug=car.body_color_slug,
+        body_color_label=label_for_slug(car.body_color_slug),
         location_city=car.location_city,
         price_cny=car.price_cny,
         registration_date=car.registration_date,
@@ -558,6 +568,8 @@ def _allowed_image_proxy_host(host: str) -> bool:
         return True
     if "2scimg" in h or "escimg" in h:
         return True
+    if "dongchedi" in h or h.endswith(".byteimg.com") or "pstatp.com" in h or "dcarstatic.com" in h:
+        return True
     return False
 
 
@@ -576,7 +588,7 @@ def media_proxy(url: str = Query(..., max_length=4096)):
     headers = {
         "User-Agent": _PROXY_UA,
         "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-        "Referer": "https://www.che168.com/",
+        "Referer": http_referer_for_request_url(raw),
         "Accept-Language": "zh-CN,zh;q=0.9",
     }
     try:
@@ -643,6 +655,9 @@ def startup() -> None:
         )
         conn.execute(
             text("CREATE INDEX IF NOT EXISTS ix_cars_generation_id ON cars (generation_id)")
+        )
+        conn.execute(
+            text("ALTER TABLE cars ADD COLUMN IF NOT EXISTS body_color_slug VARCHAR(32)")
         )
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32)"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT TRUE"))
@@ -781,6 +796,12 @@ def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
     items.sort(key=lambda x: (-x.listings_count, x.name.lower()))
     response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return items
+
+
+@app.get("/catalog/body-colors", response_model=list[BodyColorOptionOut])
+def public_catalog_body_colors():
+    """Список цветов кузова для форм создания и редактирования объявлений."""
+    return [BodyColorOptionOut(slug=s, label=lab) for s, lab in BODY_COLOR_OPTIONS]
 
 
 @app.get("/catalog/models", response_model=list[CatalogModelOut])
@@ -1800,6 +1821,18 @@ def _optional_mileage(mileage_km_raw: str | None) -> int | None:
         ) from None
 
 
+def _validated_body_color_slug_form(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    sl = slug_from_form(s)
+    if sl is None:
+        raise HTTPException(status_code=400, detail="Некорректный цвет кузова")
+    return sl
+
+
 def _optional_generation_id_form(raw: str | None) -> int | None:
     if raw is None:
         return None
@@ -1863,6 +1896,7 @@ async def _update_car_from_multipart(
     price_cny: float,
     registration_date: str | None,
     production_date: str | None,
+    body_color_slug: str | None,
     photos: list[UploadFile] | None,
     remove_photo_ids: str | None = None,
 ) -> CarOut:
@@ -1903,6 +1937,7 @@ async def _update_car_from_multipart(
     car.price_cny = float(price_cny)
     car.registration_date = (registration_date or "").strip() or None
     car.production_date = (production_date or "").strip() or None
+    car.body_color_slug = _validated_body_color_slug_form(body_color_slug)
 
     raw_rm = (remove_photo_ids or "").strip()
     if raw_rm:
@@ -2267,6 +2302,7 @@ async def staff_create_car(
     price_cny: float = Form(),
     registration_date: str | None = Form(None),
     production_date: str | None = Form(None),
+    body_color_slug: str | None = Form(None),
     photos: list[UploadFile] | None = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "moderator", "dealer")),
@@ -2317,6 +2353,7 @@ async def staff_create_car(
         fuel_type=(fuel_type or "").strip() or None,
         transmission=(transmission or "").strip() or None,
         location_city=(location_city or "").strip() or None,
+        body_color_slug=_validated_body_color_slug_form(body_color_slug),
         price_cny=float(price_cny),
         registration_date=(registration_date or "").strip() or None,
         production_date=(production_date or "").strip() or None,
@@ -2414,6 +2451,7 @@ async def staff_update_own_car(
     price_cny: float = Form(),
     registration_date: str | None = Form(None),
     production_date: str | None = Form(None),
+    body_color_slug: str | None = Form(None),
     photos: list[UploadFile] | None = File(None),
     remove_photo_ids: str | None = Form(None),
     db: Session = Depends(get_db),
@@ -2458,6 +2496,7 @@ async def staff_update_own_car(
         price_cny=price_cny,
         registration_date=registration_date,
         production_date=production_date,
+        body_color_slug=body_color_slug,
         photos=photos,
         remove_photo_ids=remove_photo_ids,
     )
@@ -2595,6 +2634,8 @@ def admin_batch_refresh_from_che168(
             car.registration_date = parsed.registration_date
         if parsed.production_date:
             car.production_date = parsed.production_date
+        if parsed.body_color_slug:
+            car.body_color_slug = parsed.body_color_slug
 
         title_tr = translate_to_ru(parsed.title) or parsed.title
         car.title = pick_title_ru(
@@ -2614,6 +2655,7 @@ def admin_batch_refresh_from_che168(
             car.fuel_type,
             car.transmission,
             car.location_city,
+            body_color_label=label_for_slug(car.body_color_slug),
         )
         ok += 1
         db.commit()
@@ -2659,6 +2701,7 @@ def admin_regenerate_listing_copy(
             car.fuel_type,
             car.transmission,
             car.location_city,
+            body_color_label=label_for_slug(car.body_color_slug),
         )
         updated += 1
     db.commit()
@@ -2711,6 +2754,7 @@ async def admin_update_car(
     price_cny: float = Form(),
     registration_date: str | None = Form(None),
     production_date: str | None = Form(None),
+    body_color_slug: str | None = Form(None),
     photos: list[UploadFile] | None = File(None),
     remove_photo_ids: str | None = Form(None),
     db: Session = Depends(get_db),
@@ -2751,6 +2795,7 @@ async def admin_update_car(
         price_cny=price_cny,
         registration_date=registration_date,
         production_date=production_date,
+        body_color_slug=body_color_slug,
         photos=photos,
         remove_photo_ids=remove_photo_ids,
     )
@@ -4077,9 +4122,24 @@ def import_che168_listing(
     _: User = Depends(require_roles("admin", "moderator")),
 ):
     """Сохраняет ссылку на модель, включает whitelist и ставит в очередь разбор одной карточки."""
-    url = (payload.che168_url or "").strip()
-    if not url:
-        raise HTTPException(status_code=400, detail="Укажите ссылку на объявление che168.")
+    raw = (payload.che168_url or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Укажите ссылку на объявление.")
+    normalized = normalize_import_detail_url(raw)
+    if not normalized:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Некорректная ссылка. Нужна карточка: che168 (…/dealer/… или i.che168.com/car/…), "
+                "global.che168.com/detail/… или www.dongchedi.com/usedcar/…"
+            ),
+        )
+    detected = marketplace_from_detail_url(normalized)
+    if payload.marketplace != detected:
+        raise HTTPException(
+            status_code=400,
+            detail="Ссылка не соответствует выбранной площадке. Измените площадку или вставьте URL этой же площадки.",
+        )
     exists = db.execute(select(CarModel).where(CarModel.id == payload.model_id)).scalar_one_or_none()
     if not exists:
         raise HTTPException(status_code=404, detail="Модель не найдена.")
@@ -4087,7 +4147,7 @@ def import_che168_listing(
         type="import_one",
         status="queued",
         import_model_id=payload.model_id,
-        import_detail_url=url[:2048],
+        import_detail_url=normalized[:2048],
     )
     db.add(job)
     db.commit()

@@ -32,6 +32,8 @@ export default function StaffNewListingPage() {
   const [priceCny, setPriceCny] = useState("");
   const [registrationDate, setRegistrationDate] = useState("");
   const [productionDate, setProductionDate] = useState("");
+  const [bodyColorSlug, setBodyColorSlug] = useState("");
+  const [bodyColorOptions, setBodyColorOptions] = useState([]);
   const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
@@ -66,6 +68,17 @@ export default function StaffNewListingPage() {
         headers: { Authorization: `Bearer ${t}` },
       });
       if (b.ok) setBrands(await b.json());
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API_URL}/catalog/body-colors`);
+        if (r.ok) setBodyColorOptions(await r.json());
+      } catch {
+        /* ignore */
+      }
     })();
   }, []);
 
@@ -228,6 +241,7 @@ export default function StaffNewListingPage() {
     fd.append("price_cny", priceCny);
     fd.append("registration_date", registrationDate);
     fd.append("production_date", productionDate);
+    fd.append("body_color_slug", bodyColorSlug);
     for (const f of files) fd.append("photos", f);
 
     setSubmitting(true);
@@ -503,6 +517,21 @@ export default function StaffNewListingPage() {
                   />
                 </label>
               </div>
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="Цвет кузова"
+                placeholder="— не указан —"
+                searchable
+                value={bodyColorSlug}
+                onChange={setBodyColorSlug}
+                options={[
+                  { value: "", label: "— не указан —" },
+                  ...bodyColorOptions.map((x) => ({
+                    value: x.slug,
+                    label: x.label,
+                  })),
+                ]}
+              />
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Город
                 <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />

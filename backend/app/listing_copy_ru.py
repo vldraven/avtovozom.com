@@ -46,6 +46,7 @@ def basic_neutral_description_ru(
     fuel_type: str | None,
     transmission: str | None,
     location_city: str | None,
+    body_color_label: str | None = None,
 ) -> str:
     """
     Базовое описание только по характеристикам, без продавца и контактов.
@@ -66,6 +67,8 @@ def basic_neutral_description_ru(
         parts.append(f"Топливо: {str(fuel_type).strip()}.")
     if transmission and str(transmission).strip():
         parts.append(f"Трансмиссия: {str(transmission).strip()}.")
+    if body_color_label and str(body_color_label).strip():
+        parts.append(f"Цвет кузова (по данным объявления): {str(body_color_label).strip()}.")
     if location_city and str(location_city).strip():
         parts.append(f"Город в объявлении: {str(location_city).strip()}.")
     parts.append(

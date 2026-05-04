@@ -6,11 +6,17 @@ from typing import Any
 import httpx
 from playwright.sync_api import sync_playwright
 
+from .body_colors import guess_body_color_slug_from_vehicle_text
+
 
 # Старый формат карточки; на витрине серии чаще встречаются дилерские URL.
 CAR_DETAIL_ID_RE = re.compile(r"che168\.com/car/(\d+)", re.IGNORECASE)
 # https://www.che168.com/dealer/{dealerId}/{infoId}.html — основной формат списка объявлений
 DEALER_LISTING_RE = re.compile(r"che168\.com/dealer/(\d+)/(\d+)\.html", re.IGNORECASE)
+# https://global.che168.com/detail/{id}
+GLOBAL_CHE168_DETAIL_RE = re.compile(r"global\.che168\.com/detail/(\d+)", re.IGNORECASE)
+# https://www.dongchedi.com/usedcar/{id}
+DONGCHEDI_USEDCAR_RE = re.compile(r"(?:www\.)?dongchedi\.com/usedcar/(\d+)", re.IGNORECASE)
 YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
 ENGINE_L_RE = re.compile(r"([0-9]{1,2}(?:\.[0-9])?)\s*L", re.IGNORECASE)
 HORSEPOWER_RE = re.compile(r"([0-9]{2,4})\s*(马力|匹|hp|ps)", re.IGNORECASE)
@@ -23,6 +29,11 @@ UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/120.0.0.0 Safari/537.36"
 )
+
+
+def _body_color_slug_from_vehicle_text(title: str | None, body_text: str | None) -> str | None:
+    blob = f"{title or ''}\n{body_text or ''}".strip()
+    return guess_body_color_slug_from_vehicle_text(blob) if blob else None
 
 # Баннеры, QR, иконки UI — не фото автомобиля (escimg может отдавать и рекламу).
 _BAD_IMG_MARKERS = (
@@ -70,10 +81,45 @@ def is_likely_vehicle_photo_url(url: str) -> bool:
             "dealer2sc",
             "pic.autohome",
             "car2.autoimg.cn",
+            "byteimg.com",
+            "pstatp.com",
+            "dcd-cdn",
+            "dcarstatic.com",
+            "dcd-sign",
         )
     ):
         return True
     return False
+
+
+def http_referer_for_request_url(url: str) -> str:
+    """
+    Referer для HTTP-запросов страницы объявления и CDN-изображений
+    (у разных хостов картинок — разные ограничения hotlink).
+    """
+    u = (url or "").lower()
+    if "dongchedi.com" in u or "byteimg.com" in u or "pstatp.com" in u:
+        return "https://www.dongchedi.com/"
+    if "global.che168.com" in u:
+        return "https://global.che168.com/"
+    return "https://www.che168.com/"
+
+
+def marketplace_from_detail_url(url: str) -> str:
+    """Ключ площадки: che168 | global_che168 | dongchedi."""
+    u = (url or "").lower()
+    if "global.che168.com" in u and "/detail/" in u:
+        return "global_che168"
+    if "dongchedi.com" in u and "/usedcar/" in u:
+        return "dongchedi"
+    return "che168"
+
+
+def car_source_for_marketplace(marketplace: str) -> str:
+    m = (marketplace or "").strip()
+    if m in ("che168", "global_che168", "dongchedi"):
+        return m
+    return "che168"
 
 
 def filter_vehicle_photo_urls(urls: list[str] | None) -> list[str]:
@@ -101,6 +147,7 @@ class ParsedCar:
     fuel_type: str | None = None
     transmission: str | None = None
     location_city: str | None = None
+    body_color_slug: str | None = None
     price_cny: float | None = None
     registration_date: str | None = None
     production_date: str | None = None
@@ -277,6 +324,8 @@ def _parse_fuel_transmission_city(body: str) -> tuple[str | None, str | None, st
     )
     if m:
         trans = m.group(1).strip()
+        if trans and ("保养" in trans or "维修方式" in trans):
+            trans = None
     if not trans:
         m = re.search(r"(自动|手动|CVT|AT|DCT|双离合)", body, re.I)
         if m:
@@ -321,9 +370,19 @@ def _normalize_listing_href(href: str) -> str | None:
 
 
 def che168_detail_url_from_source_listing_id(source_listing_id: str) -> str | None:
-    """Собрать URL карточки che168 из Car.source_listing_id."""
+    """Собрать URL карточки объявления из Car.source_listing_id (разные площадки)."""
     sid = (source_listing_id or "").strip()
     if not sid:
+        return None
+    if sid.startswith("global-"):
+        tail = sid[len("global-") :]
+        if tail.isdigit():
+            return f"https://global.che168.com/detail/{tail}"
+        return None
+    if sid.startswith("dongchedi-"):
+        tail = sid[len("dongchedi-") :]
+        if tail.isdigit():
+            return f"https://www.dongchedi.com/usedcar/{tail}"
         return None
     if sid.startswith("dealer-"):
         body = sid[len("dealer-") :]
@@ -339,6 +398,12 @@ def che168_detail_url_from_source_listing_id(source_listing_id: str) -> str | No
 
 def source_listing_id_from_url(url: str) -> str:
     """Совпадает с тем, что пишем в Car.source_listing_id."""
+    m = GLOBAL_CHE168_DETAIL_RE.search(url)
+    if m:
+        return f"global-{m.group(1)}"
+    m = DONGCHEDI_USEDCAR_RE.search(url)
+    if m:
+        return f"dongchedi-{m.group(1)}"
     m = CAR_DETAIL_ID_RE.search(url)
     if m:
         return m.group(1)
@@ -364,7 +429,7 @@ def _http_get_text(url: str, timeout: float = 45.0) -> str:
         "User-Agent": UA,
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Referer": "https://www.che168.com/",
+        "Referer": http_referer_for_request_url(url),
     }
     with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
         r = client.get(url)
@@ -375,6 +440,218 @@ def _http_get_text(url: str, timeout: float = 45.0) -> str:
 
 def _pw_launch_timeout_ms() -> int:
     return int(os.getenv("CHE168_PLAYWRIGHT_LAUNCH_TIMEOUT_MS", "90000"))
+
+
+def _pw_page_navigation_timeout_ms(detail_url: str) -> int:
+    """懂车帝 в Docker часто грузится дольше che168 — отдельный лимит goto/DOM."""
+    if marketplace_from_detail_url(detail_url) == "dongchedi":
+        return int(os.getenv("DONGCHEDI_PW_GOTO_TIMEOUT_MS", "90000"))
+    return int(os.getenv("CHE168_PW_GOTO_TIMEOUT_MS", "35000"))
+
+
+def _dongchedi_derive_listing_price_cny(price_block_text: str) -> float | None:
+    """Цена объявления: 新车指导价 − 比新车省 (万 или 元 на 懂车帝)."""
+    if not price_block_text:
+        return None
+    flat = price_block_text.replace(",", "").replace("，", "")
+    ym = re.search(r"新车指导价[^0-9]{0,26}(\d{5,8})\s*元", flat)
+    smy = re.search(r"比新车省[^0-9]{0,26}(\d{4,8})\s*元", flat)
+    if ym and smy:
+        try:
+            gy, sy = float(ym.group(1)), float(smy.group(1))
+            if gy > sy >= 0:
+                return gy - sy
+        except ValueError:
+            pass
+
+    t = flat
+    nm = re.search(r"新车指导价[^0-9\-]{0,24}([\d.]+)\s*万", t)
+    sm = re.search(r"比新车省[^0-9\-]{0,24}([\d.]+)\s*万", t)
+    if nm and sm:
+        try:
+            guide_wan = float(nm.group(1))
+            save_wan = float(sm.group(1))
+            if guide_wan > save_wan >= 0 and guide_wan - save_wan >= 0.25:
+                return (guide_wan - save_wan) * 10000.0
+        except ValueError:
+            pass
+    # Резерв: явная «万» в шапке (без «公里»)
+    wm = re.search(r"(?<![\d.])([\d]{1,2}\.[\d]{2})\s*万(?!公里)", t)
+    if wm:
+        try:
+            wan = float(wm.group(1))
+            if 0.5 <= wan <= 800:
+                return wan * 10000.0
+        except ValueError:
+            pass
+    return None
+
+
+def _dongchedi_mileage_km(body: str) -> int | None:
+    if not body:
+        return None
+    for pat in (
+        r"表显里程[：:\s]*(\d+(?:\.\d+)?)\s*万\s*公里",
+        r"行驶里程[：:\s]*(\d+(?:\.\d+)?)\s*万\s*公里",
+        r"公里数[：:\s]*(\d+(?:\.\d+)?)\s*万\s*公里",
+    ):
+        m = re.search(pat, body)
+        if m:
+            try:
+                return int(round(float(m.group(1)) * 10000))
+            except ValueError:
+                pass
+    return _parse_mileage_km(body)
+
+
+def _dongchedi_transmission_fuel_city(body: str) -> tuple[str | None, str | None, str | None]:
+    fuel, trans, city = _parse_fuel_transmission_city(body)
+    mt = re.search(r"变速箱[：:\s]+([^\n\r|]{1,28})", body)
+    if mt:
+        cand = re.sub(r"[|（）()].*", "", mt.group(1)).strip().split()[0].strip()
+        if cand and "保养" not in cand:
+            trans = cand[:24]
+    mf = re.search(r"(?:燃料类型|燃油类型|能源类型)[：:\s]+([^\n\r|]{1,22})", body)
+    if mf and not fuel:
+        fuel = mf.group(1).strip().split("|")[0].strip()[:24]
+    if not fuel:
+        m = re.search(r"排量[^\n]{0,40}(汽油|柴油|混动|纯电|插电|增程)", body)
+        if m:
+            fuel = m.group(1).strip()
+    mcy = re.search(r"(?:上牌地|车源地)[：:\s]*([\u4e00-\u9fff·]{2,12})", body)
+    if mcy:
+        ta = mcy.group(1).strip()
+        if ta and ta not in ("暂无", "--", "—"):
+            city = ta[:16]
+    return fuel, trans, city
+
+
+def _dongchedi_collect_images(page: Any) -> list[str]:
+    """Галерея usedcar: div#4; signed URL оставляем целиком (query обязателен)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    selectors = (
+        'div[id="4"] img',
+        '[class*="swiper-slide"] img',
+        '[class*="gallery"] img',
+        '[class*="detail_photo"] img',
+    )
+    for sel in selectors:
+        try:
+            for el in page.query_selector_all(sel):
+                raw = ""
+                for attr in (
+                    "src",
+                    "data-src",
+                    "data-lazy-src",
+                    "data-original",
+                ):
+                    raw = (el.get_attribute(attr) or "").strip()
+                    if raw:
+                        break
+                if not raw or raw.startswith("data:"):
+                    continue
+                if raw.startswith("//"):
+                    raw = "https:" + raw
+                if raw.startswith("/"):
+                    raw = "https://www.dongchedi.com" + raw
+                if not raw.startswith("http"):
+                    continue
+                low = raw.lower()
+                if "svg" in low or "icon" in low or "logo" in low:
+                    continue
+                if raw in seen:
+                    continue
+                if not is_likely_vehicle_photo_url(raw):
+                    continue
+                seen.add(raw)
+                out.append(raw)
+                if len(out) >= 20:
+                    return filter_vehicle_photo_urls(out)
+        except Exception:
+            continue
+    return filter_vehicle_photo_urls(out)
+
+
+def _dongchedi_parse_playwright_detail(
+    page: Any,
+    detail_url: str,
+    source_listing_id: str,
+) -> ParsedCar:
+    head_sel = '[class*="head-info_price-wrap"], [class*="head-info-price"]'
+    try:
+        page.locator(head_sel).first.wait_for(state="visible", timeout=15000)
+    except Exception:
+        pass
+    page.wait_for_timeout(1200)
+    for _ in range(3):
+        page.mouse.wheel(0, 800)
+        page.wait_for_timeout(400)
+
+    price_block = ""
+    try:
+        price_block = page.locator(head_sel).first.inner_text(timeout=5000).strip()
+    except Exception:
+        price_block = ""
+
+    title = None
+    try:
+        title_el = page.query_selector("h1")
+        if title_el:
+            title = (title_el.inner_text() or "").strip() or None
+    except Exception:
+        title = None
+
+    try:
+        body_text = page.inner_text("body") or ""
+    except Exception:
+        body_text = ""
+
+    price_cny = _dongchedi_derive_listing_price_cny(price_block)
+    if price_cny is None:
+        price_cny = _dongchedi_derive_listing_price_cny(body_text[:12000])
+
+    mileage_km = _dongchedi_mileage_km(body_text)
+    registration_date = _parse_registration_date(body_text)
+    production_date = _parse_production_date(body_text)
+    fuel_type, transmission, location_city = _dongchedi_transmission_fuel_city(body_text)
+    year = _parse_year(body_text or title)
+    engine_volume_cc = _parse_engine_volume_cc(body_text or title)
+    horsepower = _parse_horsepower(body_text or title)
+    if horsepower is None:
+        mh = re.search(r"最大马力[：:\s]*(\d{2,4})\s*(?:马力|匹|Ps|HP)?", body_text, re.I)
+        if mh:
+            horsepower = int(mh.group(1))
+    photos = _dongchedi_collect_images(page)
+
+    description = None
+    m_desc = re.search(r"车况介绍[：:\s]*(.{40,3800})", body_text, re.S)
+    if m_desc:
+        description = re.sub(r"\s+", " ", m_desc.group(1).strip())[:3800]
+    if not description:
+        description = _narrow_description(body_text) or (
+            body_text[:4000] if body_text else None
+        )
+    series_raw = _extract_series_raw(body_text, title)
+
+    return ParsedCar(
+        source_listing_id=source_listing_id,
+        title=title,
+        series_raw=series_raw,
+        description=description,
+        year=year,
+        engine_volume_cc=engine_volume_cc,
+        horsepower=horsepower,
+        mileage_km=mileage_km,
+        fuel_type=fuel_type,
+        transmission=transmission,
+        location_city=location_city,
+        price_cny=price_cny,
+        registration_date=registration_date,
+        production_date=production_date,
+        photos=photos or None,
+        body_color_slug=_body_color_slug_from_vehicle_text(title, body_text),
+    )
 
 
 def _car_urls_from_html(html: str, max_items: int) -> list[str]:
@@ -471,6 +748,7 @@ def _parse_detail_from_html(html: str, source_listing_id: str) -> ParsedCar | No
         price_cny=price_cny,
         registration_date=registration_date,
         production_date=production_date,
+        body_color_slug=_body_color_slug_from_vehicle_text(title, body_text),
     )
 
 
@@ -559,9 +837,26 @@ def _forced_detail_urls() -> list[str]:
     return out
 
 
+def normalize_import_detail_url(url: str) -> str | None:
+    """
+    Канонический URL карточки для ручного импорта:
+    che168 (dealer/… / i.che168.com/car/), global.che168.com/detail/…, dongchedi.com/usedcar/…
+    """
+    u = (url or "").strip()
+    if not u:
+        return None
+    m = GLOBAL_CHE168_DETAIL_RE.search(u)
+    if m:
+        return f"https://global.che168.com/detail/{m.group(1)}"
+    m = DONGCHEDI_USEDCAR_RE.search(u)
+    if m:
+        return f"https://www.dongchedi.com/usedcar/{m.group(1)}"
+    return _single_listing_url_from_input(u)
+
+
 def normalize_che168_detail_url(url: str) -> str | None:
-    """Канонический URL одной карточки, если в строке ссылка на объявление (dealer/… или i.che168.com/car/…)."""
-    return _single_listing_url_from_input(url)
+    """Обратная совместимость: см. normalize_import_detail_url."""
+    return normalize_import_detail_url(url)
 
 
 def _single_listing_url_from_input(url: str) -> str | None:
@@ -622,18 +917,39 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
             timeout=_pw_launch_timeout_ms(),
             args=["--disable-blink-features=AutomationControlled"],
         )
+        ref = http_referer_for_request_url(detail_url)
         context = browser.new_context(
             user_agent=UA,
             locale="zh-CN",
-            extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
+            extra_http_headers={
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Referer": ref,
+            },
         )
-        context.set_default_timeout(35000)
+        nav_ms = _pw_page_navigation_timeout_ms(detail_url)
+        context.set_default_timeout(nav_ms)
         page = context.new_page()
-        page.set_default_timeout(35000)
-        page.goto(detail_url, wait_until="domcontentloaded", timeout=35000)
+        page.set_default_timeout(nav_ms)
+        page.goto(detail_url, wait_until="domcontentloaded", timeout=nav_ms)
         page.wait_for_timeout(2500)
         if "captcha" in page.url.lower():
-            raise RuntimeError("Страница объявления перенаправила на captcha che168.")
+            raise RuntimeError("Страница объявления перенаправила на антибот-проверку (captcha).")
+        try:
+            if page.title() and "安全验证" in page.title():
+                raise RuntimeError("Страница антибот-проверки (captcha).")
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+
+        if marketplace_from_detail_url(detail_url) == "dongchedi":
+            try:
+                return _dongchedi_parse_playwright_detail(
+                    page, detail_url, source_listing_id
+                )
+            finally:
+                context.close()
+                browser.close()
 
         title = None
         try:
@@ -701,29 +1017,31 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
         registration_date=registration_date,
         production_date=production_date,
         photos=photos,
+        body_color_slug=_body_color_slug_from_vehicle_text(title, body_text),
     )
 
 
 def parse_che168_detail(detail_url: str) -> ParsedCar:
     """
-    Сначала HTTP; при неполных данных — Playwright (если не отключён).
-    Поддерживаются i.che168.com/car/{id} и www.che168.com/dealer/{d}/{id}.html
+    Сначала HTTP (кроме dongchedi — сразу браузер); при неполных данных — Playwright.
+    Поддерживаются карточки che168, global.che168.com/detail/… и dongchedi.com/usedcar/…
     """
     source_listing_id = source_listing_id_from_url(detail_url)
 
-    try:
-        html = _http_get_text(detail_url, timeout=45.0)
-        parsed = _parse_detail_from_html(html, source_listing_id)
-        if parsed is not None and (
-            parsed.title
-            or (parsed.photos and len(parsed.photos) >= 1)
-            or (parsed.price_cny and parsed.price_cny > 0)
-        ):
-            return parsed
-    except RuntimeError:
-        raise
-    except Exception:
-        pass
+    if marketplace_from_detail_url(detail_url) != "dongchedi":
+        try:
+            html = _http_get_text(detail_url, timeout=45.0)
+            parsed = _parse_detail_from_html(html, source_listing_id)
+            if parsed is not None and (
+                parsed.title
+                or (parsed.photos and len(parsed.photos) >= 1)
+                or (parsed.price_cny and parsed.price_cny > 0)
+            ):
+                return parsed
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
 
     if os.getenv("CHE168_SKIP_PLAYWRIGHT", "").lower() in ("1", "true", "yes"):
         raise RuntimeError(

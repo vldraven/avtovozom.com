@@ -97,6 +97,8 @@ export default function Home() {
   const [parserCatalogBusy, setParserCatalogBusy] = useState(false);
   const [parserCatalogNotice, setParserCatalogNotice] = useState("");
   const [importListingBusy, setImportListingBusy] = useState(false);
+  /** Площадка-источник для ручного импорта (che168 / global.che168 / dongchedi). */
+  const [parserImportMarketplace, setParserImportMarketplace] = useState("che168");
   /** Защита от гонки: ответ старого GET не перезаписывает список после POST+свежего GET. */
   const staffBrandsLoadGen = useRef(0);
   const staffModelsLoadGen = useRef(0);
@@ -181,6 +183,25 @@ export default function Home() {
       label: g.name,
     }));
   }, [staffGensParser]);
+
+  const parserMarketplaceOptions = useMemo(
+    () => [
+      { value: "che168", label: "che168.com" },
+      { value: "global_che168", label: "global.che168.com" },
+      { value: "dongchedi", label: "dongchedi.com" },
+    ],
+    []
+  );
+
+  const parserImportUrlPlaceholder = useMemo(() => {
+    if (parserImportMarketplace === "global_che168") {
+      return "https://global.che168.com/detail/…";
+    }
+    if (parserImportMarketplace === "dongchedi") {
+      return "https://www.dongchedi.com/usedcar/…";
+    }
+    return "https://www.che168.com/dealer/…/….html";
+  }, [parserImportMarketplace]);
 
   const loadCars = useCallback(async () => {
     if (!router.isReady) return;
@@ -471,11 +492,18 @@ export default function Home() {
     if (!res.ok) return;
     const data = await res.json();
     setWhitelistCatalog(data || []);
-    const draft = {};
-    (data || []).forEach((r) => {
-      draft[r.model_id] = r.che168_url || "";
+    // Не затираем ввод в «Ссылка на объявление»: whitelist хранит che168-пример для модели;
+    // после импорта с dongchedi/global там остаётся старая che168-ссылка.
+    setCatalogUrlDrafts((prev) => {
+      const next = { ...prev };
+      for (const r of data || []) {
+        const mid = r.model_id;
+        if (!(mid in next)) {
+          next[mid] = r.che168_url || "";
+        }
+      }
+      return next;
     });
-    setCatalogUrlDrafts(draft);
   }
 
   /** Актуальный список марок из API (для восстановления после 404 «Марка не найдена»). */
@@ -796,7 +824,7 @@ export default function Home() {
     }
     const url = (catalogUrlDrafts[parserAdminModelId] || "").trim();
     if (!url) {
-      alert("Вставьте ссылку на объявление на che168.");
+      alert("Вставьте ссылку на объявление.");
       return;
     }
     setImportListingBusy(true);
@@ -808,7 +836,11 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ model_id: parserAdminModelId, che168_url: url }),
+        body: JSON.stringify({
+          model_id: parserAdminModelId,
+          che168_url: url,
+          marketplace: parserImportMarketplace,
+        }),
       });
       if (!res.ok) {
         let detail = "Не удалось запустить импорт.";
@@ -1344,7 +1376,7 @@ export default function Home() {
 
       {token && isStaffRole(me?.role) && (whitelistCatalog.length > 0 || isAdminRole(me?.role)) && (
         <section className="panel admin-parser-panel">
-          <h2 className="section-title panel-heading-sm">Импорт объявления с che168</h2>
+          <h2 className="section-title panel-heading-sm">Импорт объявления</h2>
           {parserCatalogNotice ? (
             <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
               {parserCatalogNotice}
@@ -1354,7 +1386,17 @@ export default function Home() {
             <div className="admin-parser-label">
               <SiteSelectDropdown
                 className="site-dropdown--block"
-                label="1. Марка"
+                label="1. Площадка"
+                placeholder="— Выберите площадку —"
+                value={parserImportMarketplace}
+                onChange={(v) => v && setParserImportMarketplace(v)}
+                options={parserMarketplaceOptions}
+              />
+            </div>
+            <div className="admin-parser-label">
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="2. Марка"
                 placeholder="— Выберите марку —"
                 value={
                   isAdminRole(me?.role) && staffBrandsParser.length > 0
@@ -1392,7 +1434,7 @@ export default function Home() {
             <div className="admin-parser-label">
               <SiteSelectDropdown
                 className="site-dropdown--block"
-                label="2. Модель"
+                label="3. Модель"
                 placeholder={
                   parserAdminBrand ? "— Выберите модель —" : "Сначала выберите марку"
                 }
@@ -1423,7 +1465,7 @@ export default function Home() {
               <div className="admin-parser-label">
                 <SiteSelectDropdown
                   className="site-dropdown--block"
-                  label="3. Поколение (необязательно)"
+                  label="4. Поколение (необязательно)"
                   placeholder="— не выбрано —"
                   searchable
                   busy={parserCatalogBusy}
@@ -1442,7 +1484,7 @@ export default function Home() {
               <>
                 <label className="admin-parser-label">
                   <span className="admin-parser-label__text">
-                    {isAdminRole(me?.role) ? "4." : "3."} Ссылка на объявление che168
+                    {isAdminRole(me?.role) ? "5." : "4."} Ссылка на объявление
                   </span>
                   <div className="input-with-clear-wrap">
                     <input
@@ -1450,7 +1492,7 @@ export default function Home() {
                       type="url"
                       inputMode="url"
                       autoComplete="off"
-                      placeholder="https://www.che168.com/dealer/…/….html"
+                      placeholder={parserImportUrlPlaceholder}
                       value={catalogUrlDrafts[parserAdminModelId] ?? ""}
                       onChange={(e) =>
                         setCatalogUrlDrafts((prev) => ({

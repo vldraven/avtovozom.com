@@ -219,6 +219,7 @@ def main() -> None:
                     fuel_type=c.fuel_type,
                     transmission=c.transmission,
                     location_city=c.location_city,
+                    body_color_slug=getattr(c, "body_color_slug", None),
                     price_cny=c.price_cny,
                     registration_date=c.registration_date,
                     production_date=c.production_date,

@@ -1689,7 +1689,8 @@ button.detail-back {
 .car-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  /* Выше .site-header (1500) и .site-header__burger (1501), ниже .modal-overlay (2000) */
+  z-index: 1600;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1722,8 +1723,8 @@ button.detail-back {
 
 .car-lightbox__close {
   position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
+  top: calc(0.75rem + env(safe-area-inset-top, 0px));
+  right: calc(0.75rem + env(safe-area-inset-right, 0px));
   z-index: 3;
   width: 2.75rem;
   height: 2.75rem;
@@ -1790,16 +1791,16 @@ button.detail-back {
 }
 
 .car-lightbox__nav--prev {
-  left: 0.5rem;
+  left: max(0.5rem, env(safe-area-inset-left, 0px));
 }
 
 .car-lightbox__nav--next {
-  right: 0.5rem;
+  right: max(0.5rem, env(safe-area-inset-right, 0px));
 }
 
 .car-lightbox__counter {
   position: absolute;
-  bottom: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   background: rgba(15, 23, 42, 0.75);

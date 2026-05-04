@@ -687,6 +687,10 @@ export default function CarDetailView({
                 <dd>{car.transmission || "—"}</dd>
               </div>
               <div className="spec-item">
+                <dt>Цвет кузова</dt>
+                <dd>{car.body_color_label || "—"}</dd>
+              </div>
+              <div className="spec-item">
                 <dt>Город</dt>
                 <dd>{car.location_city || "—"}</dd>
               </div>
