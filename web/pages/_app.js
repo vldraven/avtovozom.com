@@ -1,11 +1,13 @@
-import Head from "next/head";
 import { useRouter } from "next/router";
+import Head from "next/head";
+import { useEffect } from "react";
 
 import AppLockGate from "../components/AppLockGate";
 import MobileBottomNav from "../components/MobileBottomNav";
 import PwaInstallPrompt from "../components/PwaInstallPrompt";
 import PwaServiceWorker from "../components/PwaServiceWorker";
 import YandexMetrika from "../components/YandexMetrika";
+import { ensureFreshAccessToken } from "../lib/auth";
 import "../styles/globals.css";
 
 /** Личные кабинеты и админка — не индексируем (дублирует robots.txt Disallow). */
@@ -17,6 +19,19 @@ function useSeoNoIndex() {
 
 export default function App({ Component, pageProps }) {
   const noindex = useSeoNoIndex();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const tick = () => ensureFreshAccessToken().catch(() => null);
+    tick();
+    const onFocus = () => tick();
+    window.addEventListener("focus", onFocus);
+    const id = setInterval(tick, 4 * 60 * 1000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      clearInterval(id);
+    };
+  }, []);
 
   return (
     <>

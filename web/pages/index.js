@@ -1702,16 +1702,23 @@ export default function Home() {
                 {profileReady && isStaffRole(me?.role) && (
                   <div className="catalog-card__admin">
                     <span className="catalog-card__admin-label">Администратор</span>
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-sm"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        deleteCar(car.id);
-                      }}
-                    >
-                      Удалить объявление
-                    </button>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {isAdminRole(me?.role) ? (
+                        <Link href={`/staff/publish-telegram/${car.id}`} className="btn btn-secondary btn-sm">
+                          В Telegram
+                        </Link>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          deleteCar(car.id);
+                        }}
+                      >
+                        Удалить объявление
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

@@ -37,6 +37,7 @@ services:
       PARSER_INTERVAL_HOURS: "24"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:3000}
+      PUBLIC_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:8000}
       CHE168_MAX_LINKS_PER_MODEL: "40"
       CHE168_NEW_PER_RUN: "5"
       MEDIA_ROOT: /app/media

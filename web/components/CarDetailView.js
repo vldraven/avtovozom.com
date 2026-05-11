@@ -629,6 +629,11 @@ export default function CarDetailView({
                     Редактировать объявление
                   </Link>
                 )}
+                {isAdminRole(me.role) && carId != null && (
+                  <Link href={`/staff/publish-telegram/${carId}`} className="btn btn-secondary">
+                    Пост в Telegram
+                  </Link>
+                )}
                 <button type="button" className="btn btn-danger" onClick={deleteListing}>
                   Удалить из каталога
                 </button>

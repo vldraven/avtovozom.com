@@ -55,12 +55,7 @@ export function lockApp() {
 
 export function isAppUnlocked() {
   if (typeof window === "undefined") return false;
-  const unlockedAt = Number(sessionStorage.getItem(UNLOCKED_KEY) || "0");
-  if (!unlockedAt || Date.now() - unlockedAt > APP_LOCK_TIMEOUT_MS) {
-    lockApp();
-    return false;
-  }
-  return true;
+  return Boolean(sessionStorage.getItem(UNLOCKED_KEY));
 }
 
 export function markAppHidden() {
@@ -177,7 +172,6 @@ export async function setupPin(pin) {
     iterations: PIN_ITERATIONS,
     createdAt: Date.now(),
   });
-  sessionStorage.removeItem(PENDING_REFRESH_KEY);
   markAppUnlocked();
 }
 
@@ -213,11 +207,56 @@ export async function refreshWithToken(refreshToken) {
   });
   if (!res.ok) throw new Error("Сессия устарела");
   const data = await res.json();
-  saveToken(data.access_token, data.refresh_token);
-  if (data.refresh_token) {
-    sessionStorage.setItem(PENDING_REFRESH_KEY, data.refresh_token);
-  }
+  saveToken(data.access_token, data.refresh_token || refreshToken);
   return data.access_token;
+}
+
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length < 2) return null;
+    const json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+export async function tryRefreshAccessToken() {
+  if (typeof window === "undefined") return false;
+  const refresh = sessionStorage.getItem(PENDING_REFRESH_KEY);
+  if (!refresh) return false;
+  try {
+    await refreshWithToken(refresh);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function ensureFreshAccessToken() {
+  if (typeof window === "undefined") return false;
+  const token = getStoredToken();
+  const refresh = sessionStorage.getItem(PENDING_REFRESH_KEY);
+  if (!refresh) return Boolean(token);
+  const payload = decodeJwtPayload(token);
+  const expMs = payload?.exp ? payload.exp * 1000 : 0;
+  if (expMs && expMs > Date.now() + 120_000) return true;
+  return tryRefreshAccessToken();
+}
+
+export async function resolveAuthSessionFailure() {
+  if (typeof window === "undefined") return "logout";
+  if (await hasPinLock()) {
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(PENDING_REFRESH_KEY);
+    lockApp();
+    window.dispatchEvent(new Event("avt-app-lock-changed"));
+    window.dispatchEvent(new Event("avt-token-changed"));
+    return "pin-lock";
+  }
+  clearToken();
+  return "logout";
 }
 
 export async function rotatePinnedSession(pin) {

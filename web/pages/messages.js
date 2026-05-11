@@ -3,7 +3,15 @@ import { useRouter } from "next/router";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import HeaderProfileLink from "../components/HeaderProfileLink";
-import { clearToken, getStoredToken } from "../lib/auth";
+import {
+  clearToken,
+  ensureFreshAccessToken,
+  getStoredToken,
+  hasPinLock,
+  lockApp,
+  resolveAuthSessionFailure,
+  tryRefreshAccessToken,
+} from "../lib/auth";
 import { mediaSrc } from "../lib/media";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -114,33 +122,70 @@ export default function MessagesPage() {
     return () => mq.removeEventListener("change", fn);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const t = getStoredToken();
-    if (!t) {
-      router.replace("/auth?next=/messages");
-      return undefined;
+  const bootstrapMessagesRef = useRef(null);
+
+  async function bootstrapMessages(tok) {
+    await ensureFreshAccessToken().catch(() => null);
+    let access = getStoredToken() || tok || "";
+    if (!access) return;
+    let res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${access}` } });
+    if (res.status === 401) {
+      if (await tryRefreshAccessToken()) {
+        access = getStoredToken();
+        res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${access}` } });
+      }
     }
-    setToken(t);
-    (async () => {
-      const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${t}` } });
-      if (!res.ok) {
-        clearToken();
-        router.replace("/auth?next=/messages");
+    if (!res.ok) {
+      const kind = await resolveAuthSessionFailure();
+      if (kind === "pin-lock") {
+        setToken(getStoredToken());
         return;
       }
-      const u = await res.json();
+      router.replace("/auth?next=/messages");
+      return;
+    }
+    const u = await res.json();
+    setMe(u);
+    setLoadingList(true);
+    const cr = await fetch(`${API_URL}/chats/my`, { headers: { Authorization: `Bearer ${access}` } });
+    if (cr.ok) setChats(await cr.json());
+    setLoadingList(false);
+  }
+
+  bootstrapMessagesRef.current = bootstrapMessages;
+
+  useEffect(() => {
+    let cancelled = false;
+    const onTok = () => {
+      const t2 = getStoredToken();
+      setToken(t2 || "");
+      if (t2) bootstrapMessagesRef.current(t2);
+    };
+    window.addEventListener("avt-token-changed", onTok);
+
+    (async () => {
+      const t = getStoredToken();
+      if (!t) {
+        if (await hasPinLock()) {
+          lockApp();
+          window.dispatchEvent(new Event("avt-app-lock-changed"));
+          return;
+        }
+        if (!cancelled) router.replace("/auth?next=/messages");
+        return;
+      }
       if (cancelled) return;
-      setMe(u);
-      setLoadingList(true);
-      const cr = await fetch(`${API_URL}/chats/my`, { headers: { Authorization: `Bearer ${t}` } });
-      if (!cancelled && cr.ok) setChats(await cr.json());
-      if (!cancelled) setLoadingList(false);
+      setToken(t);
+      await bootstrapMessagesRef.current(t);
     })();
+
     return () => {
       cancelled = true;
+      window.removeEventListener("avt-token-changed", onTok);
     };
   }, [router]);
+
+
 
   useEffect(() => {
     if (!router.isReady || !token) return;

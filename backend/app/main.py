@@ -137,6 +137,12 @@ from .schemas import (
     ParseJobOut,
     ParserImportListingIn,
     PasswordChangeIn,
+    TelegramAiDraftIn,
+    TelegramAiDraftOut,
+    TelegramComposeOut,
+    TelegramComposePhotoOut,
+    TelegramPublishIn,
+    TelegramPublishOut,
     PasswordResetConfirmIn,
     PasswordResetStartIn,
     ProfileUpdateIn,
@@ -152,6 +158,7 @@ from .schemas import (
 )
 from .security import create_access_token, decode_access_token, hash_password, verify_password
 from .seed import seed_initial_data
+from .n8n_client import n8n_webhook_post
 from .telegram_notify import notify_freeform_calculation_request, notify_new_calculation_request
 
 try:
@@ -1021,6 +1028,33 @@ def _public_web_origin() -> str:
     return (os.getenv("PUBLIC_WEB_ORIGIN") or os.getenv("NEXT_PUBLIC_SITE_URL") or "http://localhost:3000").rstrip("/")
 
 
+def _public_api_origin() -> str:
+    """Публичный origin backend для абсолютных URL медиа (Telegram скачивает по HTTPS)."""
+    raw = (os.getenv("PUBLIC_API_ORIGIN") or "").strip().rstrip("/")
+    if raw:
+        return raw
+    return "http://localhost:8000"
+
+
+def _absolute_public_asset_url(storage_url: str) -> str:
+    u = (storage_url or "").strip()
+    if not u:
+        return ""
+    if u.startswith(("http://", "https://")):
+        return u
+    base = _public_api_origin()
+    return f"{base}{u}" if u.startswith("/") else f"{base}/{u}"
+
+
+def _canonical_catalog_path_for_car(
+    car: Car, slug_maps: tuple[dict[int, str], dict[tuple[int, int], str]]
+) -> str:
+    brand_slug, model_slug = slugs_for_car(car, slug_maps[0], slug_maps[1])
+    if brand_slug and model_slug:
+        return f"/catalog/{brand_slug}/{model_slug}/{car.id}"
+    return f"/cars/{car.id}"
+
+
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 _webauthn_challenges: dict[str, dict[str, Any]] = {}
 
@@ -1057,14 +1091,23 @@ def _find_active_session(db: Session, refresh_token: str) -> UserSession:
 def _reissue_from_session(
     db: Session, sess: UserSession, device_name: str | None = None
 ) -> TokenOut:
+    """Выдать новый access JWT, не отзывая refresh.
+
+    Тот же refresh остаётся действительным до истечения срока сессии — это нужно,
+    чтобы клиентский ПИН (зашифрованный refresh в IndexedDB) не ломался после
+    каждого фонового /auth/refresh.
+    """
     user = db.execute(
         select(User).options(joinedload(User.role)).where(User.id == sess.user_id)
     ).scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User is not active")
-    sess.revoked_at = datetime.utcnow()
-    db.flush()
-    return _issue_session_tokens(db, user, device_name or sess.device_name)
+    now = datetime.utcnow()
+    sess.last_used_at = now
+    if device_name and device_name.strip():
+        sess.device_name = device_name[:128]
+    db.commit()
+    return TokenOut(access_token=create_access_token(str(user.id)), refresh_token=None)
 
 
 def _webauthn_rp_id() -> str:
@@ -2706,6 +2749,274 @@ def admin_regenerate_listing_copy(
         updated += 1
     db.commit()
     return {"ok": True, "updated": updated}
+
+
+def _admin_require_active_catalog_car(db: Session, car_id: int) -> Car:
+    car = (
+        db.execute(
+            select(Car)
+            .options(
+                joinedload(Car.brand),
+                joinedload(Car.model),
+                joinedload(Car.generation),
+                joinedload(Car.photos),
+            )
+            .where(Car.id == car_id, Car.is_active.is_(True))
+        )
+        .unique()
+        .scalar_one_or_none()
+    )
+    if not car or car.brand is None or car.model is None:
+        raise HTTPException(status_code=404, detail="Car not found")
+    return car
+
+
+def _telegram_n8n_extract_text(data: Any) -> str:
+    # n8n «Respond to Webhook» иногда отдаёт JSON-объект как JSON-строку (из-за JSON.stringify в теле ответа).
+    if isinstance(data, str):
+        s = data.strip()
+        if not s:
+            return ""
+        if s.startswith("{") and s.endswith("}"):
+            try:
+                return _telegram_n8n_extract_text(json.loads(s))
+            except json.JSONDecodeError:
+                pass
+        return ""
+
+    if not isinstance(data, dict):
+        return ""
+
+    raw = data.get("text")
+    if raw is None and isinstance(data.get("data"), dict):
+        raw = data["data"].get("text")
+    if raw is None and isinstance(data.get("body"), dict):
+        raw = data["body"].get("text")
+    # httpx смог распарсить не объект, а сохранили сырое тело в raw_text (n8n_client)
+    if raw is None:
+        rt = data.get("raw_text")
+        if isinstance(rt, str) and rt.strip():
+            return _telegram_n8n_extract_text(rt)
+
+    return str(raw).strip() if raw is not None else ""
+
+
+@app.get("/admin/cars/{car_id}/telegram-compose", response_model=TelegramComposeOut)
+def admin_car_telegram_compose(
+    car_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+
+    snap, _ = build_cbr_snapshot()
+    settings_row = ensure_settings_row(db)
+    price_breakdown = None
+    try:
+        price_breakdown = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
+    except Exception:
+        price_breakdown = None
+    est: float | None = None
+    if price_breakdown is not None:
+        est = float(price_breakdown.total_rub)
+    elif snap is not None:
+        try:
+            est = _compute_estimated_total_rub(car, settings_row, snap)
+        except Exception:
+            est = None
+
+    rub: float | None = None
+    if snap is not None:
+        try:
+            rub = round(float(rub_china_for_car(car, snap)), 2)
+        except Exception:
+            rub = None
+
+    slug_maps = _get_cached_slug_maps(db)
+    path = _canonical_catalog_path_for_car(car, slug_maps)
+    listing_url = f"{_public_web_origin()}{path}"
+
+    photos_sorted = sorted(car.photos or [], key=lambda p: (p.sort_order, p.id))
+    photos_out = [
+        TelegramComposePhotoOut(
+            id=p.id,
+            storage_url=p.storage_url,
+            sort_order=p.sort_order,
+            absolute_url=_absolute_public_asset_url(p.storage_url),
+        )
+        for p in photos_sorted
+    ]
+    gen = getattr(car, "generation", None)
+
+    return TelegramComposeOut(
+        car_id=car.id,
+        title=car.title,
+        brand=car.brand.name,
+        model=car.model.name,
+        generation=(gen.name if gen is not None else None),
+        year=car.year,
+        mileage_km=car.mileage_km,
+        engine_volume_cc=car.engine_volume_cc,
+        horsepower=car.horsepower,
+        fuel_type=car.fuel_type,
+        transmission=car.transmission,
+        location_city=car.location_city,
+        price_cny=float(car.price_cny),
+        description=(car.description or "").strip(),
+        rub_china=rub,
+        estimated_total_rub=est,
+        canonical_path=path,
+        canonical_web_url=listing_url,
+        photos=photos_out,
+    )
+
+
+@app.post("/admin/cars/{car_id}/telegram/ai-draft", response_model=TelegramAiDraftOut)
+def admin_car_telegram_ai_draft(
+    car_id: int,
+    payload: TelegramAiDraftIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+    webhook_url = os.getenv("N8N_TELEGRAM_AI_WEBHOOK_URL")
+    webhook_secret = os.getenv("N8N_TELEGRAM_AI_WEBHOOK_SECRET")
+    timeout = float(os.getenv("N8N_TELEGRAM_AI_TIMEOUT_SEC", "90"))
+
+    slug_maps = _get_cached_slug_maps(db)
+    path = _canonical_catalog_path_for_car(car, slug_maps)
+    listing_web_url = f"{_public_web_origin()}{path}"
+
+    snap, _ = build_cbr_snapshot()
+    settings_row = ensure_settings_row(db)
+    rub: float | None = None
+    if snap is not None:
+        try:
+            rub = round(float(rub_china_for_car(car, snap)), 2)
+        except Exception:
+            rub = None
+    est: float | None = None
+    try:
+        pb = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
+    except Exception:
+        pb = None
+    if pb is not None:
+        est = float(pb.total_rub)
+    elif snap is not None:
+        try:
+            est = _compute_estimated_total_rub(car, settings_row, snap)
+        except Exception:
+            est = None
+
+    by_photo = {p.id: p for p in (car.photos or [])}
+    selected_urls: list[str] = []
+    for pid in payload.selected_photo_ids:
+        p = by_photo.get(pid)
+        if p:
+            selected_urls.append(_absolute_public_asset_url(p.storage_url))
+
+    gen = getattr(car, "generation", None)
+    ai_body = {
+        "event": "telegram_ai_draft",
+        "car_id": car.id,
+        "listing_web_url": listing_web_url,
+        "canonical_path": path,
+        "style_hint": (payload.style_hint or "").strip() or None,
+        "selected_photo_absolute_urls": selected_urls,
+        "car": {
+            "title": car.title,
+            "description": (car.description or "").strip(),
+            "brand": car.brand.name,
+            "model": car.model.name,
+            "generation": (gen.name if gen is not None else None),
+            "year": car.year,
+            "mileage_km": car.mileage_km,
+            "engine_volume_cc": car.engine_volume_cc,
+            "horsepower": car.horsepower,
+            "fuel_type": car.fuel_type,
+            "transmission": car.transmission,
+            "location_city": car.location_city,
+            "price_cny": float(car.price_cny),
+            "rub_china_estimate": rub,
+            "estimated_total_rub": est,
+        },
+    }
+
+    ok, data, err = n8n_webhook_post(
+        url=webhook_url,
+        secret=webhook_secret,
+        payload=ai_body,
+        timeout_sec=timeout,
+    )
+    if not ok:
+        return TelegramAiDraftOut(ok=False, detail=err or "Ошибка вызова n8n")
+
+    text = _telegram_n8n_extract_text(data)
+    if not text:
+        return TelegramAiDraftOut(
+            ok=False,
+            detail="n8n вернул пустой текст. Ожидается JSON с полем «text».",
+        )
+    return TelegramAiDraftOut(ok=True, text=text)
+
+
+@app.post("/admin/cars/{car_id}/telegram/publish", response_model=TelegramPublishOut)
+def admin_car_telegram_publish(
+    car_id: int,
+    payload: TelegramPublishIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+    webhook_url = os.getenv("N8N_TELEGRAM_PUBLISH_WEBHOOK_URL")
+    webhook_secret = os.getenv("N8N_TELEGRAM_PUBLISH_WEBHOOK_SECRET")
+    timeout = float(os.getenv("N8N_TELEGRAM_PUBLISH_TIMEOUT_SEC", "45"))
+
+    by_photo = {p.id: p for p in (car.photos or [])}
+    seen: set[int] = set()
+    photo_urls_ordered: list[str] = []
+    for pid in payload.photo_ids:
+        if pid in seen:
+            continue
+        seen.add(pid)
+        row = by_photo.get(pid)
+        if not row:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Фото id={pid} не принадлежит объявлению",
+            )
+        photo_urls_ordered.append(_absolute_public_asset_url(row.storage_url))
+
+    slug_maps = _get_cached_slug_maps(db)
+    path = _canonical_catalog_path_for_car(car, slug_maps)
+    listing_web_url = f"{_public_web_origin()}{path}"
+
+    publish_body = {
+        "event": "telegram_publish",
+        "car_id": car.id,
+        "listing_web_url": listing_web_url,
+        "text": payload.text,
+        "photo_urls": photo_urls_ordered,
+        "media_count": len(photo_urls_ordered),
+    }
+
+    ok, data, err = n8n_webhook_post(
+        url=webhook_url,
+        secret=webhook_secret,
+        payload=publish_body,
+        timeout_sec=timeout,
+    )
+    if not ok:
+        return TelegramPublishOut(ok=False, detail=err or "Ошибка публикации через n8n", n8n=None)
+
+    n8n_dict = data if isinstance(data, dict) else None
+    if isinstance(data, dict) and data.get("ok") is False:
+        return TelegramPublishOut(
+            ok=False,
+            detail=str(data.get("error") or data.get("detail") or "Отказ в n8n")[:600],
+            n8n=n8n_dict,
+        )
+    return TelegramPublishOut(ok=True, detail=None, n8n=n8n_dict)
 
 
 @app.get("/admin/cars/{car_id}", response_model=CarOut)

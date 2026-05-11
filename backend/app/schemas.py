@@ -497,6 +497,69 @@ class ParseJobOut(BaseModel):
         from_attributes = True
 
 
+class TelegramComposePhotoOut(BaseModel):
+    id: int
+    storage_url: str
+    sort_order: int
+    absolute_url: str
+
+
+class TelegramComposeOut(BaseModel):
+    car_id: int
+    title: str
+    brand: str
+    model: str
+    generation: str | None = None
+    year: int
+    mileage_km: int | None = None
+    engine_volume_cc: int
+    horsepower: int
+    fuel_type: str | None = None
+    transmission: str | None = None
+    location_city: str | None = None
+    price_cny: float
+    description: str
+    rub_china: float | None = None
+    estimated_total_rub: float | None = None
+    canonical_path: str
+    canonical_web_url: str
+    photos: list[TelegramComposePhotoOut]
+
+
+class TelegramAiDraftIn(BaseModel):
+    style_hint: str | None = Field(default=None, max_length=2000)
+    selected_photo_ids: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _cap_selected_photos(self) -> TelegramAiDraftIn:
+        if len(self.selected_photo_ids) > 15:
+            raise ValueError("selected_photo_ids: не более 15")
+        return self
+
+
+class TelegramAiDraftOut(BaseModel):
+    ok: bool
+    text: str = ""
+    detail: str | None = None
+
+
+class TelegramPublishIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=12000)
+    photo_ids: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _cap_photo_ids(self) -> TelegramPublishIn:
+        if len(self.photo_ids) > 10:
+            raise ValueError("photo_ids: не более 10 для одного поста в Telegram")
+        return self
+
+
+class TelegramPublishOut(BaseModel):
+    ok: bool
+    detail: str | None = None
+    n8n: dict | None = None
+
+
 class RegisterIn(BaseModel):
     email: str
     phone: str

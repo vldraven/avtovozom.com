@@ -1,0 +1,143 @@
+{
+  "name": "Avtovozom — Telegram текст (ИИ)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "avtovozom-telegram-ai",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa01",
+      "name": "Webhook AI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa01"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ ($json.headers && ($json.headers['x-n8n-webhook-secret'] ?? $json.headers['X-N8N-Webhook-Secret'])) || '' }}",
+              "operator": { "type": "string", "operation": "equals" },
+              "rightValue": "={{ $env.AVTOVOZOM_AI_WEBHOOK_SECRET || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa02",
+      "name": "Секрет OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Forbidden' }) }}",
+        "options": { "responseCode": 403 }
+      },
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa03",
+      "name": "Respond Forbidden",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [740, 160]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "systemPrompt",
+              "value": "Ты пишешь короткий пост на русском для Telegram про объявление авто из присланных данных. Используй только факты из JSON — ничего не выдумывай. В конце добавь перенос строки и явную строку со ссылкой listing_web_url. Без лишних водяных символов, без заголовков «Ответ модели».",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "userContent",
+              "value": "={{ 'Собери финальный текст одного сообщения Telegram (можно переносы строк). Инструмент JSON:\\n\\n' + JSON.stringify(($json.body) || {}, null, 2) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa04",
+      "name": "Промпт",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [740, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.35, messages: [ { role: 'system', content: $json.systemPrompt }, { role: 'user', content: $json.userContent } ] }) }}",
+        "options": {}
+      },
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa05",
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 420],
+      "notesInFlow": true,
+      "notes": "Задайте в n8n переменную OPENAI_API_KEY. Или замените заголовок на credential."
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = items[0].json;\nconst raw = j?.choices?.[0]?.message?.content;\nconst text = String(raw ?? '').trim();\nreturn [{ json: { text } }];"
+      },
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa06",
+      "name": "Из ответа в text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1210, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ text: $json.text }) }}",
+        "options": {}
+      },
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa07",
+      "name": "Respond текст",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1440, 420]
+    }
+  ],
+  "connections": {
+    "Webhook AI": {
+      "main": [[{ "node": "Секрет OK", "type": "main", "index": 0 }]]
+    },
+    "Секрет OK": {
+      "main": [
+        [{ "node": "Промпт", "type": "main", "index": 0 }],
+        [{ "node": "Respond Forbidden", "type": "main", "index": 0 }]
+      ]
+    },
+    "Промпт": { "main": [[{ "node": "OpenAI", "type": "main", "index": 0 }]] },
+    "OpenAI": { "main": [[{ "node": "Из ответа в text", "type": "main", "index": 0 }]] },
+    "Из ответа в text": { "main": [[{ "node": "Respond текст", "type": "main", "index": 0 }]] }
+  },
+  "settings": {},
+  "staticData": null
+}

@@ -1,11 +1,21 @@
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 
 import AdminParserPanel from "../components/AdminParserPanel";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
-import { canUseWebAuthn, clearToken, getStoredToken, registerPasskey } from "../lib/auth";
+import {
+  canUseWebAuthn,
+  clearToken,
+  ensureFreshAccessToken,
+  getStoredToken,
+  hasPinLock,
+  lockApp,
+  registerPasskey,
+  resolveAuthSessionFailure,
+  tryRefreshAccessToken,
+} from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
@@ -59,36 +69,6 @@ export default function ProfilePage() {
     [requests]
   );
 
-  useEffect(() => {
-    const t = getStoredToken();
-    if (!t) {
-      router.push("/auth?next=/profile");
-      return;
-    }
-    setToken(t);
-    loadMe(t);
-  }, []);
-
-  useEffect(() => {
-    setSupportsPasskey(canUseWebAuthn());
-  }, []);
-
-  async function loadMe(t) {
-    const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${t}` } });
-    if (!res.ok) {
-      clearToken();
-      router.push("/auth?next=/profile");
-      return;
-    }
-    const data = await res.json();
-    setMe(data);
-    setName(data.full_name || "");
-    setDisplayName(data.display_name || "");
-    setCompanyName(data.company_name || "");
-    setPhone(data.phone || "");
-    await loadRoleData(t, data.role);
-  }
-
   async function reloadParserJobsWithToken(t) {
     const j = await fetch(`${API_URL}/admin/parser/jobs`, { headers: { Authorization: `Bearer ${t}` } });
     if (j.ok) setAdminJobs(await j.json());
@@ -130,6 +110,74 @@ export default function ProfilePage() {
       if (sc.ok) setStaffCars(await sc.json());
     }
   }
+
+  async function loadMe(t) {
+    await ensureFreshAccessToken().catch(() => null);
+    let access = getStoredToken() || t || "";
+    if (!access) return;
+    let res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${access}` } });
+    if (res.status === 401) {
+      if (await tryRefreshAccessToken()) {
+        access = getStoredToken();
+        res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${access}` } });
+      }
+    }
+    if (!res.ok) {
+      const kind = await resolveAuthSessionFailure();
+      if (kind === "pin-lock") {
+        setToken(getStoredToken());
+        return;
+      }
+      router.push("/auth?next=/profile");
+      return;
+    }
+    const data = await res.json();
+    setMe(data);
+    setName(data.full_name || "");
+    setDisplayName(data.display_name || "");
+    setCompanyName(data.company_name || "");
+    setPhone(data.phone || "");
+    await loadRoleData(access, data.role);
+  }
+
+  const loadMeRef = useRef(loadMe);
+  loadMeRef.current = loadMe;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const tok = getStoredToken();
+      if (!tok) {
+        if (await hasPinLock()) {
+          lockApp();
+          window.dispatchEvent(new Event("avt-app-lock-changed"));
+          return;
+        }
+        if (!cancelled) router.push("/auth?next=/profile");
+        return;
+      }
+      if (cancelled) return;
+      setToken(tok);
+      await loadMeRef.current(tok);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  useEffect(() => {
+    const onTok = () => {
+      const t2 = getStoredToken();
+      setToken(t2 || "");
+      if (t2) loadMeRef.current(t2);
+    };
+    window.addEventListener("avt-token-changed", onTok);
+    return () => window.removeEventListener("avt-token-changed", onTok);
+  }, []);
+
+  useEffect(() => {
+    setSupportsPasskey(canUseWebAuthn());
+  }, []);
 
   async function removeOwnListing(carId) {
     if (
@@ -199,7 +247,7 @@ export default function ProfilePage() {
     setOldPassword("");
     setNewPassword("");
     setMessage("Пароль изменен");
-    loadMe(token);
+    loadMeRef.current(token);
   }
 
   async function enablePasskey() {
