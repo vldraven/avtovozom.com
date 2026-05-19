@@ -74,6 +74,12 @@
               "name": "caption",
               "value": "={{ (() => { const t = String(($json.body && $json.body.text) ? $json.body.text : '').trim(); return t.length <= 980 ? t : (t.slice(0, 979) + '…'); })() }}",
               "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "photoCount",
+              "value": "={{ (($json.body && Array.isArray($json.body.photo_urls)) ? $json.body.photo_urls : []).filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10).length }}",
+              "type": "number"
             }
           ]
         },
@@ -91,7 +97,7 @@
           "options": { "combineOperation": "all" },
           "conditions": [
             {
-              "leftValue": "={{ $json.chatId }}",
+              "leftValue": "={{ String($json.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
               "rightValue": "",
               "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
             }
@@ -124,7 +130,7 @@
           "conditions": [
             {
               "id": "photo",
-              "leftValue": "={{ Array.isArray($json.photoUrls) ? $json.photoUrls.length : 0 }}",
+              "leftValue": "={{ Number($json.photoCount ?? 0) }}",
               "rightValue": 0,
               "operator": { "type": "number", "operation": "larger" }
             }
@@ -174,7 +180,7 @@
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
-        "chatId": "={{ $json.chatId }}",
+        "chatId": "={{ String($json.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
         "text": "={{ $json.textFull }}"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb6msg",
@@ -189,16 +195,16 @@
           "options": { "combineOperation": "all" },
           "conditions": [
             {
-              "leftValue": "={{ Array.isArray($json.photoUrls) ? $json.photoUrls.length : 0 }}",
+              "leftValue": "={{ Number($json.photoCount ?? 0) }}",
               "rightValue": 1,
-              "operator": { "type": "number", "operation": "equals" }
+              "operator": { "type": "number", "operation": "larger" }
             }
           ]
         },
         "options": {}
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb7",
-      "name": "Ровно 1 фото?",
+      "name": "Два и более фото?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [1460, 620]
@@ -207,8 +213,8 @@
       "parameters": {
         "resource": "message",
         "operation": "sendPhoto",
-        "chatId": "={{ $json.chatId }}",
-        "file": "={{ Array.isArray($json.photoUrls) && $json.photoUrls[0] ? $json.photoUrls[0] : '' }}",
+        "chatId": "={{ String($json.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
+        "file": "={{ (() => { const n = Number($json.photoCount ?? 0); if (n !== 1) return ''; const r = $json.photoUrls; const a = Array.isArray(r) ? r : (r && typeof r === 'object' ? Object.values(r) : []); const u = String(a[0] || '').trim(); return u.startsWith('http') ? u : ''; })() }}",
         "additionalFields": {
           "caption": "={{ String($json.textFull || '').length <= 1024 ? ($json.textFull || '') : ($json.caption || '') }}"
         }
@@ -221,7 +227,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const row = $('Данные для поста').first().json;\nconst urls = Array.isArray(row.photoUrls) ? row.photoUrls : [];\nif (urls.length < 2) {\n  return [{ json: { ok: false, error: 'internal: нужно минимум 2 URL для альбома' } }];\n}\nconst capRaw = String(row.textFull || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\nconst mediaItems = urls.slice(0, 10).map((u, i) => {\n  const media = String(u || '').trim();\n  const o = { type: 'photo', media };\n  if (i === 0 && cap) {\n    o.additionalFields = { caption: cap };\n  }\n  return o;\n});\nreturn [{ json: { chatId: row.chatId, media: { media: mediaItems } } }];\n"
+        "jsCode": "function urlsFromRow(row) {\n  let raw = row.photoUrls;\n  if (Array.isArray(raw)) return raw.map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  if (raw && typeof raw === 'object') return Object.values(raw).map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  const body = $('Webhook Publish').first().json.body;\n  const arr = body && Array.isArray(body.photo_urls) ? body.photo_urls : [];\n  return arr.filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10);\n}\nconst row = $('Данные для поста').first().json;\nconst urls = urlsFromRow(row);\nif (urls.length < 2) {\n  return [{ json: { ok: false, error: 'internal: нужно минимум 2 URL для альбома' } }];\n}\nconst capRaw = String(row.textFull || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\nconst mediaItems = urls.slice(0, 10).map((u, i) => {\n  const media = String(u || '').trim();\n  const o = { type: 'photo', media };\n  if (i === 0 && cap) {\n    o.additionalFields = { caption: cap };\n  }\n  return o;\n});\nreturn [{ json: { chatId: row.chatId, media: { media: mediaItems } } }];\n"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbbprep",
       "name": "Сборка альбома",
@@ -234,7 +240,7 @@
       "parameters": {
         "resource": "message",
         "operation": "sendMediaGroup",
-        "chatId": "={{ $json.chatId }}",
+        "chatId": "={{ String($json.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
         "media": "={{ $json.media }}"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb9alb",
@@ -277,7 +283,7 @@
     },
     "Есть фото?": {
       "main": [
-        [{ "node": "Ровно 1 фото?", "type": "main", "index": 0 }],
+        [{ "node": "Два и более фото?", "type": "main", "index": 0 }],
         [{ "node": "Есть текст?", "type": "main", "index": 0 }]
       ]
     },
@@ -290,10 +296,10 @@
     "Telegram: текст": {
       "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
     },
-    "Ровно 1 фото?": {
+    "Два и более фото?": {
       "main": [
-        [{ "node": "Telegram: одно фото", "type": "main", "index": 0 }],
-        [{ "node": "Сборка альбома", "type": "main", "index": 0 }]
+        [{ "node": "Сборка альбома", "type": "main", "index": 0 }],
+        [{ "node": "Telegram: одно фото", "type": "main", "index": 0 }]
       ]
     },
     "Telegram: одно фото": {

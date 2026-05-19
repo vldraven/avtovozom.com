@@ -10,6 +10,8 @@ import { isAdminRole } from "../../../lib/roles";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MAX_TELEGRAM_PHOTOS = 10;
 const DEFAULT_SELECTION = 5;
+const DEFAULT_AI_STYLE_HINT =
+  "Сгенерируй объявление для паблика в телеграм канале по доставке автомобилей из Китая, используй конечную цену в рублях, используй эмоджи для того, чтобы расставить акцены в тексте.";
 
 function escapeHtml(s) {
   return String(s ?? "")
@@ -44,7 +46,7 @@ export default function PublishTelegramPage() {
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(() => new Set());
   const [postText, setPostText] = useState("");
-  const [styleHint, setStyleHint] = useState("");
+  const [styleHint, setStyleHint] = useState(DEFAULT_AI_STYLE_HINT);
   const [aiBusy, setAiBusy] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -299,10 +301,10 @@ export default function PublishTelegramPage() {
                 <h2 className="panel-heading-sm">Пожелания к ИИ (необязательно)</h2>
                 <textarea
                   className="input"
-                  rows={2}
+                  rows={4}
                   value={styleHint}
                   onChange={(e) => setStyleHint(e.target.value)}
-                  placeholder="Например: короче, акцент на цену, без эмодзи"
+                  placeholder="Пожелания к стилю и содержанию поста"
                 />
               </div>
 
