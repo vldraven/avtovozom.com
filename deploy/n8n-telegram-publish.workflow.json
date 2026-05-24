@@ -78,53 +78,14 @@
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "a1",
-              "name": "chatId",
-              "value": "={{ String($json.telegramChatId || '').trim() }}",
-              "type": "string"
-            },
-            {
-              "id": "a2",
-              "name": "textFull",
-              "value": "={{ String(($json.body && $json.body.text) ? $json.body.text : '').trim() }}",
-              "type": "string"
-            },
-            {
-              "id": "a3",
-              "name": "photoUrls",
-              "value": "={{ (($json.body && Array.isArray($json.body.photo_urls)) ? $json.body.photo_urls : []).filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10) }}",
-              "type": "array"
-            },
-            {
-              "id": "a4",
-              "name": "caption",
-              "value": "={{ (() => { const t = String(($json.body && $json.body.text) ? $json.body.text : '').trim(); return t.length <= 980 ? t : (t.slice(0, 979) + '…'); })() }}",
-              "type": "string"
-            },
-            {
-              "id": "a5",
-              "name": "photoCount",
-              "value": "={{ (($json.body && Array.isArray($json.body.photo_urls)) ? $json.body.photo_urls : []).filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10).length }}",
-              "type": "number"
-            },
-            {
-              "id": "a6",
-              "name": "botToken",
-              "value": "={{ String($json.telegramBotToken || '').trim() }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "jsCode": "function parseBody(json) {\n  if (!json || typeof json !== 'object') return {};\n  let b = json.body;\n  if (typeof b === 'string') {\n    try { b = JSON.parse(b); } catch (e) { b = null; }\n  }\n  if (b && typeof b === 'object' && !Array.isArray(b)) return b;\n  if (json.photo_urls || json.text || json.event) return json;\n  return {};\n}\n\nfunction extractUrls(b) {\n  const arr = Array.isArray(b.photo_urls)\n    ? b.photo_urls\n    : (Array.isArray(b.photoUrls) ? b.photoUrls : []);\n  return arr\n    .map((u) => String(u || '').trim())\n    .filter((u) => u.startsWith('http'))\n    .slice(0, 10);\n}\n\nfunction pickPayload() {\n  const input = $input.first().json;\n  let body = parseBody(input);\n  if (extractUrls(body).length || body.text) return { input, body };\n  try {\n    const wh = $('Webhook Publish').first().json;\n    body = parseBody(wh);\n  } catch (e) {}\n  return { input, body };\n}\n\nconst { input, body } = pickPayload();\nconst photoUrls = extractUrls(body);\nconst textFull = String(body.text || '').trim();\nconst caption = textFull.length <= 980 ? textFull : textFull.slice(0, 979) + '…';\n\nreturn [{\n  json: {\n    chatId: String(input.telegramChatId || '').trim(),\n    botToken: String(input.telegramBotToken || '').trim(),\n    textFull,\n    caption,\n    photoUrls,\n    photoCount: photoUrls.length,\n  },\n}];\n"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb4",
       "name": "Данные для поста",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [740, 520]
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 520],
+      "notes": "Парсит webhook body (в т.ч. если body — JSON-строка). photoUrls и photoCount всегда согласованы."
     },
     {
       "parameters": {
@@ -165,7 +126,7 @@
           "conditions": [
             {
               "id": "photo",
-              "leftValue": "={{ Number($json.photoCount ?? 0) }}",
+              "leftValue": "={{ Array.isArray($json.photoUrls) ? $json.photoUrls.length : Number($json.photoCount ?? 0) }}",
               "rightValue": 0,
               "operator": { "type": "number", "operation": "larger" }
             }
@@ -230,7 +191,7 @@
           "options": { "combineOperation": "all" },
           "conditions": [
             {
-              "leftValue": "={{ Number($json.photoCount ?? 0) }}",
+              "leftValue": "={{ Array.isArray($json.photoUrls) ? $json.photoUrls.length : Number($json.photoCount ?? 0) }}",
               "rightValue": 1,
               "operator": { "type": "number", "operation": "larger" }
             }
@@ -262,7 +223,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function urlsFromRow(row) {\n  let raw = row.photoUrls;\n  if (Array.isArray(raw)) return raw.map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  if (raw && typeof raw === 'object') return Object.values(raw).map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  const body = $('Webhook Publish').first().json.body;\n  const arr = body && Array.isArray(body.photo_urls) ? body.photo_urls : [];\n  return arr.filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10);\n}\nconst row = $('Данные для поста').first().json;\nconst urls = urlsFromRow(row);\nif (urls.length < 2) {\n  throw new Error('internal: нужно минимум 2 URL для альбома');\n}\nconst chatId = String(row.chatId || '').trim();\nif (!chatId) {\n  throw new Error('Не задан chat ID: укажите telegramChatId в узле «Настройки Telegram».');\n}\nconst botToken = String(row.botToken || '').trim();\nif (!botToken || botToken.includes('REPLACE')) {\n  throw new Error('Не задан bot token: укажите telegramBotToken в узле «Настройки Telegram» (тот же, что в credential).');\n}\nconst capRaw = String(row.textFull || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\nconst media = urls.slice(0, 10).map((u, i) => {\n  const item = { type: 'photo', media: String(u || '').trim() };\n  if (i === 0 && cap) item.caption = cap;\n  return item;\n});\nreturn [{ json: { chat_id: chatId, media, botToken } }];\n"
+        "jsCode": "function normalizeUrl(u) {\n  const s = String(u || '').trim();\n  return s.startsWith('http') ? s : '';\n}\n\nfunction addUrls(out, seen, list) {\n  if (!Array.isArray(list)) return;\n  for (const u of list) {\n    const s = normalizeUrl(u);\n    if (s && !seen.has(s)) {\n      seen.add(s);\n      out.push(s);\n    }\n  }\n}\n\nfunction urlsFromJson(json) {\n  if (!json || typeof json !== 'object') return [];\n  const out = [];\n  const seen = new Set();\n  addUrls(out, seen, json.photoUrls);\n  addUrls(out, seen, json.photo_urls);\n  const body = json.body;\n  if (body && typeof body === 'object') {\n    addUrls(out, seen, body.photo_urls);\n    addUrls(out, seen, body.photoUrls);\n  }\n  if (json.photoUrls && typeof json.photoUrls === 'object' && !Array.isArray(json.photoUrls)) {\n    addUrls(out, seen, Object.values(json.photoUrls));\n  }\n  return out.slice(0, 10);\n}\n\nfunction pickRow() {\n  const inputJson = $input.first()?.json;\n  if (inputJson) return inputJson;\n  for (const name of ['Данные для поста', 'Данные для поста1']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j) return j;\n    } catch (e) {}\n  }\n  try {\n    const wh = $('Webhook Publish').first()?.json;\n    if (wh) return wh.body && typeof wh.body === 'object' ? { ...wh.body, body: wh.body } : wh;\n  } catch (e) {}\n  return {};\n}\n\nfunction pickSettings() {\n  try {\n    return $('Настройки Telegram').first()?.json || {};\n  } catch (e) {\n    return {};\n  }\n}\n\nconst row = pickRow();\nconst settings = pickSettings();\nconst urls = urlsFromJson(row);\nif (urls.length < 2) {\n  const debug = [\n    'photoCount=' + (row.photoCount ?? '?'),\n    'photoUrls=' + JSON.stringify(row.photoUrls ?? null).slice(0, 180),\n    'keys=' + Object.keys(row).join(','),\n  ].join('; ');\n  throw new Error('Для альбома нужно минимум 2 URL, получено ' + urls.length + '. ' + debug);\n}\n\nconst chatId = String(row.chatId || settings.telegramChatId || '').trim();\nif (!chatId) {\n  throw new Error('Не задан chat ID: укажите telegramChatId в узле «Настройки Telegram».');\n}\n\nconst botToken = String(row.botToken || settings.telegramBotToken || '').trim();\nif (!botToken || botToken.includes('REPLACE')) {\n  throw new Error('Не задан bot token: укажите telegramBotToken в узле «Настройки Telegram» (тот же, что в credential).');\n}\n\nconst capRaw = String(row.textFull || row.text || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\n\nconst media = urls.slice(0, 10).map((u, i) => {\n  const item = { type: 'photo', media: u };\n  if (i === 0 && cap) item.caption = cap;\n  return item;\n});\n\nreturn [{ json: { chat_id: chatId, media, botToken } }];\n"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbbprep",
       "name": "Сборка альбома",
