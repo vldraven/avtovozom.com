@@ -7,6 +7,7 @@ import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
 import { mediaSrc } from "../../lib/media";
+import { fuelTypeSelectOptions, normalizeFuelTypeValue } from "../../lib/fuelTypes";
 import { canCreateListings, isAdminRole } from "../../lib/roles";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -148,7 +149,8 @@ export default function StaffEditListingPage() {
       setMileageKm(c.mileage_km != null ? String(c.mileage_km) : "");
       setEngineCc(String(c.engine_volume_cc ?? ""));
       setHorsepower(String(c.horsepower ?? ""));
-      setFuelType(c.fuel_type || "");
+      const rawFuel = c.fuel_type || "";
+      setFuelType(normalizeFuelTypeValue(rawFuel) || rawFuel);
       setTransmission(c.transmission || "");
       setCity(c.location_city || "");
       setPriceCny(String(c.price_cny ?? ""));
@@ -591,15 +593,14 @@ export default function StaffEditListingPage() {
                 </label>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <label className="muted" style={{ display: "grid", gap: 4 }}>
-                  Топливо
-                  <input
-                    className="input"
-                    placeholder="бензин / дизель / гибрид"
-                    value={fuelType}
-                    onChange={(e) => setFuelType(e.target.value)}
-                  />
-                </label>
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="Топливо"
+                  placeholder="— не указано —"
+                  value={fuelType}
+                  onChange={setFuelType}
+                  options={fuelTypeSelectOptions(fuelType)}
+                />
                 <label className="muted" style={{ display: "grid", gap: 4 }}>
                   КПП
                   <input

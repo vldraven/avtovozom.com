@@ -413,6 +413,20 @@ def source_listing_id_from_url(url: str) -> str:
     raise ValueError(f"Не удалось извлечь id объявления из URL: {url}")
 
 
+def _is_che168_bot_challenge_html(html: str) -> bool:
+    """Короткий JS-ответ che168 без HTML карточки (EO_Bot / __tst_status)."""
+    if not html:
+        return False
+    head = html[:4000]
+    if len(html) < 2500 and (
+        "EO_Bot_Ssid" in head
+        or "__tst_status" in head
+        or "document.cookie" in head and "_0x649a" in head
+    ):
+        return True
+    return False
+
+
 def _raise_if_captcha(url: str, html: str) -> None:
     u = url.lower()
     head = (html or "")[:12000]
@@ -421,6 +435,11 @@ def _raise_if_captcha(url: str, html: str) -> None:
             "che168.com открыл страницу антибот-проверки (captcha). "
             "Серверы и Docker часто блокируются. Задайте CHE168_FORCE_DETAIL_URLS "
             "(ссылки на карточки /dealer/…/….html или i.che168.com/car/… из браузера)."
+        )
+    if _is_che168_bot_challenge_html(html):
+        raise RuntimeError(
+            "che168.com вернул антибот-страницу (JS-проверка). "
+            "Парсер попробует открыть карточку через браузер."
         )
 
 
@@ -446,7 +465,68 @@ def _pw_page_navigation_timeout_ms(detail_url: str) -> int:
     """懂车帝 в Docker часто грузится дольше che168 — отдельный лимит goto/DOM."""
     if marketplace_from_detail_url(detail_url) == "dongchedi":
         return int(os.getenv("DONGCHEDI_PW_GOTO_TIMEOUT_MS", "90000"))
-    return int(os.getenv("CHE168_PW_GOTO_TIMEOUT_MS", "35000"))
+    return int(os.getenv("CHE168_PW_GOTO_TIMEOUT_MS", "60000"))
+
+
+def _title_from_che168_document_title(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    title = raw.strip()
+    if not title:
+        return None
+    # «【哈尔滨】宝马3系…_21.58…_二手车之家»
+    if "_" in title:
+        title = title.split("_")[0].strip()
+    title = re.sub(r"^【[^】]+】", "", title).strip()
+    return title or None
+
+
+def _global_che168_detail_url_from_detail_url(detail_url: str) -> str | None:
+    m = DEALER_LISTING_RE.search(detail_url)
+    if m:
+        return f"https://global.che168.com/detail/{m.group(2)}"
+    m = CAR_DETAIL_ID_RE.search(detail_url)
+    if m:
+        return f"https://global.che168.com/detail/{m.group(1)}"
+    return None
+
+
+def _che168_dismiss_overseas_modal(page) -> None:
+    for sel in (
+        "text=Continue to Chinese Site",
+        "text=继续访问中文站",
+        "text=继续访问",
+    ):
+        try:
+            btn = page.locator(sel).first
+            if btn.count() and btn.is_visible(timeout=800):
+                btn.click(timeout=3000)
+                page.wait_for_timeout(1500)
+                return
+        except Exception:
+            pass
+
+
+def _che168_playwright_goto(page, url: str, timeout_ms: int) -> None:
+    """
+    che168 часто не доходит до domcontentloaded (антибот/тяжёлый JS).
+    commit + ожидание текста карточки надёжнее, чем domcontentloaded.
+    """
+    page.goto(url, wait_until="commit", timeout=timeout_ms)
+    page.wait_for_timeout(1500)
+    _che168_dismiss_overseas_modal(page)
+    try:
+        page.wait_for_function(
+            """() => {
+                const t = (document.body && document.body.innerText) || '';
+                if (t.includes('表显里程') || t.includes('Vehicle Details')) return true;
+                if (/\\d{1,2}\\.\\d{2}\\s*万/.test(t) && t.includes('公里')) return true;
+                return false;
+            }""",
+            timeout=timeout_ms,
+        )
+    except Exception:
+        page.wait_for_timeout(3000)
 
 
 def _dongchedi_derive_listing_price_cny(price_block_text: str) -> float | None:
@@ -777,7 +857,7 @@ def _listing_links_playwright(series_url: str, max_items: int) -> list[str]:
         context.set_default_timeout(35000)
         page = context.new_page()
         page.set_default_timeout(35000)
-        page.goto(series_url, wait_until="domcontentloaded", timeout=35000)
+        page.goto(series_url, wait_until="commit", timeout=35000)
         page.wait_for_timeout(2500)
         if "captcha" in page.url.lower():
             raise RuntimeError(
@@ -930,8 +1010,7 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
         context.set_default_timeout(nav_ms)
         page = context.new_page()
         page.set_default_timeout(nav_ms)
-        page.goto(detail_url, wait_until="domcontentloaded", timeout=nav_ms)
-        page.wait_for_timeout(2500)
+        _che168_playwright_goto(page, detail_url, nav_ms)
         if "captcha" in page.url.lower():
             raise RuntimeError("Страница объявления перенаправила на антибот-проверку (captcha).")
         try:
@@ -958,6 +1037,11 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
                 title = (title_el.inner_text() or "").strip() or None
         except Exception:
             pass
+        if not title:
+            try:
+                title = _title_from_che168_document_title(page.title())
+            except Exception:
+                pass
 
         body_text = ""
         try:
@@ -1038,8 +1122,9 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
                 or (parsed.price_cny and parsed.price_cny > 0)
             ):
                 return parsed
-        except RuntimeError:
-            raise
+        except RuntimeError as exc:
+            if "Парсер попробует открыть карточку через браузер" not in str(exc):
+                raise
         except Exception:
             pass
 
@@ -1048,5 +1133,15 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
             "CHE168_SKIP_PLAYWRIGHT включён: страница объявления не разобрана по HTTP."
         )
 
-    return _parse_che168_detail_playwright(detail_url, source_listing_id)
+    try:
+        return _parse_che168_detail_playwright(detail_url, source_listing_id)
+    except Exception as primary_err:
+        alt = _global_che168_detail_url_from_detail_url(detail_url)
+        if not alt or alt.rstrip("/") == detail_url.rstrip("/"):
+            raise
+        try:
+            alt_sid = source_listing_id_from_url(alt)
+            return _parse_che168_detail_playwright(alt, alt_sid)
+        except Exception:
+            raise primary_err
 

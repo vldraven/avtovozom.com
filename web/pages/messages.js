@@ -208,6 +208,14 @@ export default function MessagesPage() {
     scrollThreadToEnd();
   }, [messages, activeId]);
 
+  const threadOpenOnMobile = narrow && Boolean(activeId) && !listVisible;
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    document.body.classList.toggle("messages-thread-open", threadOpenOnMobile);
+    return () => document.body.classList.remove("messages-thread-open");
+  }, [threadOpenOnMobile]);
+
   function logout() {
     clearToken();
     setToken("");
@@ -257,7 +265,7 @@ export default function MessagesPage() {
   const showThread = !narrow || !listVisible;
 
   return (
-    <div className="layout layout--messages">
+    <div className={`layout layout--messages${threadOpenOnMobile ? " layout--no-mobile-dock" : ""}`}>
       <header className="site-header">
         <div className="container site-header__inner">
           <div className="site-header__brand">
@@ -398,7 +406,7 @@ export default function MessagesPage() {
                       </p>
                     ) : null}
                     <div className="messenger__composer-row">
-                      <div className="input messenger__input-shell">
+                      <div className="messenger__composer-field">
                         <label className="messenger__clip-btn" title="Прикрепить файл" aria-label="Прикрепить файл">
                           <svg
                             className="messenger__clip-icon"
@@ -426,9 +434,11 @@ export default function MessagesPage() {
                           />
                         </label>
                         <textarea
-                          className="messenger__composer-input messenger__composer-input--inset"
-                          rows={2}
+                          className="messenger__composer-input"
+                          rows={1}
                           placeholder="Сообщение…"
+                          enterKeyHint="send"
+                          autoComplete="off"
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
                           onKeyDown={(e) => {

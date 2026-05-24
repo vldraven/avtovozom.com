@@ -99,6 +99,15 @@ export default function MobileBottomNav() {
 
   if (router.pathname === "/auth") return null;
 
+  const rawChat = router.query.chat;
+  const messagesThreadOpen =
+    router.pathname === "/messages" &&
+    router.isReady &&
+    rawChat != null &&
+    rawChat !== "" &&
+    String(Array.isArray(rawChat) ? rawChat[0] : rawChat).trim() !== "";
+  if (messagesThreadOpen) return null;
+
   const isCatalogNav =
     router.pathname === "/catalog" || router.pathname.startsWith("/catalog/");
   const showAdd = Boolean(token && canCreateListings(me?.role));

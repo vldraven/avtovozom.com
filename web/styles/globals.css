@@ -2668,13 +2668,17 @@ code {
   gap: 10px;
 }
 
-.messenger__input-shell {
+.messenger__composer-field {
   flex: 1;
   display: flex;
   align-items: flex-end;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  padding: 4px 6px 4px 4px;
+  min-height: 44px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 22px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
 }
 
 .messenger__clip-btn {
@@ -2738,20 +2742,25 @@ code {
 .messenger__composer-input {
   flex: 1;
   resize: none;
-  min-height: 44px;
+  min-height: 32px;
   max-height: 160px;
-}
-
-.messenger__composer-input--inset {
   border: none;
   box-shadow: none;
   background: transparent;
-  padding: 8px 8px 8px 4px;
+  padding: 6px 4px;
   margin: 0;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.35;
+  color: var(--color-text);
 }
 
-.messenger__composer-input--inset:focus {
+.messenger__composer-input:focus {
   outline: none;
+}
+
+.messenger__composer-input::placeholder {
+  color: #94a3b8;
 }
 
 .messenger__send-fab {
@@ -2787,7 +2796,7 @@ code {
 @media (max-width: 768px) {
   .messenger {
     grid-template-columns: 1fr;
-    min-height: calc(100vh - 120px);
+    min-height: calc(100dvh - 120px);
     border-radius: 0;
     margin: 0;
     max-width: none;
@@ -2796,6 +2805,54 @@ code {
   .site-main--messenger {
     padding-left: 0;
     padding-right: 0;
+  }
+
+  /* Открытый диалог: без нижнего dock, поле ввода у клавиатуры */
+  body.messages-thread-open .mobile-bottom-nav {
+    display: none !important;
+  }
+
+  body.messages-thread-open .layout.layout--messages {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  body.messages-thread-open .site-main--messenger {
+    padding-bottom: 0;
+  }
+
+  body.messages-thread-open .messenger {
+    min-height: calc(100dvh - 56px);
+    box-shadow: none;
+  }
+
+  body.messages-thread-open .messenger__thread {
+    min-height: calc(100dvh - 56px);
+  }
+
+  body.messages-thread-open .messenger__composer {
+    padding: 10px 12px max(12px, env(safe-area-inset-bottom, 0px));
+  }
+
+  body.messages-thread-open .messenger__composer-field {
+    min-height: 46px;
+    padding: 7px 14px 7px 8px;
+    border-radius: 24px;
+    background: #eef2f7;
+  }
+
+  body.messages-thread-open .messenger__composer-input {
+    font-size: 16px;
+    min-height: 22px;
+    padding: 7px 2px;
+  }
+
+  body.messages-thread-open .messenger__clip-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  body.messages-thread-open .pwa-install {
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
