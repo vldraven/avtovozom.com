@@ -71,7 +71,7 @@ services:
    - по `@имяканала`; или
    - перешлите пост из канала боту @getidsbot / @RawDataBot и возьмите `chat.id` вида `-100xxxxxxxxxx`.
 
-Эти значения **не** должны попадать в git — только в env n8n.
+Эти значения **не** должны попадать в git — после импорта workflow правьте **«Настройки Telegram»** только в n8n UI.
 
 ---
 
@@ -117,7 +117,7 @@ services:
 - `photo_urls`: массив **0–10** абсолютных HTTPS URL
 - `media_count`: число (дубликат для удобства)
 
-В импортируемом **[n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)** — ноды Telegram для текста и одного фото; для **2–10 фото**: **Сборка альбома** (Code) → **HTTP: sendMediaGroup**. Credential Telegram — только у двух Telegram-нод; для альбома нужен **`TELEGRAM_BOT_TOKEN`** в env (см. выше).
+В импортируемом **[n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)** — заполните узел **«Настройки Telegram»**; credential Telegram — у **Telegram: текст** и **Telegram: одно фото**; альбом: **Сборка альбома** → **HTTP: sendMediaGroup**.
 
 - **0 фото:** только текст — `sendMessage`
 - **1 фото:** `sendPhoto` с подписью (обрезка под лимит Telegram ~1024)
@@ -137,7 +137,7 @@ services:
 
 ## 6. После деплоя
 
-1. Импорт обоих JSON → для **публикации** привяжите **Telegram API credential** к **Telegram: текст** и **Telegram: одно фото**; задайте **`TELEGRAM_BOT_TOKEN`** и **`TELEGRAM_CHANNEL_ID`** в env; для ИИ — `OPENAI_API_KEY`.
+1. Импорт обоих JSON → в **«Настройки Telegram»** укажите chat ID и bot token; credential Telegram — у двух Telegram-нод; для ИИ — `OPENAI_API_KEY` в env.
 2. Включить **Production** режим webhook, активировать workflows.
 3. Скопировать **Production webhook URL** каждого в `.env` бэкенда.
 4. Секреты: одинаковые пары **`N8N_TELEGRAM_AI_WEBHOOK_SECRET` ↔ `AVTOVOZOM_AI_WEBHOOK_SECRET`** и **`…PUBLISH…` ↔ `…PUBLISH…`** в n8n.

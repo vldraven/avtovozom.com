@@ -52,9 +52,38 @@
         "assignments": {
           "assignments": [
             {
+              "id": "tg1",
+              "name": "telegramChatId",
+              "value": "@your_telegram_channel",
+              "type": "string"
+            },
+            {
+              "id": "tg2",
+              "name": "telegramBotToken",
+              "value": "0000000000:REPLACE_WITH_BOT_TOKEN",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "includeOtherFields": true
+        }
+      },
+      "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb4tg",
+      "name": "Настройки Telegram",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [740, 520],
+      "notes": "Укажите ID канала (@name или -100…) и токен бота (для альбома 2+ фото). Тот же токен, что в credential Telegram у нод «Telegram: текст/одно фото»."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
               "id": "a1",
               "name": "chatId",
-              "value": "={{ String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
+              "value": "={{ String($json.telegramChatId || '').trim() }}",
               "type": "string"
             },
             {
@@ -84,7 +113,7 @@
             {
               "id": "a6",
               "name": "botToken",
-              "value": "={{ String($env.TELEGRAM_BOT_TOKEN || '').trim() }}",
+              "value": "={{ String($json.telegramBotToken || '').trim() }}",
               "type": "string"
             }
           ]
@@ -103,7 +132,7 @@
           "options": { "combineOperation": "all" },
           "conditions": [
             {
-              "leftValue": "={{ String($json.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
+              "leftValue": "={{ String($json.chatId || '').trim() }}",
               "rightValue": "",
               "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
             }
@@ -120,7 +149,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Не задан TELEGRAM_CHANNEL_ID в окружении n8n (или создай credential и укажи Chat ID там).' }) }}",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Не задан chat ID: укажите telegramChatId в узле «Настройки Telegram».' }) }}",
         "options": { "responseCode": 400 }
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb4c",
@@ -186,7 +215,7 @@
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
-        "chatId": "={{ String($json.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
+        "chatId": "={{ String($json.chatId || '').trim() }}",
         "text": "={{ $json.textFull }}"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb6msg",
@@ -219,7 +248,7 @@
       "parameters": {
         "resource": "message",
         "operation": "sendPhoto",
-        "chatId": "={{ String($json.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
+        "chatId": "={{ String($json.chatId || '').trim() }}",
         "file": "={{ (() => { const n = Number($json.photoCount ?? 0); if (n !== 1) return ''; const r = $json.photoUrls; const a = Array.isArray(r) ? r : (r && typeof r === 'object' ? Object.values(r) : []); const u = String(a[0] || '').trim(); return u.startsWith('http') ? u : ''; })() }}",
         "additionalFields": {
           "caption": "={{ String($json.textFull || '').length <= 1024 ? ($json.textFull || '') : ($json.caption || '') }}"
@@ -233,14 +262,14 @@
     },
     {
       "parameters": {
-        "jsCode": "function urlsFromRow(row) {\n  let raw = row.photoUrls;\n  if (Array.isArray(raw)) return raw.map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  if (raw && typeof raw === 'object') return Object.values(raw).map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  const body = $('Webhook Publish').first().json.body;\n  const arr = body && Array.isArray(body.photo_urls) ? body.photo_urls : [];\n  return arr.filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10);\n}\nconst row = $('Данные для поста').first().json;\nconst urls = urlsFromRow(row);\nif (urls.length < 2) {\n  throw new Error('internal: нужно минимум 2 URL для альбома');\n}\nconst chatId = String(row.chatId || '').trim();\nif (!chatId) {\n  throw new Error('Не задан chat_id: проверьте TELEGRAM_CHANNEL_ID в env n8n.');\n}\nconst botToken = String(row.botToken || '').trim();\nif (!botToken) {\n  throw new Error('TELEGRAM_BOT_TOKEN пустой: добавьте в .env, пробросьте в docker-compose (environment: TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}) и перезапустите n8n.');\n}\nconst capRaw = String(row.textFull || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\nconst media = urls.slice(0, 10).map((u, i) => {\n  const item = { type: 'photo', media: String(u || '').trim() };\n  if (i === 0 && cap) item.caption = cap;\n  return item;\n});\nreturn [{ json: { chat_id: chatId, media, botToken } }];\n"
+        "jsCode": "function urlsFromRow(row) {\n  let raw = row.photoUrls;\n  if (Array.isArray(raw)) return raw.map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  if (raw && typeof raw === 'object') return Object.values(raw).map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  const body = $('Webhook Publish').first().json.body;\n  const arr = body && Array.isArray(body.photo_urls) ? body.photo_urls : [];\n  return arr.filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10);\n}\nconst row = $('Данные для поста').first().json;\nconst urls = urlsFromRow(row);\nif (urls.length < 2) {\n  throw new Error('internal: нужно минимум 2 URL для альбома');\n}\nconst chatId = String(row.chatId || '').trim();\nif (!chatId) {\n  throw new Error('Не задан chat ID: укажите telegramChatId в узле «Настройки Telegram».');\n}\nconst botToken = String(row.botToken || '').trim();\nif (!botToken || botToken.includes('REPLACE')) {\n  throw new Error('Не задан bot token: укажите telegramBotToken в узле «Настройки Telegram» (тот же, что в credential).');\n}\nconst capRaw = String(row.textFull || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\nconst media = urls.slice(0, 10).map((u, i) => {\n  const item = { type: 'photo', media: String(u || '').trim() };\n  if (i === 0 && cap) item.caption = cap;\n  return item;\n});\nreturn [{ json: { chat_id: chatId, media, botToken } }];\n"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbbprep",
       "name": "Сборка альбома",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1740, 760],
-      "notes": "Только JSON для sendMediaGroup. Токен приходит из «Данные для поста» (Set читает $env). Отправка — HTTP Request."
+      "notes": "JSON для sendMediaGroup. chatId и botToken — из «Настройки Telegram» через «Данные для поста»."
     },
     {
       "parameters": {
@@ -276,9 +305,12 @@
     },
     "Секрет OK": {
       "main": [
-        [{ "node": "Данные для поста", "type": "main", "index": 0 }],
+        [{ "node": "Настройки Telegram", "type": "main", "index": 0 }],
         [{ "node": "Respond Forbidden", "type": "main", "index": 0 }]
       ]
+    },
+    "Настройки Telegram": {
+      "main": [[{ "node": "Данные для поста", "type": "main", "index": 0 }]]
     },
     "Данные для поста": {
       "main": [[{ "node": "Канал задан?", "type": "main", "index": 0 }]]
