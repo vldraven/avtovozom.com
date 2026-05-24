@@ -9,6 +9,8 @@ import DealerOpenRequests from "../components/DealerOpenRequests";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import HeaderProfileLink from "../components/HeaderProfileLink";
+import TelegramChannelHeaderLink from "../components/TelegramChannelHeaderLink";
+import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { clearToken, getStoredToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
@@ -115,8 +117,8 @@ export default function Home() {
     );
   }, [catalogBrands]);
 
-  const BRANDS_COLLAPSED_DESKTOP = 30;
-  const BRANDS_COLLAPSED_MOBILE = 14;
+  const BRANDS_COLLAPSED_DESKTOP = 12;
+  const BRANDS_COLLAPSED_MOBILE = 10;
   const [isMobileBrandsLayout, setIsMobileBrandsLayout] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1136,9 +1138,12 @@ export default function Home() {
               Калькулятор растаможки
             </Link>
             {!token ? (
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
-                Войти
-              </button>
+              <>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
+                  Войти
+                </button>
+                <TelegramChannelHeaderLink />
+              </>
             ) : (
               <>
                 <HeaderMessagesLink token={token} />
@@ -1151,6 +1156,7 @@ export default function Home() {
                 <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
                   Выйти
                 </button>
+                <TelegramChannelHeaderLink />
               </>
             )}
           </div>
@@ -1340,6 +1346,8 @@ export default function Home() {
               ) : null}
             </div>
           </section>
+
+          <TelegramChannelSticky />
 
           <div className="toolbar toolbar--below-hero">
             {token && isStaffRole(me?.role) && (

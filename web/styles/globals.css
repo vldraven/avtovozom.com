@@ -344,6 +344,41 @@ a:hover {
   opacity: 1;
 }
 
+.site-header-telegram {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  color: #fff;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  line-height: 0;
+}
+
+.site-header-telegram svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.site-header-telegram:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.75);
+  opacity: 1;
+}
+
+@media (min-width: 768px) {
+  .site-header-telegram {
+    display: inline-flex;
+  }
+}
+
+.telegram-channel-sticky {
+  display: none;
+}
+
 .site-header__burger {
   display: inline-flex;
   align-items: center;
@@ -4054,6 +4089,56 @@ code {
     display: none !important;
   }
 
+  .telegram-channel-sticky {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin: 1rem 0;
+    padding: 0.7rem 0.85rem;
+    background: linear-gradient(90deg, #229ed9 0%, #1a8bc4 100%);
+    color: #fff;
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1.25;
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(34, 158, 217, 0.32);
+  }
+
+  .telegram-channel-sticky:hover {
+    color: #fff;
+    opacity: 0.96;
+    text-decoration: none;
+  }
+
+  .telegram-channel-sticky__icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    line-height: 0;
+  }
+
+  .telegram-channel-sticky__icon svg {
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .telegram-channel-sticky__text {
+    flex: 1;
+    min-width: 0;
+    text-decoration: none;
+  }
+
+  .toolbar--below-hero:empty {
+    display: none;
+    margin: 0;
+  }
+
   .auth-bar .btn,
   .auth-bar .btn-sm,
   .site-header .header-profile-link {
@@ -4299,7 +4384,7 @@ code {
 
   .home-hero {
     padding: 1.1rem 1rem 1rem;
-    margin-bottom: 1.1rem;
+    margin-bottom: 0;
   }
 
   .home-hero__title {

@@ -7,6 +7,7 @@ import Breadcrumbs from "./Breadcrumbs";
 import CatalogCardImageScrub from "./CatalogCardImageScrub";
 import CarPhotoLightbox from "./CarPhotoLightbox";
 import HeaderMessagesLink from "./HeaderMessagesLink";
+import TelegramChannelHeaderLink from "./TelegramChannelHeaderLink";
 import HeaderProfileLink from "./HeaderProfileLink";
 import RequestConfirmModal from "./RequestConfirmModal";
 import { clearToken, getStoredToken } from "../lib/auth";
@@ -420,9 +421,12 @@ export default function CarDetailView({
           </div>
           <div className="auth-bar">
             {!token ? (
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
-                Войти
-              </button>
+              <>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
+                  Войти
+                </button>
+                <TelegramChannelHeaderLink />
+              </>
             ) : (
               <>
                 <HeaderMessagesLink token={token} />
@@ -438,6 +442,7 @@ export default function CarDetailView({
                 >
                   Выйти
                 </button>
+                <TelegramChannelHeaderLink />
               </>
             )}
           </div>

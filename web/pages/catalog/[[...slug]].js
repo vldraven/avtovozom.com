@@ -10,6 +10,7 @@ import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import CarDetailView from "../../components/CarDetailView";
 import HeaderMessagesLink from "../../components/HeaderMessagesLink";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
+import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLink";
 import RequestConfirmModal from "../../components/RequestConfirmModal";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
@@ -540,9 +541,12 @@ export default function CatalogTreePage() {
           </div>
           <div className="auth-bar">
             {!token ? (
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
-                Войти
-              </button>
+              <>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
+                  Войти
+                </button>
+                <TelegramChannelHeaderLink />
+              </>
             ) : (
               <>
                 <HeaderMessagesLink token={token} />
@@ -555,6 +559,7 @@ export default function CatalogTreePage() {
                 <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
                   Выйти
                 </button>
+                <TelegramChannelHeaderLink />
               </>
             )}
           </div>
