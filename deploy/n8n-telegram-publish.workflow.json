@@ -227,27 +227,14 @@
     },
     {
       "parameters": {
-        "jsCode": "function urlsFromRow(row) {\n  let raw = row.photoUrls;\n  if (Array.isArray(raw)) return raw.map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  if (raw && typeof raw === 'object') return Object.values(raw).map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  const body = $('Webhook Publish').first().json.body;\n  const arr = body && Array.isArray(body.photo_urls) ? body.photo_urls : [];\n  return arr.filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10);\n}\nconst row = $('Данные для поста').first().json;\nconst urls = urlsFromRow(row);\nif (urls.length < 2) {\n  return [{ json: { ok: false, error: 'internal: нужно минимум 2 URL для альбома' } }];\n}\nconst capRaw = String(row.textFull || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\nconst albumMediaItems = urls.slice(0, 10).map((u, i) => {\n  const media = String(u || '').trim();\n  const o = { type: 'photo', media };\n  if (i === 0 && cap) {\n    o.additionalFields = { caption: cap };\n  }\n  return o;\n});\nconst chatId = String(row.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim();\n// Не называть поле «media» — конфликт с параметром ноды Telegram; нужен объект { media: [...] }.\nreturn [{ json: { chatId, albumMediaParam: { media: albumMediaItems } } }];\n"
+        "jsCode": "function urlsFromRow(row) {\n  let raw = row.photoUrls;\n  if (Array.isArray(raw)) return raw.map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  if (raw && typeof raw === 'object') return Object.values(raw).map((u) => String(u || '').trim()).filter((u) => u.startsWith('http'));\n  const body = $('Webhook Publish').first().json.body;\n  const arr = body && Array.isArray(body.photo_urls) ? body.photo_urls : [];\n  return arr.filter((u) => typeof u === 'string').map((u) => u.trim()).filter((u) => u.startsWith('http')).slice(0, 10);\n}\nconst row = $('Данные для поста').first().json;\nconst urls = urlsFromRow(row);\nif (urls.length < 2) {\n  throw new Error('internal: нужно минимум 2 URL для альбома');\n}\nconst token = String($env.TELEGRAM_BOT_TOKEN || '').trim();\nif (!token) {\n  throw new Error('Задайте TELEGRAM_BOT_TOKEN в env n8n (тот же токен, что в credential Telegram).');\n}\nconst chatId = String(row.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim();\nif (!chatId) {\n  throw new Error('Не задан TELEGRAM_CHANNEL_ID');\n}\nconst capRaw = String(row.textFull || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\nconst media = urls.slice(0, 10).map((u, i) => {\n  const item = { type: 'photo', media: String(u || '').trim() };\n  if (i === 0 && cap) item.caption = cap;\n  return item;\n});\nconst response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: `https://api.telegram.org/bot${token}/sendMediaGroup`,\n  body: { chat_id: chatId, media },\n  json: true,\n});\nif (!response || response.ok === false) {\n  const desc = response && response.description ? response.description : 'sendMediaGroup failed';\n  throw new Error(desc);\n}\nreturn [{ json: { ok: true, result: response.result } }];\n"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbbprep",
-      "name": "Сборка альбома",
+      "name": "Отправка альбома",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1740, 760],
-      "notes": "Короткий шаг только из-за динамического media[]. Остальной путь — встроенные ноды Telegram."
-    },
-    {
-      "parameters": {
-        "resource": "message",
-        "operation": "sendMediaGroup",
-        "chatId": "={{ String($json.chatId || '').trim() || String($env.TELEGRAM_CHANNEL_ID || '').trim() }}",
-        "media": "={{ $json.albumMediaParam }}"
-      },
-      "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb9alb",
-      "name": "Telegram: альбом",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [1960, 760]
+      "notes": "sendMediaGroup через HTTP API: в n8n 2.1.4 нода Telegram не принимает динамический media[]. Нужен TELEGRAM_BOT_TOKEN в env."
     },
     {
       "parameters": {
@@ -298,17 +285,14 @@
     },
     "Два и более фото?": {
       "main": [
-        [{ "node": "Сборка альбома", "type": "main", "index": 0 }],
+        [{ "node": "Отправка альбома", "type": "main", "index": 0 }],
         [{ "node": "Telegram: одно фото", "type": "main", "index": 0 }]
       ]
     },
     "Telegram: одно фото": {
       "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
     },
-    "Сборка альбома": {
-      "main": [[{ "node": "Telegram: альбом", "type": "main", "index": 0 }]]
-    },
-    "Telegram: альбом": {
+    "Отправка альбома": {
       "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
     }
   },
