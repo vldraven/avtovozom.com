@@ -43,8 +43,25 @@
 | `AVTOVOZOM_AI_WEBHOOK_SECRET` | Должна совпадать с **`N8N_TELEGRAM_AI_WEBHOOK_SECRET`** в бэкенде. |
 | `AVTOVOZOM_PUBLISH_WEBHOOK_SECRET` | Должна совпадать с **`N8N_TELEGRAM_PUBLISH_WEBHOOK_SECRET`**. |
 | `OPENAI_API_KEY` | API-ключ OpenAI (или вашего совместимого провайдера), если используете узел HTTP Request к `api.openai.com`. |
-| `TELEGRAM_BOT_TOKEN` | Не нужен для альбома, если credential Telegram привязан к узлу **Отправка альбома**. В `.env` по-прежнему может понадобиться **`TELEGRAM_CHANNEL_ID`** для узла **Данные для поста** (там `$env` в Set/IF обычно работает). |
+| `TELEGRAM_BOT_TOKEN` | **Обязательно для альбома (2+ фото):** тот же токен, что в credential Telegram. Узел **Данные для поста** (Set) читает `$env` и передаёт `botToken` дальше — Code в n8n 2.1.4 **не видит** `$env` и `getCredentials`. |
 | `TELEGRAM_CHANNEL_ID` | `@username_канала` или числовой id `-100…` — подставляется в **Chat ID** нод через `$env`; можно зафиксировать id канала прямо в нодах, тогда переменную не задают. |
+
+**Важно для Docker:** одной строки в `.env` недостаточно — переменные должны попасть **внутрь контейнера** n8n:
+
+```yaml
+# docker-compose.yml (фрагмент сервиса n8n)
+services:
+  n8n:
+    env_file: .env
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHANNEL_ID: ${TELEGRAM_CHANNEL_ID}
+      AVTOVOZOM_AI_WEBHOOK_SECRET: ${AVTOVOZOM_AI_WEBHOOK_SECRET}
+      AVTOVOZOM_PUBLISH_WEBHOOK_SECRET: ${AVTOVOZOM_PUBLISH_WEBHOOK_SECRET}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+```
+
+После правки: `docker compose down && docker compose up -d`. Проверка: execution → **Данные для поста** → Output → `botToken` не пустой.
 
 **Telegram канал:**
 
@@ -100,11 +117,11 @@
 - `photo_urls`: массив **0–10** абсолютных HTTPS URL
 - `media_count`: число (дубликат для удобства)
 
-В импортируемом **[n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)** — ноды Telegram для текста и одного фото, узел **Code «Отправка альбома»** для 2–10 фото (прямой HTTP `sendMediaGroup`). После импорта привяжите **один и тот же credential Telegram API** к **трём** узлам: **Telegram: текст**, **Telegram: одно фото**, **Отправка альбома** (Code в 2.1.4 не видит `$env`, токен берётся из credential).
+В импортируемом **[n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)** — ноды Telegram для текста и одного фото; для **2–10 фото**: **Сборка альбома** (Code) → **HTTP: sendMediaGroup**. Credential Telegram — только у двух Telegram-нод; для альбома нужен **`TELEGRAM_BOT_TOKEN`** в env (см. выше).
 
 - **0 фото:** только текст — `sendMessage`
 - **1 фото:** `sendPhoto` с подписью (обрезка под лимит Telegram ~1024)
-- **2–10:** HTTP `sendMediaGroup` в узле **Отправка альбома**; подпись к первому фото; длинный текст укорачивается в **Данные для поста**
+- **2–10:** HTTP `sendMediaGroup` (узлы **Сборка альбома** + **HTTP: sendMediaGroup**)
 
 Успешный ответ бэкенду (браузер/админка): JSON с **`"ok": true`** (можно добавить своё поле `telegram_message_id`).
 
@@ -120,7 +137,7 @@
 
 ## 6. После деплоя
 
-1. Импорт обоих JSON → для **публикации** привяжите **Telegram API credential** к узлам **Telegram: текст**, **Telegram: одно фото** и **Отправка альбома**; для ИИ-черновика — `OPENAI_API_KEY`.
+1. Импорт обоих JSON → для **публикации** привяжите **Telegram API credential** к **Telegram: текст** и **Telegram: одно фото**; задайте **`TELEGRAM_BOT_TOKEN`** и **`TELEGRAM_CHANNEL_ID`** в env; для ИИ — `OPENAI_API_KEY`.
 2. Включить **Production** режим webhook, активировать workflows.
 3. Скопировать **Production webhook URL** каждого в `.env` бэкенда.
 4. Секреты: одинаковые пары **`N8N_TELEGRAM_AI_WEBHOOK_SECRET` ↔ `AVTOVOZOM_AI_WEBHOOK_SECRET`** и **`…PUBLISH…` ↔ `…PUBLISH…`** в n8n.
