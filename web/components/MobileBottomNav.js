@@ -97,6 +97,38 @@ export default function MobileBottomNav() {
     };
   }, [token]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const root = document.documentElement;
+    const vv = window.visualViewport;
+
+    const updateViewportOffset = () => {
+      const visual = window.visualViewport;
+      if (!visual) {
+        root.style.setProperty("--mobile-viewport-offset", "0px");
+        return;
+      }
+      const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const offset = Math.max(0, layoutHeight - visual.height - visual.offsetTop);
+      root.style.setProperty("--mobile-viewport-offset", `${Math.round(offset)}px`);
+    };
+
+    updateViewportOffset();
+    window.addEventListener("resize", updateViewportOffset);
+    window.addEventListener("orientationchange", updateViewportOffset);
+    vv?.addEventListener("resize", updateViewportOffset);
+    vv?.addEventListener("scroll", updateViewportOffset);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportOffset);
+      window.removeEventListener("orientationchange", updateViewportOffset);
+      vv?.removeEventListener("resize", updateViewportOffset);
+      vv?.removeEventListener("scroll", updateViewportOffset);
+      root.style.removeProperty("--mobile-viewport-offset");
+    };
+  }, []);
+
   if (router.pathname === "/auth") return null;
 
   const rawChat = router.query.chat;

@@ -1529,7 +1529,7 @@ button.detail-back {
   box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.12);
   padding: 0.6rem 0;
   padding-bottom: max(0.6rem, env(safe-area-inset-bottom, 0px));
-  bottom: calc(3.55rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(3.55rem + env(safe-area-inset-bottom, 0px) + var(--mobile-viewport-offset, 0px));
 }
 
 @media (min-width: 768px) {
@@ -4184,7 +4184,7 @@ code {
   }
 
   .layout:not(.layout--no-mobile-dock) {
-    padding-bottom: calc(3.55rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(3.55rem + env(safe-area-inset-bottom, 0px) + var(--mobile-viewport-offset, 0px));
   }
 
   .site-main {
@@ -4196,7 +4196,7 @@ code {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: var(--mobile-viewport-offset, 0px);
     z-index: 1200;
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
@@ -4216,7 +4216,7 @@ code {
   .pwa-install__sheet {
     left: max(0.75rem, env(safe-area-inset-left, 0px));
     right: max(0.75rem, env(safe-area-inset-right, 0px));
-    bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px));
+    bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px) + var(--mobile-viewport-offset, 0px));
     padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
