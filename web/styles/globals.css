@@ -4201,7 +4201,12 @@ code {
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -6px 28px rgba(15, 23, 42, 0.1);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+    transform: translateZ(0);
+    will-change: transform;
+    -webkit-transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
   }
 
   .pwa-install {
@@ -4227,10 +4232,10 @@ code {
   }
 
   .panel--pin-setup .pin-panel {
-    min-height: calc(100dvh - 7.4rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-    justify-content: space-between;
+    min-height: calc(100dvh - 6.1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    justify-content: flex-start;
     margin: 0 auto;
-    gap: 0.55rem;
+    gap: 0.35rem;
   }
 
   .page-narrow--pin-auth {
@@ -4242,18 +4247,18 @@ code {
   }
 
   .pin-panel__hero {
-    gap: 0.3rem;
+    gap: 0.2rem;
   }
 
   .pin-panel h2,
   .app-lock__card h1 {
-    font-size: 1.35rem;
+    font-size: 1.22rem;
   }
 
   .pin-panel p,
   .app-lock__card p {
-    font-size: 0.9rem;
-    line-height: 1.35;
+    font-size: 0.84rem;
+    line-height: 1.22;
   }
 
   .pin-dots {
@@ -4286,16 +4291,35 @@ code {
   }
 
   .pin-keypad {
-    width: min(100%, 16.8rem);
-    gap: 0.45rem 0.75rem;
+    width: min(100%, 14.8rem);
+    gap: 0.3rem 0.55rem;
   }
 
   .pin-keypad__key {
-    font-size: 1.25rem;
+    font-size: 1.1rem;
   }
 
   .pin-pad {
-    gap: 0.55rem;
+    gap: 0.35rem;
+  }
+
+  .panel--pin-setup .pin-pad__submit,
+  .panel--pin-setup .btn,
+  .panel--pin-setup .btn-sm {
+    min-height: 38px;
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+  }
+
+  .panel--pin-setup .pin-panel__check {
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    line-height: 1.2;
+  }
+
+  .panel--pin-setup .alert {
+    margin-bottom: 0;
+    padding: 0.6rem 0.75rem;
   }
 
   .mobile-bottom-nav__inner {
