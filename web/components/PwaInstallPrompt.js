@@ -56,38 +56,40 @@ export default function PwaInstallPrompt() {
 
   if (!visible) return null;
 
-  async function install() {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice.catch(() => null);
-    setDeferredPrompt(null);
-    setVisible(false);
-  }
-
   function dismiss() {
     localStorage.setItem(DISMISSED_KEY, String(Date.now() + DISMISS_MS));
     setVisible(false);
   }
 
+  async function confirm() {
+    if (!deferredPrompt) {
+      dismiss();
+      return;
+    }
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice.catch(() => null);
+    setDeferredPrompt(null);
+    dismiss();
+  }
+
   return (
-    <aside className="pwa-install" role="dialog" aria-live="polite" aria-label="Установка приложения">
-      <div>
-        <strong>Установите avtovozom</strong>
-        <p>
-          {deferredPrompt
-            ? "Добавьте сайт на рабочий стол и открывайте его как мобильное приложение."
-            : "На iPhone нажмите «Поделиться», затем «На экран Домой»."}
-        </p>
-      </div>
-      <div className="pwa-install__actions">
-        {deferredPrompt ? (
-          <button type="button" className="btn btn-primary btn-sm" onClick={install}>
-            Установить
+    <aside className="pwa-install" role="dialog" aria-modal="true" aria-live="polite" aria-label="Установка приложения">
+      <button type="button" className="pwa-install__backdrop" aria-label="Закрыть подсказку" onClick={dismiss} />
+      <div className="pwa-install__sheet">
+        <div className="pwa-install__grabber" aria-hidden />
+        <div className="pwa-install__content">
+          <strong>Установите avtovozom</strong>
+          <p>
+            {deferredPrompt
+              ? "Добавьте сайт на рабочий стол и открывайте его как мобильное приложение."
+              : "На iPhone нажмите «Поделиться», затем «На экран Домой»."}
+          </p>
+        </div>
+        <div className="pwa-install__actions">
+          <button type="button" className="btn btn-primary btn-sm" onClick={confirm}>
+            Хорошо
           </button>
-        ) : null}
-        <button type="button" className="btn btn-ghost btn-sm" onClick={dismiss}>
-          Не сейчас
-        </button>
+        </div>
       </div>
     </aside>
   );
