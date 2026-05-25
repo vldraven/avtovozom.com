@@ -241,7 +241,7 @@ export default function PublishTelegramPage() {
                 <p style={{ margin: "0.25rem 0" }}>
                   Цена: <strong>{Number(data.price_cny).toLocaleString("ru-RU")} ¥</strong>
                   {data.rub_china != null ? (
-                    <span className="muted"> · в Китае ~{Math.round(data.rub_china).toLocaleString("ru-RU")} ₽ (ЦБ)</span>
+                    <span className="muted"> · в Китае ~{Math.round(data.rub_china).toLocaleString("ru-RU")} ₽</span>
                   ) : null}
                   {data.estimated_total_rub != null ? (
                     <span>

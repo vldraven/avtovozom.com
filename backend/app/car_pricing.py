@@ -1,4 +1,4 @@
-"""Цена в Китае в ₽ по курсу ЦБ и подсказки для расчёта таможни без платных API."""
+"""Цена в Китае в ₽ по расчётному курсу и подсказки для расчёта таможни."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def build_pricing_guide(car: Car, snap: CbrSnapshot) -> CarPricingGuideOut:
     color_lbl = label_for_slug(getattr(car, "body_color_slug", None))
     params_lines = [
         f"Стоимость в объявлении: {float(car.price_cny):,.0f} CNY".replace(",", " "),
-        f"Ориентир в рублях по курсу ЦБ на {snap.rate_date}: ~{rub:,.0f} RUB".replace(",", " "),
+        f"Ориентир в рублях по расчётному курсу на {snap.rate_date}: ~{rub:,.0f} RUB".replace(",", " "),
         f"Год выпуска (модельный): {car.year}",
         f"Дата регистрации в объявлении: {reg}",
         f"Дата производства в объявлении: {prod}",

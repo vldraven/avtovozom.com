@@ -1,4 +1,4 @@
-"""Курсы валют к рублю по данным ЦБ РФ (ежедневный XML)."""
+"""Курсы валют к рублю на базе данных ЦБ РФ с поправкой под курс продажи."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from threading import Lock
 import httpx
 
 CBR_DAILY_URL = "https://www.cbr.ru/scripts/XML_daily.asp"
+BANK_SELL_RATE_MULTIPLIER = 1.05
 
 _lock = Lock()
 _cache_day: str | None = None
@@ -20,7 +21,7 @@ _cache_meta_date: str | None = None
 @dataclass(frozen=True)
 class CbrCnyRate:
     rub_per_one_cny: float
-    """Сколько рублей за 1 китайский юань."""
+    """Сколько рублей за 1 китайский юань с поправкой на курс продажи."""
 
     rate_date: str
     """Дата курса в XML ЦБ (часто dd.mm.yyyy)."""
@@ -28,7 +29,7 @@ class CbrCnyRate:
 
 @dataclass(frozen=True)
 class CbrDailyRates:
-    """Сколько рублей за 1 единицу иностранной валюты (CharCode → значение)."""
+    """Сколько рублей за 1 единицу иностранной валюты (с поправкой на курс продажи)."""
 
     rub_per_unit: dict[str, float]
     rate_date: str
@@ -36,7 +37,7 @@ class CbrDailyRates:
 
 def get_cbr_daily_rates() -> tuple[CbrDailyRates | None, str | None]:
     """
-    Загружает котировки ЦБ (кэш на календарный день процесса).
+    Загружает котировки ЦБ и применяет поправку на курс продажи (кэш на календарный день процесса).
     rub_per_unit['USD'] — рублей за 1 доллар и т.д.
     """
     global _cache_day, _cache_rates, _cache_meta_date
@@ -64,14 +65,14 @@ def get_cbr_daily_rates() -> tuple[CbrDailyRates | None, str | None]:
             val = float(raw_val.replace(",", "."))
             if nominal <= 0:
                 continue
-            m[code] = val / nominal
+            m[code] = (val / nominal) * BANK_SELL_RATE_MULTIPLIER
         with _lock:
             _cache_day = today
             _cache_rates = m
             _cache_meta_date = meta or today
         return CbrDailyRates(rub_per_unit=dict(m), rate_date=meta or today), None
     except Exception as e:
-        return None, f"Не удалось получить курс ЦБ: {e}"
+        return None, f"Не удалось получить расчётный курс: {e}"
 
 
 def get_cny_rub_rate() -> tuple[CbrCnyRate | None, str | None]:
@@ -83,5 +84,5 @@ def get_cny_rub_rate() -> tuple[CbrCnyRate | None, str | None]:
         return None, err
     cny = daily.rub_per_unit.get("CNY")
     if cny is None:
-        return None, "В котировках ЦБ не найдена валюта CNY"
+        return None, "В котировках не найдена валюта CNY"
     return CbrCnyRate(rub_per_one_cny=cny, rate_date=daily.rate_date), None

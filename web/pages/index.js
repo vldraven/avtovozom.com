@@ -1613,10 +1613,10 @@ export default function Home() {
         <p className="muted catalog-cbr-line">
           {catalogCbr ? (
             <>
-              Курс ЦБ на {catalogCbr.rate_date}: <b>1 ¥ = {catalogCbr.rub_per_cny.toFixed(2)} ₽</b>
+              Расчётный курс на {catalogCbr.rate_date}: <b>1 ¥ = {catalogCbr.rub_per_cny.toFixed(2)} ₽</b>
             </>
           ) : (
-            <>Курс ЦБ недоступен ({catalogCbrError || "ошибка"}).</>
+            <>Расчётный курс недоступен ({catalogCbrError || "ошибка"}).</>
           )}
         </p>
       )}

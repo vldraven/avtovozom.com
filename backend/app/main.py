@@ -444,7 +444,7 @@ def _build_car_price_breakdown(
             key="china_price",
             label="Стоимость в Китае по курсу",
             amount_rub=round(rub_china, 2),
-            description=f"{float(car.price_cny):,.0f} ¥ по курсу ЦБ".replace(",", " "),
+            description=f"{float(car.price_cny):,.0f} ¥ по расчётному курсу".replace(",", " "),
         ),
         CarPriceBreakdownItemOut(
             key="clearance_fee",

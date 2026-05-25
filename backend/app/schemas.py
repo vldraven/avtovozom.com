@@ -16,7 +16,7 @@ class CarPhotoOut(BaseModel):
 
 
 class CbrSnapshot(BaseModel):
-    """Курс юаня по данным ЦБ РФ на дату rate_date."""
+    """Расчётный курс юаня на дату rate_date."""
 
     rub_per_cny: float
     rate_date: str
@@ -30,7 +30,7 @@ class FreeCalculatorLink(BaseModel):
 
 class CarPricingGuideOut(BaseModel):
     """
-    Цена в Китае в ₽ (ЦБ) + сводка параметров и ссылки на бесплатные онлайн-калькуляторы.
+    Цена в Китае в ₽ по расчётному курсу + сводка параметров и ссылки на бесплатные онлайн-калькуляторы.
     Платные API не используются.
     """
 
@@ -95,7 +95,7 @@ class CarOut(BaseModel):
     model: str
     photos: list[CarPhotoOut]
     rub_china: float | None = None
-    """Цена в Китае в ₽ по курсу ЦБ (за 1 CNY см. cbr в списке или pricing_guide)."""
+    """Цена в Китае в ₽ по расчётному курсу (за 1 CNY см. cbr в списке или pricing_guide)."""
     pricing_guide: CarPricingGuideOut | None = None
     """Курс, сводка для калькуляторов и ссылки — только в GET /cars/{id}."""
     price_breakdown: CarPriceBreakdownOut | None = None

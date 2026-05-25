@@ -16,7 +16,7 @@ from .schemas import CustomsCalcEstimateIn, CustomsCalcEstimateOut, CustomsCalcE
 def _patch_calculator_currency_to_cbr(calc: CustomsCalculator) -> None:
     """
     tks-api использует currency_converter_free; на части окружений 1 EUR ошибочно даёт ~1 RUB.
-    Подменяем конвертацию на курсы ЦБ РФ из того же источника, что и остальной сайт.
+    Подменяем конвертацию на расчётные курсы из того же источника, что и остальной сайт.
     """
     daily, err = get_cbr_daily_rates()
     if err or not daily:
@@ -379,7 +379,7 @@ def run_estimate(
 
     daily, derr = get_cbr_daily_rates()
     if derr or not daily:
-        raise ValueError(f"Не удалось получить курсы ЦБ: {derr}")
+        raise ValueError(f"Не удалось получить расчётные курсы: {derr}")
 
     with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", suffix=".yaml") as f:
         f.write(config_yaml)

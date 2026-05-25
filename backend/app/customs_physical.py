@@ -468,14 +468,14 @@ def price_rub_from_daily(daily: CbrDailyRates, price: float, currency: str) -> f
         return float(price)
     rpu = daily.rub_per_unit.get(c)
     if rpu is None:
-        raise ValueError(f"В котировках ЦБ нет валюты {c} для пересчёта таможенной стоимости.")
+        raise ValueError(f"В котировках нет валюты {c} для пересчёта таможенной стоимости.")
     return float(price) * float(rpu)
 
 
 def eur_to_rub(daily: CbrDailyRates) -> float:
     e = daily.rub_per_unit.get("EUR")
     if e is None:
-        raise ValueError("В котировках ЦБ нет курса EUR.")
+        raise ValueError("В котировках нет курса EUR.")
     return float(e)
 
 

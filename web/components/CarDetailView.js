@@ -720,7 +720,7 @@ export default function CarDetailView({
                 Курс и пересчёт в ₽
               </h2>
               <p className="muted" style={{ margin: 0, lineHeight: 1.55 }}>
-                Пересчёт в рубли по курсу ЦБ для этого объявления сейчас недоступен. В карточке указана
+                Пересчёт в рубли по расчётному курсу для этого объявления сейчас недоступен. В карточке указана
                 ориентировочная цена в юанях.
               </p>
             </section>
@@ -736,7 +736,7 @@ export default function CarDetailView({
                   Цена в Китае: {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
                   {car.pricing_guide ? (
                     <>
-                      . Курс ЦБ на {car.pricing_guide.cbr_date}: 1 ¥ ={" "}
+                      . Расчётный курс на {car.pricing_guide.cbr_date}: 1 ¥ ={" "}
                       <strong>{car.pricing_guide.cbr_rub_per_cny.toFixed(2)} ₽</strong>
                     </>
                   ) : null}
@@ -797,7 +797,7 @@ export default function CarDetailView({
                 Цена в Китае: {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
                 {car.pricing_guide ? (
                   <>
-                    . Курс ЦБ на {car.pricing_guide.cbr_date}: 1 ¥ ={" "}
+                    . Расчётный курс на {car.pricing_guide.cbr_date}: 1 ¥ ={" "}
                     <strong>{car.pricing_guide.cbr_rub_per_cny.toFixed(2)} ₽</strong>
                   </>
                 ) : null}
