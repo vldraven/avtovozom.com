@@ -85,8 +85,8 @@ export default function PinSetupPanel({ onComplete }) {
         <h2>{step === "confirm" ? "Повторите ПИН" : "Создайте ПИН-код"}</h2>
         <p>
           {step === "confirm"
-            ? "Введите код ещё раз, чтобы мы точно сохранили его без ошибки."
-            : "Он будет использоваться для быстрого входа в приложение на этом устройстве."}
+            ? "Введите тот же код ещё раз."
+            : "Для быстрого входа в приложение на этом устройстве."}
         </p>
       </div>
       {error ? <div className="alert alert--danger">{error}</div> : null}
@@ -142,19 +142,21 @@ export default function PinSetupPanel({ onComplete }) {
         disabled={busy}
       />
       {step === "confirm" ? (
-        <button type="button" className="btn btn-ghost btn-sm" onClick={resetPin} disabled={busy}>
-          Изменить ПИН
-        </button>
-      ) : null}
-      {step === "confirm" && canUseWebAuthn() ? (
-        <label className="pin-panel__check">
-          <input
-            type="checkbox"
-            checked={enableBio}
-            onChange={(e) => setEnableBio(e.target.checked)}
-          />
-          Включить вход по Face ID, Touch ID или биометрии устройства
-        </label>
+        <div className="pin-panel__footer">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={resetPin} disabled={busy}>
+            Изменить ПИН
+          </button>
+          {canUseWebAuthn() ? (
+            <label className="pin-panel__check">
+              <input
+                type="checkbox"
+                checked={enableBio}
+                onChange={(e) => setEnableBio(e.target.checked)}
+              />
+              Вход по Face ID / Touch ID / биометрии
+            </label>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
