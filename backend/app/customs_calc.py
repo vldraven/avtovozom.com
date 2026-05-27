@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 from tks_api_official.calc import CustomsCalculator
 
-from .cbr_rates import get_cbr_daily_rates
+from .cbr_rates import get_cbr_official_daily_rates
 from .customs_physical import clearance_fee_rub, compute_etc_individual
 from .models import CustomsCalcSettings
 from .schemas import CustomsCalcEstimateIn, CustomsCalcEstimateOut, CustomsCalcEtcContext, CustomsCalcSummary
@@ -16,9 +16,9 @@ from .schemas import CustomsCalcEstimateIn, CustomsCalcEstimateOut, CustomsCalcE
 def _patch_calculator_currency_to_cbr(calc: CustomsCalculator) -> None:
     """
     tks-api использует currency_converter_free; на части окружений 1 EUR ошибочно даёт ~1 RUB.
-    Подменяем конвертацию на расчётные курсы из того же источника, что и остальной сайт.
+    Подменяем конвертацию на официальные курсы ЦБ (таможня считает по ним, без поправки банка).
     """
-    daily, err = get_cbr_daily_rates()
+    daily, err = get_cbr_official_daily_rates()
     if err or not daily:
         return
     rates = daily.rub_per_unit
@@ -377,9 +377,9 @@ def run_estimate(
         apply_util_json_to_pp(pp_cfg, util_individual_json, allowed=ALLOWED_PP_KEYS_INDIVIDUAL)
     tariffs["physical_person"] = pp_cfg
 
-    daily, derr = get_cbr_daily_rates()
+    daily, derr = get_cbr_official_daily_rates()
     if derr or not daily:
-        raise ValueError(f"Не удалось получить расчётные курсы: {derr}")
+        raise ValueError(f"Не удалось получить курсы ЦБ: {derr}")
 
     with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", suffix=".yaml") as f:
         f.write(config_yaml)
