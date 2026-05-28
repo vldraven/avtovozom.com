@@ -3907,7 +3907,7 @@ def create_dealer_offer(
     request_id: int,
     payload: DealerOfferCreateIn,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("dealer")),
+    current_user: User = Depends(require_roles("dealer", "admin")),
 ):
     request = db.execute(
         select(CalculationRequest).where(CalculationRequest.id == request_id)

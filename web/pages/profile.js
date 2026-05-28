@@ -99,7 +99,7 @@ export default function ProfilePage() {
   }
 
   async function loadRoleData(t, role) {
-    if (role !== "dealer") {
+    if (!(role === "dealer" || role === "admin")) {
       await loadMyRequestsOnly(t);
     }
     if (isStaffRole(role)) {
@@ -642,7 +642,7 @@ export default function ProfilePage() {
                 </section>
               )}
 
-              {me.role === "dealer" && (
+              {(me.role === "dealer" || me.role === "admin") && (
                 <DealerOpenRequests
                   token={token}
                   onOpenChat={(chatId) =>
