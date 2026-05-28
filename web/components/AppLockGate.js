@@ -5,6 +5,7 @@ import {
   APP_LOCK_TIMEOUT_MS,
   canUseWebAuthn,
   clearToken,
+  getStoredToken,
   hasPinLock,
   isAppUnlocked,
   loginWithPasskey,
@@ -34,10 +35,20 @@ export default function AppLockGate({ children }) {
     (async () => {
       const hasLock = await hasPinLock().catch(() => false);
       if (cancelled) return;
-      if (hasLock && (shouldLockAfterHidden() || !isAppUnlocked())) {
+      const needsTimeoutLock = shouldLockAfterHidden();
+      const hasActiveToken = Boolean(getStoredToken());
+      const unlocked = isAppUnlocked();
+
+      // If the access token is still present and there was no inactivity timeout,
+      // keep session unlocked even when sessionStorage marker was dropped by browser.
+      if (hasLock && hasActiveToken && !needsTimeoutLock && !unlocked) {
+        markAppUnlocked();
+      }
+
+      if (hasLock && (needsTimeoutLock || (!hasActiveToken && !unlocked))) {
         lockApp();
       }
-      setLocked(Boolean(protectedPath && hasLock && !isAppUnlocked()));
+      setLocked(Boolean(protectedPath && hasLock && !isAppUnlocked() && !hasActiveToken));
       setReady(true);
     })();
     return () => {
