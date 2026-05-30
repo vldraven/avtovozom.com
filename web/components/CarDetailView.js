@@ -685,10 +685,6 @@ export default function CarDetailView({
                 <dd>{formatRuDate(car.registration_date) || "—"}</dd>
               </div>
               <div className="spec-item">
-                <dt>Производство</dt>
-                <dd>{formatRuDate(car.production_date) || "—"}</dd>
-              </div>
-              <div className="spec-item">
                 <dt>Топливо</dt>
                 <dd>{car.fuel_type || "—"}</dd>
               </div>
@@ -699,10 +695,6 @@ export default function CarDetailView({
               <div className="spec-item">
                 <dt>Цвет кузова</dt>
                 <dd>{car.body_color_label || "—"}</dd>
-              </div>
-              <div className="spec-item">
-                <dt>Город</dt>
-                <dd>{car.location_city || "—"}</dd>
               </div>
             </dl>
           </section>
