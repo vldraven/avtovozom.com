@@ -10,6 +10,7 @@ import HeaderMessagesLink from "./HeaderMessagesLink";
 import TelegramChannelHeaderLink from "./TelegramChannelHeaderLink";
 import HeaderProfileLink from "./HeaderProfileLink";
 import RequestConfirmModal from "./RequestConfirmModal";
+import TrimConfigModal from "./TrimConfigModal";
 import { clearToken, getStoredToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
@@ -25,6 +26,20 @@ const DEFAULT_REQUEST_COMMENT =
 function formatRubInt(n) {
   if (n == null || Number.isNaN(Number(n))) return "—";
   return Math.round(Number(n)).toLocaleString("ru-RU");
+}
+
+function trimParamItems(trim) {
+  const out = [];
+  for (const sec of trim?.param_sections || []) {
+    for (const item of sec.items || []) {
+      if (item?.name && item?.value) out.push(item);
+    }
+  }
+  return out;
+}
+
+function pickTrimParam(trim, name) {
+  return trimParamItems(trim).find((it) => it.name === name);
 }
 
 function formatRuDate(iso) {
@@ -67,6 +82,7 @@ export default function CarDetailView({
   const [photoLightboxIndex, setPhotoLightboxIndex] = useState(0);
   const [similarCars, setSimilarCars] = useState([]);
   const [similarError, setSimilarError] = useState("");
+  const [trimModalOpen, setTrimModalOpen] = useState(false);
 
   const isListingOwner =
     car != null &&
@@ -86,6 +102,21 @@ export default function CarDetailView({
   const safeIndex = nPhotos ? Math.min(activePhoto, nPhotos - 1) : 0;
   const hero = sortedPhotos[safeIndex];
   const customsGroupKeys = new Set(["clearance_fee", "duty", "utilization_fee"]);
+  const trimEngine = pickTrimParam(car?.trim, "Двигатель");
+  const extraTrimParams = useMemo(() => {
+    if (!car?.trim) return [];
+    const skip = new Set(["Двигатель"]);
+    if (car.horsepower != null && car.horsepower > 0) skip.add("Мощность");
+    if (car.engine_volume_cc > 0) skip.add("Объём двигателя");
+    skip.add("Колея");
+    const hasDims = trimParamItems(car.trim).some((it) => it.name === "Габариты");
+    if (hasDims) {
+      skip.add("Длина, мм");
+      skip.add("Ширина, мм");
+      skip.add("Высота, мм");
+    }
+    return trimParamItems(car.trim).filter((it) => !skip.has(it.name));
+  }, [car]);
 
   async function loadCarDetails() {
     setError("");
@@ -670,7 +701,12 @@ export default function CarDetailView({
               </div>
               <div className="spec-item">
                 <dt>Двигатель</dt>
-                <dd>{car.engine_volume_cc ? `${car.engine_volume_cc.toLocaleString("ru-RU")} см³` : "—"}</dd>
+                <dd>
+                  {trimEngine?.value ||
+                    (car.engine_volume_cc
+                      ? `${car.engine_volume_cc.toLocaleString("ru-RU")} см³`
+                      : "—")}
+                </dd>
               </div>
               <div className="spec-item">
                 <dt>Мощность</dt>
@@ -696,7 +732,24 @@ export default function CarDetailView({
                 <dt>Цвет кузова</dt>
                 <dd>{car.body_color_label || "—"}</dd>
               </div>
+              {extraTrimParams.map((item) => (
+                <div className="spec-item" key={item.name}>
+                  <dt>{item.name}</dt>
+                  <dd>{item.value}</dd>
+                </div>
+              ))}
             </dl>
+            {car.trim?.sections?.length > 0 || car.trim?.param_sections?.length > 0 ? (
+              <div className="spec-trim-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary spec-trim-footer__btn"
+                  onClick={() => setTrimModalOpen(true)}
+                >
+                  Комплектация
+                </button>
+              </div>
+            ) : null}
           </section>
 
           <section className="panel">
@@ -864,6 +917,7 @@ export default function CarDetailView({
             comment={requestModalComment}
             onCommentChange={setRequestModalComment}
           />
+          <TrimConfigModal open={trimModalOpen} onClose={() => setTrimModalOpen(false)} car={car} />
         </div>
       </main>
       {me?.role !== "dealer" && car ? (

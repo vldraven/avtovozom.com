@@ -57,6 +57,45 @@ class CarPriceBreakdownOut(BaseModel):
     components: list[CarPriceBreakdownItemOut]
 
 
+class CarTrimItemOut(BaseModel):
+    name: str
+    value: str
+
+
+class CarTrimSectionOut(BaseModel):
+    group: str
+    items: list[CarTrimItemOut]
+
+
+class CarTrimOut(BaseModel):
+    id: int
+    name_ru: str
+    sections: list[CarTrimSectionOut]
+    param_sections: list[CarTrimSectionOut] = []
+    """Двигатель и габариты из Autohome (param), для блока «Характеристики»."""
+
+
+class CarTrimBriefOut(BaseModel):
+    id: int
+    name_ru: str
+    generation_id: int | None = None
+    generation_name: str | None = None
+
+
+class TrimSpecDocumentIn(BaseModel):
+    """Каноническое описание комплектации на русском."""
+
+    version: int = 1
+    sections: list[CarTrimSectionOut] = Field(default_factory=list)
+    param_sections: list[CarTrimSectionOut] = Field(default_factory=list)
+
+
+class AdminTrimSpecUpdateIn(BaseModel):
+    name_ru: str | None = Field(default=None, max_length=256)
+    spec: TrimSpecDocumentIn
+    source: str = Field(default="manual", max_length=32)
+
+
 class CarOut(BaseModel):
     id: int
     brand_id: int
@@ -102,6 +141,10 @@ class CarOut(BaseModel):
     """Ориентировочная детализация итоговой цены в РФ."""
     estimated_total_rub: float | None = None
     """Ориентировочный итог в ₽ (как в разборе по строкам) без детализации; для листингов, когда price_breakdown не считаем."""
+    trim_id: int | None = None
+    """Ссылка на справочник комплектаций; для формы редактирования."""
+    trim: CarTrimOut | None = None
+    """Комплектация из справочника Autohome; заполняется на карточке объявления."""
 
 
 class CarsListOut(BaseModel):

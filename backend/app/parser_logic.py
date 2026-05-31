@@ -22,6 +22,26 @@ from .models import Car, CarPhoto, CarModel, ModelWhitelist, ParseJob
 from .model_resolver import resolve_model_id_for_listing
 from .parser_timeout import call_with_timeout
 from .translator_ru import translate_to_ru
+from .trim_catalog import resolve_trim_for_listing
+
+
+def _apply_trim_from_parsed(
+    db: Session,
+    car: Car,
+    *,
+    model_id: int,
+    parsed: ParsedCar,
+) -> None:
+    if not parsed.autohome_spec_id:
+        return
+    trim_id = resolve_trim_for_listing(
+        db,
+        model_id=model_id,
+        year=parsed.year,
+        autohome_spec_id=parsed.autohome_spec_id,
+    )
+    if trim_id:
+        car.trim_id = trim_id
 
 
 def _insert_car_from_parsed(
@@ -88,6 +108,7 @@ def _insert_car_from_parsed(
         registration_date=parsed.registration_date,
         production_date=parsed.production_date,
     )
+    _apply_trim_from_parsed(db, car, model_id=resolved_model_id, parsed=parsed)
     db.add(car)
     db.flush()
     if progress_cb:
@@ -184,6 +205,7 @@ def _revive_inactive_car_from_parsed(
     car.registration_date = parsed.registration_date
     car.production_date = parsed.production_date
     car.is_active = True
+    _apply_trim_from_parsed(db, car, model_id=resolved_model_id, parsed=parsed)
 
     old_urls = list(
         db.execute(select(CarPhoto.storage_url).where(CarPhoto.car_id == car.id)).scalars().all()

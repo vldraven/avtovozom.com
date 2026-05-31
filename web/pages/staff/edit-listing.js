@@ -55,6 +55,10 @@ export default function StaffEditListingPage() {
   const [modelId, setModelId] = useState("");
   const [generations, setGenerations] = useState([]);
   const [generationId, setGenerationId] = useState("");
+  const [loadedTrimId, setLoadedTrimId] = useState(null);
+  const [trims, setTrims] = useState([]);
+  const [trimsLoadError, setTrimsLoadError] = useState("");
+  const [trimId, setTrimId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [year, setYear] = useState("");
@@ -143,6 +147,8 @@ export default function StaffEditListingPage() {
       setBrandId(String(c.brand_id));
       setModelId(String(c.model_id));
       setGenerationId(c.generation_id != null ? String(c.generation_id) : "");
+      setLoadedTrimId(c.trim_id != null ? c.trim_id : null);
+      setTrimId("");
       setTitle(c.title || "");
       setDescription(c.description || "");
       setYear(String(c.year ?? ""));
@@ -191,6 +197,34 @@ export default function StaffEditListingPage() {
       if (r.ok) setGenerations(await r.json());
     })();
   }, [token, modelId]);
+
+  useEffect(() => {
+    if (!token || !modelId || loadedTrimId != null) {
+      setTrims([]);
+      setTrimsLoadError("");
+      return;
+    }
+    (async () => {
+      setTrimsLoadError("");
+      const params = new URLSearchParams({ model_id: modelId });
+      if (generationId) params.set("generation_id", generationId);
+      const r = await fetch(`${API_URL}/staff/catalog/trims?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) {
+        const list = await r.json();
+        setTrims(list);
+        setTrimId((prev) => (list.some((t) => String(t.id) === prev) ? prev : ""));
+      } else {
+        setTrims([]);
+        setTrimsLoadError(
+          r.status === 404
+            ? "Список комплектаций недоступен — перезапустите backend (docker compose restart backend)."
+            : "Не удалось загрузить список комплектаций."
+        );
+      }
+    })();
+  }, [token, modelId, generationId, loadedTrimId]);
 
   async function addCatalogBrand() {
     const name = newBrandName.trim();
@@ -314,6 +348,9 @@ export default function StaffEditListingPage() {
     fd.append("registration_date", registrationDate);
     fd.append("production_date", productionDate);
     fd.append("body_color_slug", bodyColorSlug);
+    if (loadedTrimId == null && trimId) {
+      fd.append("trim_id", trimId);
+    }
     for (const f of files) fd.append("photos", f);
     if (photoIdsToRemove.size > 0) {
       fd.append("remove_photo_ids", [...photoIdsToRemove].join(","));
@@ -529,6 +566,35 @@ export default function StaffEditListingPage() {
               {!isAdminRole(me?.role) && generations.length === 0 && modelId ? (
                 <p className="muted" style={{ margin: 0 }}>
                   Поколение в справочнике для этой модели не задано — объявление будет без привязки к поколению.
+                </p>
+              ) : null}
+              {loadedTrimId == null && trimsLoadError ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  {trimsLoadError}
+                </p>
+              ) : null}
+              {loadedTrimId == null && !trimsLoadError && trims.length > 0 ? (
+                <SiteSelectDropdown
+                  className="site-dropdown--block"
+                  label="Комплектация"
+                  placeholder="— выберите из справочника —"
+                  searchable
+                  value={trimId}
+                  onChange={setTrimId}
+                  options={[
+                    { value: "", label: "— не выбрана —" },
+                    ...trims.map((t) => ({
+                      value: String(t.id),
+                      label: t.generation_name
+                        ? `${t.name_ru} (${t.generation_name})`
+                        : t.name_ru,
+                    })),
+                  ]}
+                />
+              ) : null}
+              {loadedTrimId == null && !trimsLoadError && modelId && trims.length === 0 ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  Комплектации для этой модели в справочнике пока нет.
                 </p>
               ) : null}
               {catalogNotice ? (

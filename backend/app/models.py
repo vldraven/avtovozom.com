@@ -118,6 +118,42 @@ class CarGeneration(Base):
     __table_args__ = (UniqueConstraint("model_id", "slug", name="uq_model_generation_slug"),)
 
 
+class CarTrim(Base):
+    """Справочник комплектаций; каноническое описание — spec_sections на русском."""
+
+    __tablename__ = "car_trims"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    model_id: Mapped[int] = mapped_column(ForeignKey("car_models.id"), nullable=False, index=True)
+    generation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("car_generations.id"), nullable=True, index=True
+    )
+    autohome_spec_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    name_zh: Mapped[str] = mapped_column(String(256), default="")
+    name_normalized: Mapped[str] = mapped_column(String(256), default="")
+    name_ru: Mapped[str] = mapped_column(String(256), default="")
+    spec_fingerprint: Mapped[str] = mapped_column(String(64), default="")
+    spec_sections: Mapped[str] = mapped_column(Text, default='{"version":1,"sections":[],"param_sections":[]}')
+    """Каноническое описание комплектации на русском (JSON-документ)."""
+    source_spec_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """Необязательный сырой JSON импорта (Autohome и др.) для пересборки."""
+    spec_json: Mapped[str] = mapped_column(Text, default="[]")
+    """Deprecated: дублирует source_spec_json для обратной совместимости."""
+    spec_json_ru: Mapped[str] = mapped_column(Text, default="[]")
+    """Deprecated: дублирует spec_sections для обратной совместимости."""
+    source: Mapped[str] = mapped_column(String(32), default="autohome")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    model = relationship("CarModel")
+    generation = relationship("CarGeneration")
+    __table_args__ = (
+        UniqueConstraint("model_id", "generation_id", "spec_fingerprint", name="uq_car_trims_model_gen_fp"),
+    )
+
+
 class ModelWhitelist(Base):
     __tablename__ = "model_whitelist"
 
@@ -157,6 +193,9 @@ class Car(Base):
     generation_id: Mapped[int | None] = mapped_column(
         ForeignKey("car_generations.id"), nullable=True, index=True
     )
+    trim_id: Mapped[int | None] = mapped_column(
+        ForeignKey("car_trims.id"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     year: Mapped[int] = mapped_column(Integer)
@@ -183,6 +222,7 @@ class Car(Base):
     brand = relationship("CarBrand")
     model = relationship("CarModel")
     generation = relationship("CarGeneration")
+    trim = relationship("CarTrim")
     photos = relationship("CarPhoto", back_populates="car", cascade="all,delete-orphan")
 
 

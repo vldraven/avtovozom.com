@@ -1915,6 +1915,191 @@ button.detail-back {
   color: #334155;
 }
 
+.spec-trim-footer {
+  margin-top: 1.25rem;
+  padding-top: 0;
+  border-top: none;
+}
+
+.spec-trim-footer__btn {
+  width: 100%;
+  justify-content: center;
+  background: var(--color-bg, #f1f5f9);
+  border-color: #cbd5e1;
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  padding: 0.8rem 1rem;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+
+.spec-trim-footer__btn:hover:not(:disabled) {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.trim-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  justify-content: flex-end;
+  padding: 0;
+}
+
+.trim-modal {
+  background: var(--color-surface, #fff);
+  width: 100%;
+  max-width: 480px;
+  height: 100%;
+  max-height: 100vh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.12);
+}
+
+.trim-modal__header {
+  position: relative;
+  flex-shrink: 0;
+  padding: 1.25rem 3rem 1rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.trim-modal__close {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trim-modal__close:hover {
+  background: #e2e8f0;
+}
+
+.trim-modal__title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #0f172a;
+  padding-right: 0.5rem;
+}
+
+.trim-modal__summary {
+  margin: 0.45rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.trim-modal__trim-name {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.trim-modal__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.25rem 1.25rem 1.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.trim-modal__section {
+  margin-top: 1.25rem;
+}
+
+.trim-modal__section:first-child {
+  margin-top: 0.75rem;
+}
+
+.trim-modal__section-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.trim-modal__rows {
+  margin: 0;
+}
+
+.trim-modal__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.9rem;
+}
+
+.trim-modal__row:last-child {
+  border-bottom: none;
+}
+
+.trim-modal__row dt {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  color: #64748b;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.trim-modal__row dd {
+  margin: 0;
+  flex-shrink: 0;
+  max-width: 52%;
+  text-align: right;
+  font-weight: 500;
+  color: #0f172a;
+  line-height: 1.4;
+}
+
+.trim-config-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.trim-config-mark--yes {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.trim-config-mark--opt {
+  background: #f1f5f9;
+  color: #64748b;
+  width: auto;
+  min-width: 1.25rem;
+  height: auto;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .price-breakdown-card {
   color: #0f172a;
   padding: 0;
@@ -3757,6 +3942,40 @@ code {
   flex-shrink: 0;
 }
 
+.admin-parser-trim-backfill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.admin-parser-trim-backfill__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-parser-trim-backfill__lead {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  max-width: 42rem;
+}
+
+.admin-parser-trim-backfill__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .admin-parser-panel-profile__inline-msg {
   font-size: 0.875rem;
   margin: 0 0 0.75rem;
@@ -4655,6 +4874,19 @@ code {
     max-height: 88dvh;
     border-radius: var(--radius) var(--radius) 0 0;
     padding: 1.1rem 1rem 1.25rem;
+  }
+
+  .trim-modal-overlay {
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  .trim-modal {
+    max-width: none;
+    height: auto;
+    max-height: 92dvh;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.15);
   }
 
   .dealer-public-grid {

@@ -6,6 +6,8 @@ from typing import Any
 import httpx
 from playwright.sync_api import sync_playwright
 
+from .autohome_config import extract_autohome_spec_id
+
 from .body_colors import guess_body_color_slug_from_vehicle_text
 
 
@@ -152,6 +154,7 @@ class ParsedCar:
     registration_date: str | None = None
     production_date: str | None = None
     photos: list[str] | None = None
+    autohome_spec_id: int | None = None
 
 
 def _extract_first_int(text: str | None) -> int | None:
@@ -829,7 +832,17 @@ def _parse_detail_from_html(html: str, source_listing_id: str) -> ParsedCar | No
         registration_date=registration_date,
         production_date=production_date,
         body_color_slug=_body_color_slug_from_vehicle_text(title, body_text),
+        autohome_spec_id=extract_autohome_spec_id(html),
     )
+
+
+def fetch_autohome_spec_id_from_detail_url(detail_url: str) -> int | None:
+    """Только specId из HTML карточки (без полного разбора и Playwright)."""
+    try:
+        html = _http_get_text(detail_url, timeout=45.0)
+    except Exception:
+        return None
+    return extract_autohome_spec_id(html)
 
 
 def _listing_links_playwright(series_url: str, max_items: int) -> list[str]:
@@ -1062,6 +1075,11 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
         production_date = _parse_production_date(body_text)
         price_cny = _parse_price_cny(body_text)
         series_raw = _extract_series_raw(body_text, title)
+        autohome_spec_id: int | None = None
+        try:
+            autohome_spec_id = extract_autohome_spec_id(page.content() or "")
+        except Exception:
+            pass
 
         photos: list[str] = []
         try:
@@ -1102,6 +1120,7 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
         production_date=production_date,
         photos=photos,
         body_color_slug=_body_color_slug_from_vehicle_text(title, body_text),
+        autohome_spec_id=autohome_spec_id,
     )
 
 

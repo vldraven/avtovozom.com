@@ -43,6 +43,7 @@ from .models import (
     CarGeneration,
     CarModel,
     CarPhoto,
+    CarTrim,
     Chat,
     ChatMessage,
     DealerOffer,
@@ -56,6 +57,7 @@ from .models import (
 )
 from .che168_parser import (
     che168_detail_url_from_source_listing_id,
+    fetch_autohome_spec_id_from_detail_url,
     http_referer_for_request_url,
     marketplace_from_detail_url,
     normalize_import_detail_url,
@@ -65,6 +67,9 @@ from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru, russia
 from .model_resolver import resolve_model_id_for_listing
 from .parser_logic import run_parser_job
 from .translator_ru import translate_to_ru
+from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_source, resolve_trim_for_listing
+from .trim_spec_storage import TrimSpecDocument, load_trim_spec_from_row, save_trim_spec_to_row
+from .trim_display import filter_param_sections_for_card, normalize_spec_heading
 from .email_utils import send_email
 from .media_storage import (
     delete_brand_logo_files,
@@ -114,6 +119,9 @@ from .schemas import (
     CarModelCreateIn,
     CarPriceBreakdownItemOut,
     CarPriceBreakdownOut,
+    AdminTrimSpecUpdateIn,
+    CarTrimBriefOut,
+    CarTrimOut,
     CbrSnapshot,
     CarOut,
     CarsListOut,
@@ -499,6 +507,20 @@ def _build_car_price_breakdown(
     )
 
 
+def _trim_to_out(trim: CarTrim | None) -> CarTrimOut | None:
+    if trim is None:
+        return None
+    doc = load_trim_spec_from_row(trim)
+    sections = doc.sections
+    param_sections = filter_param_sections_for_card(doc.param_sections)
+    return CarTrimOut(
+        id=trim.id,
+        name_ru=normalize_spec_heading(trim.name_ru or ""),
+        sections=sections,
+        param_sections=param_sections,
+    )
+
+
 def _car_to_out(
     car: Car,
     *,
@@ -509,6 +531,7 @@ def _car_to_out(
     price_breakdown: CarPriceBreakdownOut | None = None,
     estimated_total_rub: float | None = None,
     photo_limit: int | None = None,
+    include_trim: bool = False,
 ) -> CarOut:
     rub = round(rub_china_for_car(car, cbr), 2) if cbr is not None else None
     guide = build_pricing_guide(car, cbr) if full_import and cbr is not None else None
@@ -555,6 +578,8 @@ def _car_to_out(
         pricing_guide=guide,
         price_breakdown=price_breakdown,
         estimated_total_rub=est,
+        trim_id=car.trim_id,
+        trim=_trim_to_out(getattr(car, "trim", None)) if include_trim else None,
     )
 
 
@@ -739,10 +764,67 @@ def startup() -> None:
         conn.execute(
             text("ALTER TABLE car_brands ADD COLUMN IF NOT EXISTS quick_filter_rank INTEGER")
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS car_trims (
+                    id SERIAL PRIMARY KEY,
+                    model_id INTEGER NOT NULL REFERENCES car_models(id) ON DELETE CASCADE,
+                    generation_id INTEGER REFERENCES car_generations(id) ON DELETE SET NULL,
+                    autohome_spec_id INTEGER NOT NULL,
+                    name_zh VARCHAR(256) NOT NULL DEFAULT '',
+                    name_normalized VARCHAR(256) NOT NULL DEFAULT '',
+                    name_ru VARCHAR(256) NOT NULL DEFAULT '',
+                    spec_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
+                    spec_json TEXT NOT NULL DEFAULT '[]',
+                    spec_json_ru TEXT NOT NULL DEFAULT '[]',
+                    source VARCHAR(32) NOT NULL DEFAULT 'autohome',
+                    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                    updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                    CONSTRAINT uq_car_trims_autohome_spec UNIQUE (autohome_spec_id),
+                    CONSTRAINT uq_car_trims_model_gen_fp UNIQUE (model_id, generation_id, spec_fingerprint)
+                )
+                """
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_car_trims_model_id ON car_trims (model_id)"))
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_car_trims_generation_id ON car_trims (generation_id)")
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_car_trims_name_normalized "
+                "ON car_trims (model_id, generation_id, name_normalized)"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE cars ADD COLUMN IF NOT EXISTS trim_id "
+                "INTEGER REFERENCES car_trims(id) ON DELETE SET NULL"
+            )
+        )
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cars_trim_id ON cars (trim_id)"))
+        conn.execute(text("ALTER TABLE car_trims ADD COLUMN IF NOT EXISTS spec_sections TEXT"))
+        conn.execute(text("ALTER TABLE car_trims ADD COLUMN IF NOT EXISTS source_spec_json TEXT"))
+        conn.execute(
+            text(
+                "UPDATE car_trims SET source_spec_json = spec_json "
+                "WHERE source_spec_json IS NULL AND spec_json IS NOT NULL AND spec_json <> '[]'"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE car_trims SET spec_sections = spec_json_ru "
+                "WHERE (spec_sections IS NULL OR spec_sections = '' OR spec_sections = '[]') "
+                "AND spec_json_ru IS NOT NULL AND spec_json_ru <> '[]'"
+            )
+        )
+        conn.execute(text("ALTER TABLE car_trims ALTER COLUMN autohome_spec_id DROP NOT NULL"))
     db = next(get_db())
     try:
         seed_initial_data(db)
         ensure_settings_row(db)
+        migrate_legacy_trim_specs(db)
     finally:
         db.close()
 
@@ -1737,6 +1819,7 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
+            joinedload(Car.trim),
             joinedload(Car.photos),
         )
         .where(Car.id == car_id, Car.is_active.is_(True))
@@ -1779,10 +1862,8 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
         slug_maps=slug_maps,
         price_breakdown=price_breakdown,
         estimated_total_rub=est,
+        include_trim=True,
     )
-
-
-@app.get("/public/dealers/{user_id}", response_model=DealerPublicProfileOut)
 def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
     user = (
         db.execute(select(User).where(User.id == user_id).options(joinedload(User.role)))
@@ -1904,6 +1985,40 @@ def _assert_generation_belongs_to_model(
         )
 
 
+def _optional_trim_id_form(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        return int(s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="trim_id must be an integer") from None
+
+
+def _trim_brief_name(trim: CarTrim) -> str:
+    return (trim.name_ru or trim.name_normalized or trim.name_zh or "Комплектация").strip()
+
+
+def _assert_trim_belongs_to_car(
+    db: Session,
+    trim_id: int,
+    *,
+    model_id: int,
+    generation_id: int | None,
+) -> None:
+    trim = db.get(CarTrim, trim_id)
+    if not trim:
+        raise HTTPException(status_code=400, detail="trim_id not found")
+    if trim.model_id != model_id:
+        raise HTTPException(status_code=400, detail="trim_id does not match model_id")
+    if trim.generation_id is not None and trim.generation_id != generation_id:
+        raise HTTPException(
+            status_code=400, detail="trim_id does not match generation_id"
+        )
+
+
 def _allocate_generation_slug(db: Session, model_id: int, display_name: str) -> str:
     base = slug_for_generation_url(display_name)
     used = set(
@@ -1942,6 +2057,7 @@ async def _update_car_from_multipart(
     body_color_slug: str | None,
     photos: list[UploadFile] | None,
     remove_photo_ids: str | None = None,
+    trim_id: int | None = None,
 ) -> CarOut:
     model_row = db.execute(
         select(CarModel).where(CarModel.id == model_id)
@@ -1951,6 +2067,10 @@ async def _update_car_from_multipart(
             status_code=400, detail="model_id does not match brand_id"
         )
     _assert_generation_belongs_to_model(db, generation_id, model_id)
+    if trim_id is not None:
+        _assert_trim_belongs_to_car(
+            db, trim_id, model_id=model_id, generation_id=generation_id
+        )
 
     upload_list = list(photos or [])
     if len(upload_list) > 15:
@@ -1981,6 +2101,8 @@ async def _update_car_from_multipart(
     car.registration_date = (registration_date or "").strip() or None
     car.production_date = (production_date or "").strip() or None
     car.body_color_slug = _validated_body_color_slug_form(body_color_slug)
+    if trim_id is not None:
+        car.trim_id = trim_id
 
     raw_rm = (remove_photo_ids or "").strip()
     if raw_rm:
@@ -2111,6 +2233,52 @@ def staff_catalog_generations(
             listings_count=listing_per_generation.get(g.id, 0),
         )
         for g in gens
+    ]
+
+
+@app.get(
+    "/staff/catalog/trims",
+    response_model=list[CarTrimBriefOut],
+)
+def staff_catalog_trims(
+    response: Response,
+    model_id: int = Query(...),
+    generation_id: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator", "dealer")),
+):
+    """Комплектации модели для формы редактирования объявления."""
+    gid = None
+    if generation_id is not None and str(generation_id).strip():
+        gid = _optional_generation_id_form(generation_id)
+        _assert_generation_belongs_to_model(db, gid, model_id)
+
+    q = (
+        select(CarTrim)
+        .options(joinedload(CarTrim.generation))
+        .where(CarTrim.model_id == model_id)
+    )
+    if gid is None:
+        q = q.where(CarTrim.generation_id.is_(None))
+    else:
+        q = q.where(
+            or_(CarTrim.generation_id == gid, CarTrim.generation_id.is_(None))
+        )
+    trims = (
+        db.execute(q.order_by(CarTrim.name_ru.asc(), CarTrim.id.asc()))
+        .scalars()
+        .unique()
+        .all()
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return [
+        CarTrimBriefOut(
+            id=t.id,
+            name_ru=_trim_brief_name(t),
+            generation_id=t.generation_id,
+            generation_name=(t.generation.name if t.generation is not None else None),
+        )
+        for t in trims
     ]
 
 
@@ -2497,6 +2665,7 @@ async def staff_update_own_car(
     body_color_slug: str | None = Form(None),
     photos: list[UploadFile] | None = File(None),
     remove_photo_ids: str | None = Form(None),
+    trim_id: str | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "moderator", "dealer")),
 ):
@@ -2520,6 +2689,7 @@ async def staff_update_own_car(
     if not car:
         raise HTTPException(status_code=404, detail="Car not found")
     gid = _optional_generation_id_form(generation_id)
+    tid = _optional_trim_id_form(trim_id)
     return await _update_car_from_multipart(
         db,
         car,
@@ -2542,6 +2712,7 @@ async def staff_update_own_car(
         body_color_slug=body_color_slug,
         photos=photos,
         remove_photo_ids=remove_photo_ids,
+        trim_id=tid,
     )
 
 
@@ -2700,6 +2871,15 @@ def admin_batch_refresh_from_che168(
             car.location_city,
             body_color_label=label_for_slug(car.body_color_slug),
         )
+        if parsed.autohome_spec_id:
+            trim_id = resolve_trim_for_listing(
+                db,
+                model_id=car.model_id,
+                year=car.year,
+                autohome_spec_id=parsed.autohome_spec_id,
+            )
+            if trim_id:
+                car.trim_id = trim_id
         ok += 1
         db.commit()
 
@@ -2710,6 +2890,119 @@ def admin_batch_refresh_from_che168(
         "errors_sample": errors[:15],
         "errors_total": len(errors),
     }
+
+
+@app.post("/admin/cars/backfill-trims")
+def admin_backfill_trims(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+    max_cars: int = Query(30, ge=1, le=80),
+    offset: int = Query(0, ge=0),
+):
+    """
+    Для объявлений без trim_id: HTTP-запрос карточки che168, specId → справочник Autohome.
+    """
+    stmt = (
+        select(Car)
+        .options(joinedload(Car.brand))
+        .where(
+            Car.is_active.is_(True),
+            Car.trim_id.is_(None),
+            Car.source.in_(("che168", "global_che168")),
+        )
+        .order_by(Car.id.asc())
+        .offset(offset)
+        .limit(max_cars)
+    )
+    cars = db.execute(stmt).unique().scalars().all()
+    ok = 0
+    skipped = 0
+    errors: list[str] = []
+    for car in cars:
+        url = che168_detail_url_from_source_listing_id(car.source_listing_id)
+        if not url:
+            skipped += 1
+            continue
+        spec_id = fetch_autohome_spec_id_from_detail_url(url)
+        if not spec_id:
+            skipped += 1
+            continue
+        try:
+            trim_id = resolve_trim_for_listing(
+                db,
+                model_id=car.model_id,
+                year=car.year,
+                autohome_spec_id=spec_id,
+            )
+        except Exception as e:
+            errors.append(f"id={car.id}: {e!s}")
+            continue
+        if not trim_id:
+            skipped += 1
+            continue
+        car.trim_id = trim_id
+        ok += 1
+        db.commit()
+
+    return {
+        "ok": True,
+        "linked": ok,
+        "skipped": skipped,
+        "attempted": len(cars),
+        "errors_sample": errors[:15],
+        "errors_total": len(errors),
+    }
+
+
+@app.post("/admin/trims/rebuild-ui-cache")
+def admin_rebuild_trim_ui_cache(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+    max_trims: int = Query(20, ge=1, le=100),
+    force: bool = Query(False, description="Пересобрать даже если spec_sections уже заполнен"),
+):
+    """Пересобрать русский spec_sections из source_spec_json (Autohome и др.)."""
+    trims = db.execute(select(CarTrim).order_by(CarTrim.id.asc()).limit(max_trims)).scalars().all()
+    rebuilt = 0
+    skipped = 0
+    for trim in trims:
+        if not force:
+            doc = load_trim_spec_from_row(trim)
+            if doc.sections and (doc.param_sections or len(doc.sections) >= 5):
+                skipped += 1
+                continue
+        if rebuild_trim_spec_from_source(trim):
+            trim.spec_json_ru = trim.spec_sections
+            rebuilt += 1
+        else:
+            skipped += 1
+    db.commit()
+    return {"ok": True, "rebuilt": rebuilt, "skipped": skipped, "scanned": len(trims)}
+
+
+@app.put("/admin/trims/{trim_id}/spec")
+def admin_update_trim_spec(
+    trim_id: int,
+    payload: AdminTrimSpecUpdateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    """Ручное обновление комплектации на русском (без привязки к Autohome)."""
+    trim = db.get(CarTrim, trim_id)
+    if not trim:
+        raise HTTPException(status_code=404, detail="Комплектация не найдена")
+    doc = TrimSpecDocument(
+        version=payload.spec.version,
+        sections=[s.model_dump() for s in payload.spec.sections],
+        param_sections=[s.model_dump() for s in payload.spec.param_sections],
+    )
+    save_trim_spec_to_row(trim, doc)
+    trim.spec_json_ru = trim.spec_sections
+    if payload.name_ru is not None:
+        trim.name_ru = normalize_spec_heading(payload.name_ru)[:256]
+    trim.source = (payload.source or "manual").strip()[:32] or "manual"
+    db.commit()
+    return {"ok": True, "trim_id": trim.id}
 
 
 @app.post("/admin/cars/regenerate-listing-copy")
@@ -3068,6 +3361,7 @@ async def admin_update_car(
     body_color_slug: str | None = Form(None),
     photos: list[UploadFile] | None = File(None),
     remove_photo_ids: str | None = Form(None),
+    trim_id: str | None = Form(None),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ):
@@ -3087,6 +3381,7 @@ async def admin_update_car(
     if not car:
         raise HTTPException(status_code=404, detail="Car not found")
     gid = _optional_generation_id_form(generation_id)
+    tid = _optional_trim_id_form(trim_id)
     return await _update_car_from_multipart(
         db,
         car,
@@ -3109,6 +3404,7 @@ async def admin_update_car(
         body_color_slug=body_color_slug,
         photos=photos,
         remove_photo_ids=remove_photo_ids,
+        trim_id=tid,
     )
 
 

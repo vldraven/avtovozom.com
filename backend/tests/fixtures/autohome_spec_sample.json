@@ -1,0 +1,38 @@
+{
+  "returncode": 0,
+  "message": "",
+  "data": {
+    "param": [
+      {
+        "name": "基本参数",
+        "paramitems": [
+          {
+            "id": 113,
+            "name": "车型名称",
+            "valueitems": [{ "value": "缤越 2021款 1.4T DCT钻石版" }]
+          },
+          {
+            "id": 1,
+            "name": "厂商指导价(元)",
+            "valueitems": [{ "value": "8.98万" }]
+          }
+        ]
+      }
+    ],
+    "config": [
+      {
+        "name": "安全配置",
+        "configitems": [
+          {
+            "name": "主/副驾驶座安全气囊",
+            "valueitems": [{ "value": "●" }]
+          },
+          {
+            "name": "并线辅助",
+            "valueitems": [{ "value": "○" }]
+          }
+        ]
+      }
+    ]
+  }
+}

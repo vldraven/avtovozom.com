@@ -59,9 +59,13 @@ function truncateUrl(u, max = 56) {
 /**
  * Панель мониторинга парсера che168 для админов/модераторов: запуск, сводка, история джобов.
  */
+const BACKFILL_BATCH_SIZE = 30;
+
 export default function AdminParserPanel({ token, jobs, onReload }) {
   const [runBusy, setRunBusy] = useState(false);
   const [runMessage, setRunMessage] = useState("");
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillMessage, setBackfillMessage] = useState("");
   const [expandedId, setExpandedId] = useState(null);
 
   const reload = useCallback(async () => {
@@ -86,6 +90,62 @@ export default function AdminParserPanel({ token, jobs, onReload }) {
     const lastFailed = jobs.find((j) => j.status === "failed");
     return { lastFailed };
   }, [jobs]);
+
+  async function runBackfillTrims() {
+    if (!token || backfillBusy) return;
+    setBackfillMessage("");
+    setBackfillBusy(true);
+    let totalLinked = 0;
+    let totalSkipped = 0;
+    let batch = 0;
+    try {
+      for (;;) {
+        batch += 1;
+        setBackfillMessage(`Пакет ${batch}: запрос к che168 и Autohome…`);
+        const res = await fetch(
+          `${API_URL}/admin/cars/backfill-trims?max_cars=${BACKFILL_BATCH_SIZE}&offset=0`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!res.ok) {
+          setBackfillMessage("Не удалось запустить. Проверьте права admin/moderator и доступность API.");
+          return;
+        }
+        const data = await res.json();
+        const linked = Number(data.linked) || 0;
+        const skipped = Number(data.skipped) || 0;
+        const attempted = Number(data.attempted) || 0;
+        totalLinked += linked;
+        totalSkipped += skipped;
+        if (attempted === 0) break;
+        if (linked === 0) {
+          setBackfillMessage(
+            `Готово. Привязано: ${totalLinked}. Пропущено в последнем пакете: ${skipped} ` +
+              `(нет specId, captcha или не che168).`
+          );
+          return;
+        }
+        if (attempted < BACKFILL_BATCH_SIZE) break;
+        if (batch >= 100) {
+          setBackfillMessage(
+            `Остановлено после 100 пакетов. Привязано: ${totalLinked}, пропущено: ${totalSkipped}. ` +
+              "Запустите снова, если остались объявления."
+          );
+          return;
+        }
+      }
+      setBackfillMessage(
+        `Готово. Привязано комплектаций: ${totalLinked}` +
+          (totalSkipped > 0 ? `, пропущено: ${totalSkipped}.` : ".")
+      );
+    } catch {
+      setBackfillMessage("Сбой сети. Проверьте, что backend доступен.");
+    } finally {
+      setBackfillBusy(false);
+    }
+  }
 
   async function runCatalogParser() {
     if (!token) return;
@@ -140,6 +200,29 @@ export default function AdminParserPanel({ token, jobs, onReload }) {
       </div>
 
       {runMessage ? <p className="admin-parser-panel-profile__inline-msg">{runMessage}</p> : null}
+
+      <div className="admin-parser-trim-backfill">
+        <div>
+          <h3 className="admin-parser-trim-backfill__title">Комплектации (Autohome)</h3>
+          <p className="muted admin-parser-trim-backfill__lead">
+            Для объявлений che168 без комплектации: подтягивает specId со страницы и привязывает справочник.
+            Уже сохранённые комплектации переиспользуются без повторного перевода.
+          </p>
+        </div>
+        <div className="admin-parser-trim-backfill__actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={!token || backfillBusy || hasActiveJob}
+            onClick={runBackfillTrims}
+            title={hasActiveJob ? "Дождитесь завершения текущей задачи парсера" : undefined}
+          >
+            {backfillBusy ? "Подтягиваем…" : "Подтянуть комплектации"}
+          </button>
+        </div>
+      </div>
+
+      {backfillMessage ? <p className="admin-parser-panel-profile__inline-msg">{backfillMessage}</p> : null}
 
       {latest ? (
         <div className="admin-parser-summary-strip">
