@@ -1442,6 +1442,192 @@ button.detail-back {
   margin-bottom: 1.5rem;
 }
 
+.detail-hero__price-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.detail-hero__price-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.detail-hero__price-block {
+  min-width: 0;
+}
+
+.detail-hero__price-block .detail-price {
+  margin: 0;
+}
+
+.detail-hero__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  margin-left: auto;
+}
+
+@media (max-width: 767px) {
+  .detail-hero__price-actions {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .detail-hero__actions {
+    align-self: flex-start;
+    margin-top: 0.1rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .detail-hero {
+    position: relative;
+    margin-bottom: 0.75rem;
+  }
+
+  .detail-hero__price-actions {
+    display: block;
+    padding-right: 3.25rem;
+    width: auto;
+  }
+
+  .detail-hero__actions {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    margin-left: 0;
+  }
+}
+
+.listing-share {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.listing-share__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.listing-share__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.listing-share__icon svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.listing-share__trigger:hover {
+  background: rgba(15, 23, 42, 0.04);
+  color: var(--color-accent);
+}
+
+.listing-share__trigger:active {
+  background: rgba(15, 23, 42, 0.07);
+}
+
+.listing-share__trigger:focus-visible {
+  outline: 2px solid var(--color-accent, #2563eb);
+  outline-offset: 2px;
+}
+
+.listing-share__menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 40;
+  min-width: 13.5rem;
+  margin: 0;
+  padding: 0.35rem 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 0.65rem;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.listing-share__item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.55rem 0.85rem;
+  border: none;
+  background: transparent;
+  color: var(--color-text, #0f172a);
+  font: inherit;
+  font-size: 0.925rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.listing-share__item:hover,
+.listing-share__item:focus-visible {
+  background: #f1f5f9;
+  outline: none;
+}
+
+.listing-share__item-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.listing-share__item-icon--muted {
+  color: var(--color-muted, #64748b);
+}
+
+.listing-share__item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.listing-share__notice {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 41;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-muted, #64748b);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.listing-share:has(.listing-share__menu) .listing-share__notice {
+  top: calc(100% + 12.5rem);
+}
+
 /* Десктоп: в DOM сначала заголовок/цена, потом галерея. На мобилке — тот же DOM, визуально галерея выше (order). */
 @media (min-width: 768px) {
   .detail-hero-gall-wrap .photo-gallery--lead {

@@ -9,6 +9,7 @@ import CarPhotoLightbox from "./CarPhotoLightbox";
 import HeaderMessagesLink from "./HeaderMessagesLink";
 import TelegramChannelHeaderLink from "./TelegramChannelHeaderLink";
 import HeaderProfileLink from "./HeaderProfileLink";
+import ListingShareActions from "./ListingShareActions";
 import RequestConfirmModal from "./RequestConfirmModal";
 import TrimConfigModal from "./TrimConfigModal";
 import { clearToken, getStoredToken } from "../lib/auth";
@@ -517,29 +518,45 @@ export default function CarDetailView({
                 </p>
               ) : null}
               {car.rub_china != null ? (
-                <>
-                  {totalRubRf != null ? (
-                    <p className="detail-price detail-price--rf">
-                      {formatRubInt(totalRubRf)} ₽
-                      <span className="detail-price__hint">приблизительная цена в России</span>
-                    </p>
-                  ) : null}
-                  {totalRubRf == null ? (
-                    <p className="detail-price">
-                      {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥{" "}
-                      <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem" }}>
-                        CNY
-                      </span>
-                    </p>
-                  ) : null}
-                </>
+                <div className="detail-hero__price-actions">
+                  <div className="detail-hero__price-row">
+                    <div className="detail-hero__price-block">
+                      {totalRubRf != null ? (
+                        <p className="detail-price detail-price--rf">
+                          {formatRubInt(totalRubRf)} ₽
+                          <span className="detail-price__hint">приблизительная цена в России</span>
+                        </p>
+                      ) : null}
+                      {totalRubRf == null ? (
+                        <p className="detail-price">
+                          {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥{" "}
+                          <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem" }}>
+                            CNY
+                          </span>
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="detail-hero__actions">
+                    <ListingShareActions car={car} totalRubRf={totalRubRf} />
+                  </div>
+                </div>
               ) : (
-                <p className="detail-price">
-                  {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥{" "}
-                  <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem" }}>
-                    CNY
-                  </span>
-                </p>
+                <div className="detail-hero__price-actions">
+                  <div className="detail-hero__price-row">
+                    <div className="detail-hero__price-block">
+                      <p className="detail-price">
+                        {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥{" "}
+                        <span className="text-muted" style={{ fontWeight: 600, fontSize: "1rem" }}>
+                          CNY
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="detail-hero__actions">
+                    <ListingShareActions car={car} totalRubRf={totalRubRf} />
+                  </div>
+                </div>
               )}
               {me?.role !== "dealer" && (requestOkMessage || authError) ? (
                 <div className="detail-hero-cta">
