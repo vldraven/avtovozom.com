@@ -494,6 +494,66 @@ def _global_che168_detail_url_from_detail_url(detail_url: str) -> str | None:
     return None
 
 
+def _chinese_i_che168_url_from_detail_url(detail_url: str) -> str | None:
+    """Китайская карточка i.che168.com — полные поля и specId Autohome (не global EN)."""
+    m = GLOBAL_CHE168_DETAIL_RE.search(detail_url)
+    if m:
+        return f"https://i.che168.com/car/{m.group(1)}"
+    m = CAR_DETAIL_ID_RE.search(detail_url)
+    if m:
+        return f"https://i.che168.com/car/{m.group(1)}"
+    m = DEALER_LISTING_RE.search(detail_url)
+    if m:
+        return f"https://i.che168.com/car/{m.group(2)}"
+    return None
+
+
+def _detail_fetch_urls(detail_url: str) -> list[str]:
+    """Порядок попыток: сначала китайская карточка, затем исходный URL, затем global."""
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(u: str | None) -> None:
+        if not u:
+            return
+        key = u.rstrip("/")
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(u)
+
+    add(_chinese_i_che168_url_from_detail_url(detail_url))
+    add(detail_url.strip())
+    add(_global_che168_detail_url_from_detail_url(detail_url))
+    return out
+
+
+def _parse_is_complete(parsed: ParsedCar | None) -> bool:
+    """HTTP-разбор без цены — неполный (типично global.che168 на английском)."""
+    if parsed is None:
+        return False
+    return parsed.price_cny is not None and parsed.price_cny > 0
+
+
+def _parse_quality_score(parsed: ParsedCar | None) -> int:
+    if parsed is None:
+        return 0
+    score = 0
+    if parsed.price_cny and parsed.price_cny > 0:
+        score += 10
+    if parsed.mileage_km:
+        score += 3
+    if parsed.registration_date:
+        score += 2
+    if parsed.autohome_spec_id:
+        score += 5
+    if parsed.fuel_type:
+        score += 1
+    if parsed.photos:
+        score += min(len(parsed.photos), 3)
+    return score
+
+
 def _che168_dismiss_overseas_modal(page) -> None:
     for sel in (
         "text=Continue to Chinese Site",
@@ -1130,37 +1190,56 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
     Поддерживаются карточки che168, global.che168.com/detail/… и dongchedi.com/usedcar/…
     """
     source_listing_id = source_listing_id_from_url(detail_url)
+    is_dongchedi = marketplace_from_detail_url(detail_url) == "dongchedi"
+    fetch_urls = [detail_url] if is_dongchedi else _detail_fetch_urls(detail_url)
 
-    if marketplace_from_detail_url(detail_url) != "dongchedi":
-        try:
-            html = _http_get_text(detail_url, timeout=45.0)
-            parsed = _parse_detail_from_html(html, source_listing_id)
-            if parsed is not None and (
-                parsed.title
-                or (parsed.photos and len(parsed.photos) >= 1)
-                or (parsed.price_cny and parsed.price_cny > 0)
-            ):
-                return parsed
-        except RuntimeError as exc:
-            if "Парсер попробует открыть карточку через браузер" not in str(exc):
-                raise
-        except Exception:
-            pass
+    best: ParsedCar | None = None
+    best_score = 0
+
+    if not is_dongchedi:
+        for url in fetch_urls:
+            try:
+                html = _http_get_text(url, timeout=45.0)
+                parsed = _parse_detail_from_html(html, source_listing_id)
+                if parsed is None:
+                    continue
+                score = _parse_quality_score(parsed)
+                if score > best_score:
+                    best = parsed
+                    best_score = score
+                if _parse_is_complete(parsed):
+                    return parsed
+            except RuntimeError as exc:
+                if "Парсер попробует открыть карточку через браузер" not in str(exc):
+                    raise
+            except Exception:
+                pass
 
     if os.getenv("CHE168_SKIP_PLAYWRIGHT", "").lower() in ("1", "true", "yes"):
+        if best and best_score > 0:
+            return best
         raise RuntimeError(
             "CHE168_SKIP_PLAYWRIGHT включён: страница объявления не разобрана по HTTP."
         )
 
-    try:
-        return _parse_che168_detail_playwright(detail_url, source_listing_id)
-    except Exception as primary_err:
-        alt = _global_che168_detail_url_from_detail_url(detail_url)
-        if not alt or alt.rstrip("/") == detail_url.rstrip("/"):
-            raise
+    last_err: Exception | None = None
+    for url in fetch_urls:
         try:
-            alt_sid = source_listing_id_from_url(alt)
-            return _parse_che168_detail_playwright(alt, alt_sid)
-        except Exception:
-            raise primary_err
+            parsed = _parse_che168_detail_playwright(url, source_listing_id)
+            if is_dongchedi:
+                return parsed
+            score = _parse_quality_score(parsed)
+            if score > best_score:
+                best = parsed
+                best_score = score
+            if _parse_is_complete(parsed):
+                return parsed
+        except Exception as exc:
+            last_err = exc
+
+    if best and best_score > 0:
+        return best
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError(f"Не удалось разобрать карточку: {detail_url}")
 
