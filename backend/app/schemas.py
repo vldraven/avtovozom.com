@@ -154,6 +154,14 @@ class CarsListOut(BaseModel):
     cbr_error: str | None = None
 
 
+class FavoriteIdsOut(BaseModel):
+    car_ids: list[int] = Field(default_factory=list)
+
+
+class FavoriteActionOut(BaseModel):
+    favorited: bool
+
+
 class BodyColorOptionOut(BaseModel):
     """Элемент выпадающего списка «цвет кузова» (создание/редактирование объявления)."""
 

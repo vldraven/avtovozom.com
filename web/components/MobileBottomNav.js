@@ -2,8 +2,9 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useState } from "react";
 
-import { clearToken, getStoredToken } from "../lib/auth";
+import { getStoredToken } from "../lib/auth";
 import { canCreateListings } from "../lib/roles";
+import HeaderFavoritesLink from "./HeaderFavoritesLink";
 import HeaderMessagesLink from "./HeaderMessagesLink";
 import HeaderProfileLink from "./HeaderProfileLink";
 
@@ -27,26 +28,6 @@ function AddListingIcon() {
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
       <path d="M12 8v8M8 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function LogoutIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-      <path
-        d="M10 7V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1v14a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-2"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M4 12h11m0 0-3-3m3 3-3 3"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }
@@ -147,15 +128,6 @@ export default function MobileBottomNav() {
   const staffListingActive =
     router.pathname === "/staff/new-listing" || router.pathname === "/staff/edit-listing";
 
-  function onLogout() {
-    clearToken();
-    setToken("");
-    setMe(null);
-    if (router.pathname === "/profile" || router.pathname === "/messages") {
-      router.replace("/");
-    }
-  }
-
   return (
     <nav className="mobile-bottom-nav" aria-label="Основная навигация по сайту">
       <div
@@ -204,12 +176,7 @@ export default function MobileBottomNav() {
                 <span className="mobile-dock__label">Объявл.</span>
               </Link>
             ) : null}
-            <button type="button" className="mobile-dock__item mobile-dock__item--btn" onClick={onLogout}>
-              <span className="mobile-dock__icon">
-                <LogoutIcon />
-              </span>
-              <span className="mobile-dock__label">Выйти</span>
-            </button>
+            <HeaderFavoritesLink token={token} variant="dock" />
           </>
         )}
       </div>

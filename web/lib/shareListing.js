@@ -90,7 +90,7 @@ const SHARE_NETWORKS = {
   },
 };
 
-export const SHARE_NETWORK_IDS = ["vk", "ok", "whatsapp", "telegram"];
+export const SHARE_NETWORK_IDS = ["vk", "telegram"];
 
 /**
  * @param {"vk"|"ok"|"whatsapp"|"telegram"} networkId

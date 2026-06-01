@@ -3,12 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import CatalogCardImageScrub from "../components/CatalogCardImageScrub";
+import CatalogCardMedia from "../components/CatalogCardMedia";
 import CatalogSortDropdown from "../components/CatalogSortDropdown";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import HeaderProfileLink from "../components/HeaderProfileLink";
+import HeaderFavoritesLink from "../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../components/TelegramChannelHeaderLink";
 import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
@@ -456,13 +457,6 @@ export default function Home() {
     } finally {
       setRequestModalBusy(false);
     }
-  }
-
-  function logout() {
-    clearToken();
-    setToken("");
-    setMe(null);
-    setMobileHeaderMenuOpen(false);
   }
 
   async function loadMe(accessToken) {
@@ -1153,9 +1147,7 @@ export default function Home() {
                   </Link>
                 )}
                 <HeaderProfileLink token={token} userRole={me?.role} />
-                <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
-                  Выйти
-                </button>
+                <HeaderFavoritesLink token={token} />
                 <TelegramChannelHeaderLink />
               </>
             )}
@@ -1197,10 +1189,8 @@ export default function Home() {
                   ) : (
                     <>
                       <Link href="/profile">Профиль</Link>
+                      <Link href="/favorites">Избранное</Link>
                       {canCreateListings(me?.role) ? <Link href="/staff/new-listing">Добавить объявление</Link> : null}
-                      <button type="button" className="site-header-desktop-menu__btn" onClick={logout}>
-                        Выйти
-                      </button>
                     </>
                   )}
                 </div>
@@ -1224,14 +1214,14 @@ export default function Home() {
                     <Link href="/profile" className="site-header-mobile-menu__link">
                       Профиль
                     </Link>
+                    <Link href="/favorites" className="site-header-mobile-menu__link">
+                      Избранное
+                    </Link>
                     {canCreateListings(me?.role) ? (
                       <Link href="/staff/new-listing" className="site-header-mobile-menu__link">
                         Добавить объявление
                       </Link>
                     ) : null}
-                    <button type="button" className="site-header-mobile-menu__link site-header-mobile-menu__btn" onClick={logout}>
-                      Выйти
-                    </button>
                   </>
                 )}
               </nav>
@@ -1639,7 +1629,7 @@ export default function Home() {
                 rel="noopener noreferrer"
                 onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
               >
-                <CatalogCardImageScrub photos={car.photos} />
+                <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
                 <div className="catalog-card__content">
                   <h3 className="catalog-card__title">{car.title}</h3>
                   <p className="catalog-card__meta">

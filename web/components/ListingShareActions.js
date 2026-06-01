@@ -10,34 +10,17 @@ import {
   shareNetworkLabel,
 } from "../lib/shareListing";
 
-/** Lucide «share» (ISC) — https://lucide.dev/icons/share */
 function IconShare() {
   return (
-    <span className="listing-share__icon" aria-hidden>
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path
-          d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M16 6 12 2 8 6"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M12 2v13"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/icons/share-arrow.png"
+      alt=""
+      width={20}
+      height={20}
+      draggable={false}
+      className="listing-share__icon-img"
+    />
   );
 }
 
@@ -186,7 +169,7 @@ export default function ListingShareActions({ car, totalRubRf = null }) {
     <div className="listing-share" ref={rootRef}>
       <button
         type="button"
-        className="listing-share__trigger"
+        className="listing-action-btn listing-share__trigger"
         aria-label="Поделиться"
         aria-expanded={!isMobile && menuOpen}
         aria-haspopup={!isMobile ? "menu" : undefined}

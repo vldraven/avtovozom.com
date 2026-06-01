@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 
 import Breadcrumbs from "../../components/Breadcrumbs";
-import CatalogCardImageScrub from "../../components/CatalogCardImageScrub";
+import CatalogCardMedia from "../../components/CatalogCardMedia";
 import CatalogSortDropdown from "../../components/CatalogSortDropdown";
 import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import CarDetailView from "../../components/CarDetailView";
 import HeaderMessagesLink from "../../components/HeaderMessagesLink";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
+import HeaderFavoritesLink from "../../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLink";
 import RequestConfirmModal from "../../components/RequestConfirmModal";
 import { clearToken, getStoredToken } from "../../lib/auth";
@@ -444,12 +445,6 @@ export default function CatalogTreePage() {
     };
   }, [router.isReady, router.asPath, segments, isCatalogListRoute, cars.length]);
 
-  function logout() {
-    clearToken();
-    setToken("");
-    setMe(null);
-  }
-
   const breadcrumbItems = useMemo(() => {
     const items = [{ label: "Главная", href: "/" }];
     if (brand) items.push({ label: brand.name, href: `/catalog/${brand.slug}` });
@@ -556,9 +551,7 @@ export default function CatalogTreePage() {
                   </Link>
                 )}
                 <HeaderProfileLink token={token} userRole={me?.role} />
-                <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
-                  Выйти
-                </button>
+                <HeaderFavoritesLink token={token} />
                 <TelegramChannelHeaderLink />
               </>
             )}
@@ -848,7 +841,7 @@ export default function CatalogTreePage() {
                             rel="noopener noreferrer"
                             onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
                           >
-                            <CatalogCardImageScrub photos={car.photos} />
+                            <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
                             <div className="catalog-card__content">
                               <h3 className="catalog-card__title">{car.title}</h3>
                               <p className="catalog-card__meta">

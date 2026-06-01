@@ -1167,10 +1167,54 @@ a:hover {
   text-decoration: none;
 }
 
+.catalog-card__image-area {
+  position: relative;
+}
+
+.catalog-card__image-area .catalog-card__image-wrap {
+  display: block;
+}
+
 .catalog-card__image-wrap {
   aspect-ratio: 16 / 10;
   background: linear-gradient(145deg, #e2e8f0, #f1f5f9);
   overflow: hidden;
+}
+
+.listing-favorite__btn--overlay {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 5;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.listing-favorite__btn--overlay:hover {
+  color: #fff;
+  transform: scale(1.06);
+}
+
+.listing-favorite__btn--overlay.listing-favorite__btn--on {
+  color: #f43f5e;
+}
+
+.listing-favorite__btn--overlay.listing-favorite__btn--on:hover {
+  color: #e11d48;
+}
+
+.listing-favorite__btn--overlay svg {
+  width: 22px;
+  height: 22px;
 }
 
 .catalog-card__image-wrap--scrub {
@@ -1467,6 +1511,7 @@ button.detail-back {
   flex: 0 0 auto;
   display: flex;
   align-items: flex-start;
+  gap: 0.5rem;
   margin-left: auto;
 }
 
@@ -1491,7 +1536,7 @@ button.detail-back {
 
   .detail-hero__price-actions {
     display: block;
-    padding-right: 3.25rem;
+    padding-right: 6.25rem;
     width: auto;
   }
 
@@ -1511,20 +1556,57 @@ button.detail-back {
   flex-shrink: 0;
 }
 
-.listing-share__trigger {
+.listing-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
+  width: 2.75rem;
+  height: 2.75rem;
   padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-muted);
+  border: 1px solid #e8ecf1;
+  border-radius: 10px;
+  background: #f2f4f7;
+  color: var(--color-text);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.listing-share__trigger {
+  /* extends .listing-action-btn */
+}
+
+/* Контур как у «Поделиться» (var(--color-text)); заливка красная только в --on */
+.listing-favorite__btn.listing-action-btn {
+  color: var(--color-text);
+}
+
+.listing-favorite__btn--on {
+  color: #e11d48;
+}
+
+.listing-favorite__btn--loading {
+  opacity: 0.65;
+}
+
+.favorites-page__lead {
+  margin: -0.5rem 0 1.25rem;
+}
+
+.favorites-page__count {
+  margin: 0 0 1rem;
+}
+
+.favorites-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.catalog-card__actions--favorites {
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .listing-share__icon {
@@ -1533,23 +1615,45 @@ button.detail-back {
   justify-content: center;
   line-height: 0;
   flex-shrink: 0;
-  color: inherit;
+}
+
+.listing-share__icon-img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  flex-shrink: 0;
+  mix-blend-mode: multiply;
 }
 
 .listing-share__icon svg {
   display: block;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
 }
 
+.listing-action-btn:hover,
 .listing-share__trigger:hover {
-  background: rgba(15, 23, 42, 0.04);
-  color: var(--color-accent);
+  background: #e9edf2;
+  border-color: #dde3ea;
+  color: var(--color-text);
 }
 
+.listing-favorite__btn--on:hover {
+  color: #be123c;
+}
+
+.listing-favorite__btn svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.listing-action-btn:active,
 .listing-share__trigger:active {
-  background: rgba(15, 23, 42, 0.07);
+  background: #e2e8f0;
 }
 
 .listing-share__trigger:focus-visible {
@@ -2779,6 +2883,41 @@ code {
 }
 
 /* Ссылка «Сообщения» в шапке (как на маркетплейсах) */
+.header-favorites-link {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  margin-right: 4px;
+  border-radius: var(--radius-sm);
+  color: rgba(248, 250, 252, 0.92);
+  text-decoration: none;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+
+.header-favorites-link:hover {
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.header-favorites-link__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.95;
+}
+
+.header-favorites-link__label {
+  max-width: 4.8rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .header-messages-link {
   display: inline-flex;
   flex-direction: column;
@@ -4591,7 +4730,8 @@ code {
     padding-bottom: 0.4rem;
   }
 
-  .header-messages-link {
+  .header-messages-link,
+  .header-favorites-link {
     padding: 6px 10px;
     min-height: 44px;
     justify-content: center;

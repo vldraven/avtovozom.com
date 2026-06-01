@@ -4,11 +4,13 @@ import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import Breadcrumbs from "./Breadcrumbs";
-import CatalogCardImageScrub from "./CatalogCardImageScrub";
+import CatalogCardMedia from "./CatalogCardMedia";
 import CarPhotoLightbox from "./CarPhotoLightbox";
 import HeaderMessagesLink from "./HeaderMessagesLink";
+import HeaderFavoritesLink from "./HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "./TelegramChannelHeaderLink";
 import HeaderProfileLink from "./HeaderProfileLink";
+import ListingFavoriteButton from "./ListingFavoriteButton";
 import ListingShareActions from "./ListingShareActions";
 import RequestConfirmModal from "./RequestConfirmModal";
 import TrimConfigModal from "./TrimConfigModal";
@@ -463,17 +465,7 @@ export default function CarDetailView({
               <>
                 <HeaderMessagesLink token={token} />
                 <HeaderProfileLink token={token} userRole={me?.role} />
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    clearToken();
-                    setToken("");
-                    setMe(null);
-                  }}
-                >
-                  Выйти
-                </button>
+                <HeaderFavoritesLink token={token} />
                 <TelegramChannelHeaderLink />
               </>
             )}
@@ -538,6 +530,7 @@ export default function CarDetailView({
                     </div>
                   </div>
                   <div className="detail-hero__actions">
+                    <ListingFavoriteButton carId={car.id} car={car} />
                     <ListingShareActions car={car} totalRubRf={totalRubRf} />
                   </div>
                 </div>
@@ -554,6 +547,7 @@ export default function CarDetailView({
                     </div>
                   </div>
                   <div className="detail-hero__actions">
+                    <ListingFavoriteButton carId={car.id} car={car} />
                     <ListingShareActions car={car} totalRubRf={totalRubRf} />
                   </div>
                 </div>
@@ -888,7 +882,7 @@ export default function CarDetailView({
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        <CatalogCardImageScrub photos={c.photos} />
+                        <CatalogCardMedia photos={c.photos} carId={c.id} car={c} />
                         <div className="catalog-card__content">
                           <h3 className="catalog-card__title">{c.title}</h3>
                           <p className="catalog-card__meta">

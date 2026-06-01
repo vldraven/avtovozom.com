@@ -52,6 +52,7 @@ from .models import (
     ParseJob,
     Role,
     User,
+    UserFavorite,
     UserSession,
     UserWebAuthnCredential,
 )
@@ -128,6 +129,8 @@ from .schemas import (
     CreateRequestIn,
     DealerOfferCreateIn,
     DealerPublicProfileOut,
+    FavoriteActionOut,
+    FavoriteIdsOut,
     CustomsCalcConfigIn,
     CustomsCalcConfigOut,
     FreeformRequestLeadIn,
@@ -1479,6 +1482,141 @@ def me(current_user: User = Depends(get_current_user)):
         email_verified=current_user.email_verified,
         must_change_password=current_user.must_change_password,
     )
+
+
+def _favorite_car_ids(db: Session, user_id: int) -> list[int]:
+    return list(
+        db.execute(select(UserFavorite.car_id).where(UserFavorite.user_id == user_id))
+        .scalars()
+        .all()
+    )
+
+
+def _get_active_car_or_404(db: Session, car_id: int) -> Car:
+    car = db.execute(
+        select(Car).where(Car.id == car_id, Car.is_active.is_(True))
+    ).scalar_one_or_none()
+    if not car:
+        raise HTTPException(status_code=404, detail="Car not found")
+    return car
+
+
+@app.get("/favorites/ids", response_model=FavoriteIdsOut)
+def favorites_ids(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return FavoriteIdsOut(car_ids=_favorite_car_ids(db, current_user.id))
+
+
+@app.get("/favorites", response_model=CarsListOut)
+def list_favorites(
+    page: int = Query(1, ge=1),
+    limit: int = Query(24, ge=1, le=100),
+    include_breakdown: bool = Query(default=False),
+    photo_limit: int | None = Query(default=6, ge=1, le=30),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    base = (
+        select(Car)
+        .join(UserFavorite, UserFavorite.car_id == Car.id)
+        .where(UserFavorite.user_id == current_user.id, Car.is_active.is_(True))
+        .options(
+            joinedload(Car.brand),
+            joinedload(Car.model),
+            joinedload(Car.generation),
+            joinedload(Car.photos),
+        )
+    )
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    cars = (
+        db.execute(
+            base.order_by(UserFavorite.created_at.desc(), Car.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+
+    snap, cbr_err = build_cbr_snapshot()
+    slug_maps = _get_cached_slug_maps(db)
+    settings_row = ensure_settings_row(db)
+    extras_for_est: dict[str, Any] | None = None
+    if snap is not None:
+        extras_for_est = parse_additional_expenses_json(
+            settings_row.additional_expenses_json
+        )
+    items: list[CarOut] = []
+    for car in cars:
+        pb = None
+        if include_breakdown:
+            try:
+                pb = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
+            except Exception:
+                pb = None
+        est: float | None = None
+        if pb is not None:
+            est = float(pb.total_rub)
+        elif snap is not None:
+            try:
+                est = _compute_estimated_total_rub(
+                    car, settings_row, snap, extras=extras_for_est
+                )
+            except Exception:
+                est = None
+        items.append(
+            _car_to_out(
+                car,
+                cbr=snap,
+                full_import=False,
+                slug_maps=slug_maps,
+                price_breakdown=pb,
+                estimated_total_rub=est,
+                photo_limit=photo_limit,
+            )
+        )
+    return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
+
+
+@app.post("/favorites/{car_id}", response_model=FavoriteActionOut)
+def add_favorite(
+    car_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _get_active_car_or_404(db, car_id)
+    existing = db.execute(
+        select(UserFavorite).where(
+            UserFavorite.user_id == current_user.id,
+            UserFavorite.car_id == car_id,
+        )
+    ).scalar_one_or_none()
+    if not existing:
+        db.add(UserFavorite(user_id=current_user.id, car_id=car_id))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+    return FavoriteActionOut(favorited=True)
+
+
+@app.delete("/favorites/{car_id}", response_model=FavoriteActionOut)
+def remove_favorite(
+    car_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    db.execute(
+        delete(UserFavorite).where(
+            UserFavorite.user_id == current_user.id,
+            UserFavorite.car_id == car_id,
+        )
+    )
+    db.commit()
+    return FavoriteActionOut(favorited=False)
 
 
 @app.post("/auth/webauthn/register/options")

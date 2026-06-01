@@ -256,6 +256,19 @@ class ParseJob(Base):
     import_detail_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
 
+class UserFavorite(Base):
+    __tablename__ = "user_favorites"
+    __table_args__ = (UniqueConstraint("user_id", "car_id", name="uq_user_favorite_car"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    car = relationship("Car")
+
+
 class CalculationRequest(Base):
     __tablename__ = "calculation_requests"
 

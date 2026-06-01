@@ -318,9 +318,6 @@ export default function ProfilePage() {
           </Link>
           <div className="auth-bar">
             <HeaderMessagesLink token={token} />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
-              Выйти
-            </button>
           </div>
         </div>
       </header>
@@ -366,6 +363,9 @@ export default function ProfilePage() {
                   <input className="input" placeholder="Телефон" value={phone} onChange={(e) => setPhone(e.target.value)} />
                   <button type="button" className="btn btn-primary" onClick={saveProfile}>
                     Сохранить профиль
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={logout}>
+                    Выйти
                   </button>
                 </div>
               </section>
