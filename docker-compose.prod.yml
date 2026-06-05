@@ -6,6 +6,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: avtovozom_postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-avtovozom}
       POSTGRES_USER: ${POSTGRES_USER:-avtovozom}
@@ -21,11 +22,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: avtovozom_redis
+    restart: unless-stopped
 
   backend:
     build:
       context: ./backend
     container_name: avtovozom_backend
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false
@@ -43,6 +46,8 @@ services:
       TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
       CHE168_MAX_LINKS_PER_MODEL: "40"
       CHE168_NEW_PER_RUN: "5"
+      CHE168_PARSE_DETAIL_TIMEOUT_SEC: ${CHE168_PARSE_DETAIL_TIMEOUT_SEC:-300}
+      CHE168_PW_GOTO_TIMEOUT_MS: ${CHE168_PW_GOTO_TIMEOUT_MS:-120000}
       MEDIA_ROOT: /app/media
     depends_on:
       postgres:
@@ -56,6 +61,7 @@ services:
     build:
       context: ./backend
     container_name: avtovozom_parser
+    restart: unless-stopped
     command: python -m app.parser_worker
     environment:
       POSTGRES_HOST: postgres
@@ -66,6 +72,8 @@ services:
       PARSER_POLL_SECONDS: "10"
       CHE168_MAX_LINKS_PER_MODEL: "40"
       CHE168_NEW_PER_RUN: "5"
+      CHE168_PARSE_DETAIL_TIMEOUT_SEC: ${CHE168_PARSE_DETAIL_TIMEOUT_SEC:-300}
+      CHE168_PW_GOTO_TIMEOUT_MS: ${CHE168_PW_GOTO_TIMEOUT_MS:-120000}
       MEDIA_ROOT: /app/media
     depends_on:
       postgres:
@@ -82,6 +90,7 @@ services:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
         NEXT_PUBLIC_YANDEX_METRIKA_ID: ${NEXT_PUBLIC_YANDEX_METRIKA_ID:-}
     container_name: avtovozom_web
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false

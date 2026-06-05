@@ -417,17 +417,58 @@ def source_listing_id_from_url(url: str) -> str:
 
 
 def _is_che168_bot_challenge_html(html: str) -> bool:
-    """Короткий JS-ответ che168 без HTML карточки (EO_Bot / __tst_status)."""
+    """JS-антибот che168 без HTML карточки (EO_Bot, Tencent TEO challenge и т.п.)."""
     if not html:
         return False
-    head = html[:4000]
-    if len(html) < 2500 and (
-        "EO_Bot_Ssid" in head
+    head = html[:12000]
+    if (
+        "TEOJsChallengeSdk" in head
+        or "captcha.eo.gtimg.com" in head
+        or "__TENCENT_CHAOS_VM" in head
+        or "EO_Bot_Ssid" in head
         or "__tst_status" in head
-        or "document.cookie" in head and "_0x649a" in head
+        or ("document.cookie" in head and "_0x649a" in head)
     ):
         return True
+    # Урезанная оболочка без контента карточки (типично с VPS вне Китая).
+    if len(html) < 80_000 and "表显里程" not in html and "二手车之家" not in html:
+        if re.search(r"<title>\s*</title>", head, re.I):
+            return True
+        if "Vehicle Details" not in html and not re.search(
+            r"<title>[^<]{8,}</title>", head, re.I
+        ):
+            return True
     return False
+
+
+def _is_global_che168_stub_html(html: str) -> bool:
+    """global.che168 часто отдаёт английскую заглушку без цены."""
+    if not html:
+        return False
+    head = html[:8000]
+    return (
+        "China Used Cars Export" in head
+        or "Second Hand Cars - Autohome" in head
+        or "Vehicle Details" in head and len(html) < 12_000
+    )
+
+
+def _decode_http_response_text(response: httpx.Response) -> str:
+    """che168 отдаёт gb2312/gbk; без явного decode кириллица/китайский ломаются."""
+    raw = response.content or b""
+    if not raw:
+        return ""
+    ctype = (response.headers.get("content-type") or "").lower()
+    m = re.search(r"charset=([\w-]+)", ctype)
+    charset = (m.group(1) if m else "").strip().lower()
+    for enc in (charset, "gb18030", "gbk", "gb2312", "utf-8"):
+        if not enc:
+            continue
+        try:
+            return raw.decode(enc, errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return raw.decode("utf-8", errors="replace")
 
 
 def _raise_if_captcha(url: str, html: str) -> None:
@@ -456,8 +497,9 @@ def _http_get_text(url: str, timeout: float = 45.0) -> str:
     with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
         r = client.get(url)
         r.raise_for_status()
-        _raise_if_captcha(str(r.url), r.text)
-        return r.text
+        text = _decode_http_response_text(r)
+        _raise_if_captcha(str(r.url), text)
+        return text
 
 
 def _pw_launch_timeout_ms() -> int:
@@ -509,7 +551,11 @@ def _chinese_i_che168_url_from_detail_url(detail_url: str) -> str | None:
 
 
 def _detail_fetch_urls(detail_url: str) -> list[str]:
-    """Порядок попыток: сначала китайская карточка, затем исходный URL, затем global."""
+    """
+    Порядок HTTP/Playwright:
+    - dealer URL — сначала канонический dealer (полная SSR-страница), i.che168 и global — запасные;
+    - иначе i.che168 → исходный → global.
+    """
     seen: set[str] = set()
     out: list[str] = []
 
@@ -522,10 +568,27 @@ def _detail_fetch_urls(detail_url: str) -> list[str]:
         seen.add(key)
         out.append(u)
 
-    add(_chinese_i_che168_url_from_detail_url(detail_url))
-    add(detail_url.strip())
-    add(_global_che168_detail_url_from_detail_url(detail_url))
+    is_dealer = bool(DEALER_LISTING_RE.search(detail_url))
+    if is_dealer:
+        add(_single_listing_url_from_input(detail_url))
+        add(_chinese_i_che168_url_from_detail_url(detail_url))
+        add(_global_che168_detail_url_from_detail_url(detail_url))
+    else:
+        add(_chinese_i_che168_url_from_detail_url(detail_url))
+        add(detail_url.strip())
+        add(_global_che168_detail_url_from_detail_url(detail_url))
     return out
+
+
+def _playwright_fetch_urls(detail_url: str) -> list[str]:
+    """Не гоняем Playwright по global-заглушке и лишним URL — только перспективные."""
+    urls = _detail_fetch_urls(detail_url)
+    out: list[str] = []
+    for u in urls:
+        if "global.che168.com" in u:
+            continue
+        out.append(u)
+    return out or urls[:1]
 
 
 def _parse_is_complete(parsed: ParsedCar | None) -> bool:
@@ -1196,10 +1259,13 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
     best: ParsedCar | None = None
     best_score = 0
 
+    captcha_hits = 0
     if not is_dongchedi:
         for url in fetch_urls:
             try:
-                html = _http_get_text(url, timeout=45.0)
+                html = _http_get_text(url, timeout=30.0)
+                if _is_global_che168_stub_html(html):
+                    continue
                 parsed = _parse_detail_from_html(html, source_listing_id)
                 if parsed is None:
                     continue
@@ -1210,8 +1276,15 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
                 if _parse_is_complete(parsed):
                     return parsed
             except RuntimeError as exc:
-                if "Парсер попробует открыть карточку через браузер" not in str(exc):
+                msg = str(exc)
+                if "антибот" in msg or "captcha" in msg.lower():
+                    captcha_hits += 1
+                if "Парсер попробует открыть карточку через браузер" not in msg:
                     raise
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    continue
+                raise
             except Exception:
                 pass
 
@@ -1223,7 +1296,8 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
         )
 
     last_err: Exception | None = None
-    for url in fetch_urls:
+    pw_urls = [detail_url] if is_dongchedi else _playwright_fetch_urls(detail_url)
+    for url in pw_urls:
         try:
             parsed = _parse_che168_detail_playwright(url, source_listing_id)
             if is_dongchedi:
@@ -1239,6 +1313,12 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
 
     if best and best_score > 0:
         return best
+    if captcha_hits >= len(fetch_urls):
+        raise RuntimeError(
+            "che168.com открыл антибот-проверку (Tencent captcha) для всех HTTP-запросов. "
+            "С VPS вне Китая импорт часто недоступен: нужен прокси/импорт с локальной машины "
+            "или CHE168_FORCE_DETAIL_URLS с URL, скопированным из браузера."
+        )
     if last_err is not None:
         raise last_err
     raise RuntimeError(f"Не удалось разобрать карточку: {detail_url}")
