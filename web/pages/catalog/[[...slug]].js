@@ -269,7 +269,11 @@ export default function CatalogTreePage({ initialPayload = null }) {
     const fetchKey = catalogFetchKey(segments, listSort);
     if (skipCarsFetchKeyRef.current === fetchKey) {
       skipCarsFetchKeyRef.current = null;
-      return;
+      const initialCars = listInitial?.cars?.length ?? 0;
+      const initialTotal = listInitial?.total ?? 0;
+      if (initialTotal > 0 && initialCars >= initialTotal) {
+        return;
+      }
     }
     const resolved = resolveCatalogTree(segments, tree);
     const params = buildCatalogCarsQuery(resolved, listSort);
@@ -303,7 +307,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
     return () => {
       cancelled = true;
     };
-  }, [ssrReady, segments, tree, unknownSlug, listSort]);
+  }, [ssrReady, segments, tree, unknownSlug, listSort, listInitial?.cars?.length, listInitial?.total]);
 
   useEffect(() => {
     if (!router.isReady) return;

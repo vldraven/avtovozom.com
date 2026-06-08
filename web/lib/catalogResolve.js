@@ -94,10 +94,13 @@ export function resolveCatalogTree(segments, tree) {
   };
 }
 
-/** Число объявлений на странице списка каталога (SSR и клиент). */
-export const CATALOG_LIST_LIMIT = 12;
+/** Карточек в HTML при SSR (SEO). Клиент догружает полный список. */
+export const CATALOG_SSR_LIMIT = 12;
 
-export function buildCatalogCarsQuery(resolved, listSort) {
+/** Максимум объявлений в ленте каталога на клиенте. */
+export const CATALOG_LIST_LIMIT = 100;
+
+export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_LIMIT) {
   const params = new URLSearchParams();
   const { brand, model, generation, badGenSlug, unknownSlug } = resolved;
   if (unknownSlug) return null;
@@ -106,7 +109,7 @@ export function buildCatalogCarsQuery(resolved, listSort) {
   if (generation && !badGenSlug) params.set("generation_id", String(generation.id));
   if (listSort && listSort !== "date_desc") params.set("sort", listSort);
   params.set("photo_limit", "8");
-  params.set("limit", String(CATALOG_LIST_LIMIT));
+  params.set("limit", String(limit));
   return params;
 }
 

@@ -1,6 +1,7 @@
 import {
   buildCatalogCarsQuery,
   catalogFetchKey,
+  CATALOG_SSR_LIMIT,
   isCarDetailSegments,
   resolveCatalogTree,
   segmentsFromSlugParam,
@@ -45,7 +46,7 @@ export async function fetchCatalogPageProps({ params, query }) {
   let cars = [];
   let total = 0;
 
-  const carsQuery = buildCatalogCarsQuery(resolved, listSort);
+  const carsQuery = buildCatalogCarsQuery(resolved, listSort, CATALOG_SSR_LIMIT);
   if (carsQuery) {
     try {
       const carsRes = await fetch(`${api}/cars?${carsQuery.toString()}`, {

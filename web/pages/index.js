@@ -230,6 +230,7 @@ export default function Home() {
       params.set("sort", listSort);
     }
     params.set("photo_limit", "8");
+    params.set("limit", "100");
     try {
       const res = await fetch(`${API_URL}/cars?${params.toString()}`);
       const data = await res.json();
