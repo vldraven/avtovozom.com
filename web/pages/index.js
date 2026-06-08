@@ -14,8 +14,10 @@ import TelegramChannelHeaderLink from "../components/TelegramChannelHeaderLink";
 import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { clearToken, getStoredToken } from "../lib/auth";
-import { publicCarHref } from "../lib/carRoutes";
+import { listingCarHref, publicCarHref } from "../lib/carRoutes";
+import { saveListingReturnPath } from "../lib/listingNavigation";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
+import { scheduleListScrollRestore } from "../lib/listScrollRestore";
 import { absoluteUrl } from "../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -382,6 +384,7 @@ export default function Home() {
 
       const card = event.currentTarget?.closest?.("[data-home-car-id]");
       const rect = card?.getBoundingClientRect?.();
+      saveListingReturnPath(router.asPath);
       writeHomeScrollPosition(router.asPath, carId, rect ? rect.top : null);
       lastExplicitHomeScrollSaveRef.current = { path: router.asPath, at: Date.now() };
     },
@@ -996,55 +999,33 @@ export default function Home() {
     loadHomeCatalogParallel();
   }, [loadHomeCatalogParallel]);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !router.isReady || cars.length === 0) return;
-
-    const storageKey = `${HOME_SCROLL_STORAGE_PREFIX}${router.asPath}`;
-    const raw = sessionStorage.getItem(storageKey);
-    if (!raw) return;
-
-    let saved;
-    try {
-      saved = JSON.parse(raw);
-    } catch {
-      sessionStorage.removeItem(storageKey);
-      return;
+  const tryRestoreHomeScroll = useCallback(() => {
+    if (typeof window === "undefined" || !router.isReady || cars.length === 0) {
+      return () => {};
     }
-
-    sessionStorage.removeItem(storageKey);
-    const timeoutIds = [];
-    let frameId = null;
-    let nestedFrameId = null;
-
-    const restore = () => {
-      const fallbackY = Number(saved?.y);
-      let targetY = Number.isFinite(fallbackY) ? fallbackY : 0;
-      const savedCardTop = Number(saved?.cardTop);
-      if (saved?.carId != null && Number.isFinite(savedCardTop)) {
-        const card = document.querySelector(`[data-home-car-id="${String(saved.carId)}"]`);
-        if (card) {
-          card.scrollIntoView({ block: "center", behavior: "auto" });
-          targetY = window.scrollY + card.getBoundingClientRect().top - savedCardTop;
-        }
-      }
-      window.scrollTo({ top: Math.max(0, targetY), behavior: "auto" });
-    };
-
-    frameId = window.requestAnimationFrame(() => {
-      nestedFrameId = window.requestAnimationFrame(() => {
-        restore();
-        [100, 300, 700, 1200].forEach((delay) => {
-          timeoutIds.push(window.setTimeout(restore, delay));
-        });
-      });
+    return scheduleListScrollRestore({
+      storagePrefix: HOME_SCROLL_STORAGE_PREFIX,
+      path: router.asPath,
+      cardDataAttr: "data-home-car-id",
     });
-
-    return () => {
-      if (frameId != null) window.cancelAnimationFrame(frameId);
-      if (nestedFrameId != null) window.cancelAnimationFrame(nestedFrameId);
-      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
-    };
   }, [router.isReady, router.asPath, cars.length]);
+
+  useEffect(() => {
+    return tryRestoreHomeScroll();
+  }, [tryRestoreHomeScroll]);
+
+  useEffect(() => {
+    if (!router.isReady) return undefined;
+
+    const onRouteChangeComplete = () => {
+      tryRestoreHomeScroll();
+    };
+
+    router.events.on("routeChangeComplete", onRouteChangeComplete);
+    return () => {
+      router.events.off("routeChangeComplete", onRouteChangeComplete);
+    };
+  }, [router.events, router.isReady, tryRestoreHomeScroll]);
 
   useEffect(() => {
     setMobileHeaderMenuOpen(false);
@@ -1623,10 +1604,9 @@ export default function Home() {
             return (
             <article key={car.id} className="catalog-card" data-home-car-id={car.id}>
               <Link
-                href={publicCarHref(car)}
+                href={listingCarHref(car)}
                 className="catalog-card__main"
-                target="_blank"
-                rel="noopener noreferrer"
+                scroll={false}
                 onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
               >
                 <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
@@ -1689,10 +1669,9 @@ export default function Home() {
                   Заказать расчёт
                 </button>
                 <Link
-                  href={publicCarHref(car)}
+                  href={listingCarHref(car)}
                   className="btn btn-secondary btn-sm"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  scroll={false}
                   onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
                 >
                   Подробнее

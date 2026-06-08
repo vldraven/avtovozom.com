@@ -14,8 +14,10 @@ import HeaderFavoritesLink from "../../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLink";
 import RequestConfirmModal from "../../components/RequestConfirmModal";
 import { clearToken, getStoredToken } from "../../lib/auth";
-import { publicCarHref } from "../../lib/carRoutes";
+import { listingCarHref, publicCarHref } from "../../lib/carRoutes";
+import { saveListingReturnPath } from "../../lib/listingNavigation";
 import { canCreateListings } from "../../lib/roles";
+import { scheduleListScrollRestore } from "../../lib/listScrollRestore";
 import { absoluteUrl } from "../../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -238,6 +240,7 @@ export default function CatalogTreePage() {
 
       const card = event.currentTarget?.closest?.("[data-catalog-car-id]");
       const rect = card?.getBoundingClientRect?.();
+      saveListingReturnPath(router.asPath);
       writeCatalogScrollPosition(router.asPath, carId, rect ? rect.top : null);
       lastExplicitScrollSaveRef.current = { path: router.asPath, at: Date.now() };
     },
@@ -387,7 +390,7 @@ export default function CatalogTreePage() {
     }
   }, [router.isReady, router.query.sort]);
 
-  useEffect(() => {
+  const tryRestoreCatalogScroll = useCallback(() => {
     if (
       typeof window === "undefined" ||
       !router.isReady ||
@@ -395,55 +398,31 @@ export default function CatalogTreePage() {
       !isCatalogListRoute ||
       cars.length === 0
     ) {
-      return;
+      return () => {};
     }
-
-    const storageKey = `${CATALOG_SCROLL_STORAGE_PREFIX}${router.asPath}`;
-    const raw = sessionStorage.getItem(storageKey);
-    if (!raw) return;
-
-    let saved;
-    try {
-      saved = JSON.parse(raw);
-    } catch {
-      sessionStorage.removeItem(storageKey);
-      return;
-    }
-
-    sessionStorage.removeItem(storageKey);
-    const timeoutIds = [];
-    let frameId = null;
-    let nestedFrameId = null;
-
-    const restore = () => {
-      const fallbackY = Number(saved?.y);
-      let targetY = Number.isFinite(fallbackY) ? fallbackY : 0;
-      const savedCardTop = Number(saved?.cardTop);
-      if (saved?.carId != null && Number.isFinite(savedCardTop)) {
-        const card = document.querySelector(`[data-catalog-car-id="${String(saved.carId)}"]`);
-        if (card) {
-          card.scrollIntoView({ block: "center", behavior: "auto" });
-          targetY = window.scrollY + card.getBoundingClientRect().top - savedCardTop;
-        }
-      }
-      window.scrollTo({ top: Math.max(0, targetY), behavior: "auto" });
-    };
-
-    frameId = window.requestAnimationFrame(() => {
-      nestedFrameId = window.requestAnimationFrame(() => {
-        restore();
-        [100, 300, 700, 1200].forEach((delay) => {
-          timeoutIds.push(window.setTimeout(restore, delay));
-        });
-      });
+    return scheduleListScrollRestore({
+      storagePrefix: CATALOG_SCROLL_STORAGE_PREFIX,
+      path: router.asPath,
+      cardDataAttr: "data-catalog-car-id",
     });
-
-    return () => {
-      if (frameId != null) window.cancelAnimationFrame(frameId);
-      if (nestedFrameId != null) window.cancelAnimationFrame(nestedFrameId);
-      timeoutIds.forEach((timeoutId) => window.clearTimeout(timeoutId));
-    };
   }, [router.isReady, router.asPath, segments, isCatalogListRoute, cars.length]);
+
+  useEffect(() => {
+    return tryRestoreCatalogScroll();
+  }, [tryRestoreCatalogScroll]);
+
+  useEffect(() => {
+    if (!router.isReady || !isCatalogListRoute) return undefined;
+
+    const onRouteChangeComplete = () => {
+      tryRestoreCatalogScroll();
+    };
+
+    router.events.on("routeChangeComplete", onRouteChangeComplete);
+    return () => {
+      router.events.off("routeChangeComplete", onRouteChangeComplete);
+    };
+  }, [router.events, router.isReady, isCatalogListRoute, tryRestoreCatalogScroll]);
 
   const breadcrumbItems = useMemo(() => {
     const items = [{ label: "Главная", href: "/" }];
@@ -835,10 +814,9 @@ export default function CatalogTreePage() {
                           data-catalog-car-id={car.id}
                         >
                           <Link
-                            href={publicCarHref(car)}
+                            href={listingCarHref(car)}
                             className="catalog-card__main"
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            scroll={false}
                             onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
                           >
                             <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
@@ -895,10 +873,9 @@ export default function CatalogTreePage() {
                               </button>
                             ) : null}
                             <Link
-                              href={publicCarHref(car)}
+                              href={listingCarHref(car)}
                               className="btn btn-secondary btn-sm"
-                              target="_blank"
-                              rel="noopener noreferrer"
+                              scroll={false}
                               onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
                             >
                               Подробнее

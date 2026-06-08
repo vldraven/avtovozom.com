@@ -15,7 +15,8 @@ import ListingShareActions from "./ListingShareActions";
 import RequestConfirmModal from "./RequestConfirmModal";
 import TrimConfigModal from "./TrimConfigModal";
 import { clearToken, getStoredToken } from "../lib/auth";
-import { publicCarHref } from "../lib/carRoutes";
+import { listingCarHref, publicCarHref } from "../lib/carRoutes";
+import { consumeListingReturnPath } from "../lib/listingNavigation";
 import { mediaSrc } from "../lib/media";
 import { absoluteUrl } from "../lib/siteUrl";
 import { seoDescription } from "../lib/seoText";
@@ -271,10 +272,6 @@ export default function CarDetailView({
       if (pathBrandSlug !== bs || pathModelSlug !== ms) {
         router.replace(canonical);
       }
-      return;
-    }
-    if (basePath === `/cars/${car.id}`) {
-      router.replace(canonical);
     }
   }, [car, router, pathBrandSlug, pathModelSlug]);
 
@@ -322,11 +319,20 @@ export default function CarDetailView({
   }, [car]);
 
   const handleBack = useCallback(() => {
-    if (typeof window !== "undefined" && window.history.length <= 1) {
-      router.push(catalogFallbackHref);
+    const returnPath = consumeListingReturnPath();
+    if (returnPath) {
+      if (typeof window !== "undefined" && window.history.length > 1) {
+        router.back();
+      } else {
+        router.push(returnPath);
+      }
       return;
     }
-    router.back();
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push(catalogFallbackHref);
   }, [router, catalogFallbackHref]);
 
   const showGenerationInCopy = hasMeaningfulGeneration(car?.generation);
@@ -877,10 +883,9 @@ export default function CarDetailView({
                   return (
                     <article key={c.id} className="catalog-card car-detail-similar__card">
                       <Link
-                        href={publicCarHref(c)}
+                        href={listingCarHref(c)}
                         className="catalog-card__main"
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        scroll={false}
                       >
                         <CatalogCardMedia photos={c.photos} carId={c.id} car={c} />
                         <div className="catalog-card__content">

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
-import { publicCarHref } from "../../lib/carRoutes";
+import { listingCarHref } from "../../lib/carRoutes";
+import { saveListingReturnPath } from "../../lib/listingNavigation";
 import { mediaSrc } from "../../lib/media";
 import { absoluteUrl } from "../../lib/siteUrl";
 
@@ -135,10 +136,10 @@ export default function DealerPublicPage() {
                     return (
                       <li key={c.id} className="dealer-public-card">
                         <Link
-                          href={publicCarHref(c)}
+                          href={listingCarHref(c)}
                           className="dealer-public-card__link"
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          scroll={false}
+                          onClickCapture={() => saveListingReturnPath(router.asPath)}
                         >
                           {ph ? (
                             <img

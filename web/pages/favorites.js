@@ -16,9 +16,12 @@ import {
   resolveAuthSessionFailure,
   tryRefreshAccessToken,
 } from "../lib/auth";
-import { publicCarHref } from "../lib/carRoutes";
+import { listingCarHref } from "../lib/carRoutes";
+import { scheduleListScrollRestore } from "../lib/listScrollRestore";
+import { saveListingReturnPath } from "../lib/listingNavigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const FAVORITES_SCROLL_STORAGE_PREFIX = "avt_favorites_scroll:";
 
 export default function FavoritesPage() {
   const router = useRouter();
@@ -28,6 +31,62 @@ export default function FavoritesPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const saveFavoritesScrollPosition = useCallback(
+    (event, carId) => {
+      if (typeof window === "undefined" || !router.asPath) return;
+      if (
+        (event?.button != null && event.button !== 0) ||
+        event?.metaKey ||
+        event?.ctrlKey ||
+        event?.shiftKey ||
+        event?.altKey ||
+        event?.defaultPrevented
+      ) {
+        return;
+      }
+      const card = event.currentTarget?.closest?.("[data-favorites-car-id]");
+      const rect = card?.getBoundingClientRect?.();
+      saveListingReturnPath(router.asPath);
+      const storageKey = `${FAVORITES_SCROLL_STORAGE_PREFIX}${router.asPath}`;
+      sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          y: window.scrollY,
+          carId,
+          cardTop: rect ? rect.top : null,
+          savedAt: Date.now(),
+        })
+      );
+    },
+    [router.asPath]
+  );
+
+  const tryRestoreFavoritesScroll = useCallback(() => {
+    if (typeof window === "undefined" || !router.isReady || cars.length === 0) {
+      return () => {};
+    }
+    return scheduleListScrollRestore({
+      storagePrefix: FAVORITES_SCROLL_STORAGE_PREFIX,
+      path: router.asPath,
+      cardDataAttr: "data-favorites-car-id",
+    });
+  }, [router.isReady, router.asPath, cars.length]);
+
+  useEffect(() => {
+    return tryRestoreFavoritesScroll();
+  }, [tryRestoreFavoritesScroll]);
+
+  useEffect(() => {
+    if (!router.isReady) return undefined;
+    const onRouteChangeComplete = () => {
+      tryRestoreFavoritesScroll();
+    };
+    router.events.on("routeChangeComplete", onRouteChangeComplete);
+    return () => {
+      router.events.off("routeChangeComplete", onRouteChangeComplete);
+    };
+  }, [router.events, router.isReady, tryRestoreFavoritesScroll]);
 
   const loadFavorites = useCallback(async (accessToken) => {
     setLoading(true);
@@ -158,8 +217,13 @@ export default function FavoritesPage() {
                     const totalRub =
                       car.estimated_total_rub != null ? car.estimated_total_rub : null;
                     return (
-                      <article key={car.id} className="catalog-card">
-                        <Link href={publicCarHref(car)} className="catalog-card__main">
+                      <article key={car.id} className="catalog-card" data-favorites-car-id={car.id}>
+                        <Link
+                          href={listingCarHref(car)}
+                          className="catalog-card__main"
+                          scroll={false}
+                          onClickCapture={(e) => saveFavoritesScrollPosition(e, car.id)}
+                        >
                           <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
                           <div className="catalog-card__content">
                             <h2 className="catalog-card__title">{car.title}</h2>
@@ -189,7 +253,12 @@ export default function FavoritesPage() {
                           </div>
                         </Link>
                         <div className="catalog-card__actions">
-                          <Link href={publicCarHref(car)} className="btn btn-secondary btn-sm">
+                          <Link
+                            href={listingCarHref(car)}
+                            className="btn btn-secondary btn-sm"
+                            scroll={false}
+                            onClickCapture={(e) => saveFavoritesScrollPosition(e, car.id)}
+                          >
                             Открыть
                           </Link>
                         </div>
