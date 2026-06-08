@@ -855,80 +855,7 @@ def public_faq_list(db: Session = Depends(get_db)):
     return rows
 
 
-@app.get("/admin/faq", response_model=list[FaqItemOut])
-def admin_faq_list(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("admin")),
-):
-    rows = (
-        db.execute(select(FaqItem).order_by(FaqItem.sort_order.asc(), FaqItem.id.asc()))
-        .scalars()
-        .all()
-    )
-    return rows
-
-
-@app.post("/admin/faq", response_model=FaqItemOut, status_code=status.HTTP_201_CREATED)
-def admin_faq_create(
-    payload: FaqItemCreateIn,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("admin")),
-):
-    sort_order = payload.sort_order
-    if sort_order is None:
-        max_order = db.scalar(select(func.max(FaqItem.sort_order))) or 0
-        sort_order = max_order + 10
-    row = FaqItem(
-        question=payload.question.strip(),
-        answer=payload.answer.strip(),
-        sort_order=sort_order,
-        is_published=payload.is_published,
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
-
-
-@app.patch("/admin/faq/{item_id}", response_model=FaqItemOut)
-def admin_faq_update(
-    item_id: int,
-    payload: FaqItemUpdateIn,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("admin")),
-):
-    row = db.execute(select(FaqItem).where(FaqItem.id == item_id)).scalar_one_or_none()
-    if not row:
-        raise HTTPException(status_code=404, detail="FAQ item not found")
-    data = payload.model_dump(exclude_unset=True)
-    if "question" in data and data["question"] is not None:
-        row.question = data["question"].strip()
-    if "answer" in data and data["answer"] is not None:
-        row.answer = data["answer"].strip()
-    if "sort_order" in data and data["sort_order"] is not None:
-        row.sort_order = data["sort_order"]
-    if "is_published" in data and data["is_published"] is not None:
-        row.is_published = data["is_published"]
-    db.commit()
-    db.refresh(row)
-    return row
-
-
-@app.delete("/admin/faq/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def admin_faq_delete(
-    item_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_roles("admin")),
-):
-    row = db.execute(select(FaqItem).where(FaqItem.id == item_id)).scalar_one_or_none()
-    if not row:
-        raise HTTPException(status_code=404, detail="FAQ item not found")
-    db.delete(row)
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@app.get("/public/customs-calculator/estimate", response_model=CustomsCalcEstimateOut)
+@app.post("/public/customs-calculator/estimate", response_model=CustomsCalcEstimateOut)
 def public_customs_calculator_estimate(payload: CustomsCalcEstimateIn, db: Session = Depends(get_db)):
     row = ensure_settings_row(db)
     try:
@@ -2523,6 +2450,79 @@ def admin_list_car_brands(
         .scalars()
         .all()
     )
+
+
+@app.get("/admin/faq", response_model=list[FaqItemOut])
+def admin_faq_list(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    rows = (
+        db.execute(select(FaqItem).order_by(FaqItem.sort_order.asc(), FaqItem.id.asc()))
+        .scalars()
+        .all()
+    )
+    return rows
+
+
+@app.post("/admin/faq", response_model=FaqItemOut, status_code=status.HTTP_201_CREATED)
+def admin_faq_create(
+    payload: FaqItemCreateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    sort_order = payload.sort_order
+    if sort_order is None:
+        max_order = db.scalar(select(func.max(FaqItem.sort_order))) or 0
+        sort_order = max_order + 10
+    row = FaqItem(
+        question=payload.question.strip(),
+        answer=payload.answer.strip(),
+        sort_order=sort_order,
+        is_published=payload.is_published,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.patch("/admin/faq/{item_id}", response_model=FaqItemOut)
+def admin_faq_update(
+    item_id: int,
+    payload: FaqItemUpdateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    row = db.execute(select(FaqItem).where(FaqItem.id == item_id)).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="FAQ item not found")
+    data = payload.model_dump(exclude_unset=True)
+    if "question" in data and data["question"] is not None:
+        row.question = data["question"].strip()
+    if "answer" in data and data["answer"] is not None:
+        row.answer = data["answer"].strip()
+    if "sort_order" in data and data["sort_order"] is not None:
+        row.sort_order = data["sort_order"]
+    if "is_published" in data and data["is_published"] is not None:
+        row.is_published = data["is_published"]
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@app.delete("/admin/faq/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_faq_delete(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    row = db.execute(select(FaqItem).where(FaqItem.id == item_id)).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="FAQ item not found")
+    db.delete(row)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.patch("/admin/car-brands/{brand_id}", response_model=CarBrandBriefOut)
