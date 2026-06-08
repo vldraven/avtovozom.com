@@ -15,8 +15,21 @@ import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLin
 import RequestConfirmModal from "../../components/RequestConfirmModal";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { listingCarHref, publicCarHref } from "../../lib/carRoutes";
-import { saveListingReturnPath } from "../../lib/listingNavigation";
+import { saveListingReturnPath, markScrollRestoreTarget } from "../../lib/listingNavigation";
 import { canCreateListings } from "../../lib/roles";
+import {
+  buildCatalogCarsQuery,
+  catalogFetchKey,
+  isCarDetailSegments,
+  resolveCatalogTree,
+  segmentsFromSlugParam,
+} from "../../lib/catalogResolve";
+import {
+  catalogBreadcrumbItems,
+  catalogCanonicalPath,
+  catalogSeoCopy,
+} from "../../lib/catalogSeo";
+import { breadcrumbListJsonLd, jsonLdScriptProps } from "../../lib/schema";
 import { scheduleListScrollRestore } from "../../lib/listScrollRestore";
 import { absoluteUrl } from "../../lib/siteUrl";
 
@@ -27,37 +40,37 @@ const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
 const CATALOG_SCROLL_STORAGE_PREFIX = "avt_catalog_scroll:";
 
-function segmentsFromQuery(slug) {
-  if (slug == null) return [];
-  if (Array.isArray(slug)) return slug.map(String).filter(Boolean);
-  return [String(slug)].filter(Boolean);
-}
-
-export default function CatalogTreePage() {
+export default function CatalogTreePage({ initialPayload = null }) {
   const router = useRouter();
-  const catalogPathRef = useRef("");
   const lastExplicitScrollSaveRef = useRef({ path: "", at: 0 });
+  const listInitial = initialPayload?.mode === "list" ? initialPayload : null;
+  const skipCarsFetchKeyRef = useRef(listInitial?.fetchKey ?? null);
+  const skipTreeLoadRef = useRef(Boolean(listInitial?.tree?.length));
+
   /* Без useMemo сегменты — новый массив на каждом рендере, и useEffect с fetch(/cars) зацикливается. */
   const segments = useMemo(() => {
-    if (!router.isReady) return null;
-    return segmentsFromQuery(router.query.slug);
-  }, [router.isReady, router.asPath]);
+    if (router.isReady) return segmentsFromSlugParam(router.query.slug);
+    if (initialPayload?.segments != null) return initialPayload.segments;
+    return null;
+  }, [router.isReady, router.query.slug, initialPayload]);
 
-  const [tree, setTree] = useState([]);
-  const [cars, setCars] = useState([]);
-  const [total, setTotal] = useState(0);
+  const ssrReady = Boolean(initialPayload) || router.isReady;
+
+  const [tree, setTree] = useState(listInitial?.tree ?? []);
+  const [cars, setCars] = useState(listInitial?.cars ?? []);
+  const [total, setTotal] = useState(listInitial?.total ?? 0);
   const [token, setToken] = useState("");
   const [me, setMe] = useState(null);
   const [treeError, setTreeError] = useState(null);
   const [carsError, setCarsError] = useState(null);
-  const [listSort, setListSort] = useState("date_desc");
+  const [listSort, setListSort] = useState(listInitial?.listSort ?? "date_desc");
   const [brandsExpanded, setBrandsExpanded] = useState(false);
   const [requestModalCar, setRequestModalCar] = useState(null);
   const [requestModalComment, setRequestModalComment] = useState("");
   const [requestModalBusy, setRequestModalBusy] = useState(false);
 
   const { brand, model, generation, unknownSlug, badModelSlug, badGenSlug } = useMemo(() => {
-    if (segments == null || !tree.length) {
+    if (segments == null) {
       return {
         brand: null,
         model: null,
@@ -67,78 +80,7 @@ export default function CatalogTreePage() {
         badGenSlug: false,
       };
     }
-    const [bSlug, mSlug, gSlug] = segments;
-    if (!bSlug) {
-      return {
-        brand: null,
-        model: null,
-        generation: null,
-        unknownSlug: false,
-        badModelSlug: false,
-        badGenSlug: false,
-      };
-    }
-    const b = tree.find((x) => x.slug === bSlug);
-    if (!b) {
-      return {
-        brand: null,
-        model: null,
-        generation: null,
-        unknownSlug: true,
-        badModelSlug: false,
-        badGenSlug: false,
-      };
-    }
-    if (!mSlug) {
-      return {
-        brand: b,
-        model: null,
-        generation: null,
-        unknownSlug: false,
-        badModelSlug: false,
-        badGenSlug: false,
-      };
-    }
-    const m = b.models.find((x) => x.slug === mSlug);
-    if (!m) {
-      return {
-        brand: b,
-        model: null,
-        generation: null,
-        unknownSlug: false,
-        badModelSlug: true,
-        badGenSlug: false,
-      };
-    }
-    if (!gSlug) {
-      return {
-        brand: b,
-        model: m,
-        generation: null,
-        unknownSlug: false,
-        badModelSlug: false,
-        badGenSlug: false,
-      };
-    }
-    const gen = (m.generations || []).find((x) => x.slug === gSlug);
-    if (!gen) {
-      return {
-        brand: b,
-        model: m,
-        generation: null,
-        unknownSlug: false,
-        badModelSlug: false,
-        badGenSlug: true,
-      };
-    }
-    return {
-      brand: b,
-      model: m,
-      generation: gen,
-      unknownSlug: false,
-      badModelSlug: false,
-      badGenSlug: false,
-    };
+    return resolveCatalogTree(segments, tree);
   }, [segments, tree]);
 
   const isBrandFocus = Boolean(brand && !unknownSlug);
@@ -147,8 +89,21 @@ export default function CatalogTreePage() {
     : tree.slice(0, CATALOG_BRANDS_COLLAPSED_LIMIT);
   const hiddenBrandsCount = Math.max(0, tree.length - CATALOG_BRANDS_COLLAPSED_LIMIT);
   const isCarDetailRoute =
-    segments != null && segments.length === 3 && /^\d+$/.test(String(segments[2]));
+    initialPayload?.mode === "detail" ||
+    (segments != null && isCarDetailSegments(segments));
   const isCatalogListRoute = segments != null && !isCarDetailRoute && !unknownSlug;
+
+  useEffect(() => {
+    if (!initialPayload) return;
+    if (initialPayload.mode === "list") {
+      setTree(initialPayload.tree ?? []);
+      setCars(initialPayload.cars ?? []);
+      setTotal(initialPayload.total ?? 0);
+      setListSort(initialPayload.listSort ?? "date_desc");
+      skipCarsFetchKeyRef.current = initialPayload.fetchKey ?? null;
+      skipTreeLoadRef.current = Boolean(initialPayload.tree?.length);
+    }
+  }, [initialPayload]);
 
   const loadTree = useCallback(async () => {
     setTreeError(null);
@@ -171,6 +126,10 @@ export default function CatalogTreePage() {
   }, []);
 
   useEffect(() => {
+    if (skipTreeLoadRef.current) {
+      skipTreeLoadRef.current = false;
+      return;
+    }
     loadTree();
   }, [loadTree]);
 
@@ -241,6 +200,7 @@ export default function CatalogTreePage() {
       const card = event.currentTarget?.closest?.("[data-catalog-car-id]");
       const rect = card?.getBoundingClientRect?.();
       saveListingReturnPath(router.asPath);
+      markScrollRestoreTarget(router.asPath);
       writeCatalogScrollPosition(router.asPath, carId, rect ? rect.top : null);
       lastExplicitScrollSaveRef.current = { path: router.asPath, at: Date.now() };
     },
@@ -255,31 +215,6 @@ export default function CatalogTreePage() {
       window.history.scrollRestoration = previous;
     };
   }, []);
-
-  useEffect(() => {
-    if (!router.isReady || !isCatalogListRoute) return;
-    catalogPathRef.current = router.asPath;
-
-    const saveCurrentCatalogScroll = () => {
-      const explicit = lastExplicitScrollSaveRef.current;
-      if (explicit.path === catalogPathRef.current && Date.now() - explicit.at < 1000) return;
-      writeCatalogScrollPosition(catalogPathRef.current);
-    };
-
-    router.events.on("routeChangeStart", saveCurrentCatalogScroll);
-    window.addEventListener("pagehide", saveCurrentCatalogScroll);
-
-    return () => {
-      router.events.off("routeChangeStart", saveCurrentCatalogScroll);
-      window.removeEventListener("pagehide", saveCurrentCatalogScroll);
-    };
-  }, [
-    router.events,
-    router.isReady,
-    router.asPath,
-    isCatalogListRoute,
-    writeCatalogScrollPosition,
-  ]);
 
   async function confirmRequestFromModal() {
     if (!requestModalCar || !token) return;
@@ -325,21 +260,20 @@ export default function CatalogTreePage() {
   }
 
   useEffect(() => {
-    if (!router.isReady || segments == null) return;
+    if (!ssrReady || segments == null) return;
     if (unknownSlug) {
       setCars([]);
       setTotal(0);
       return;
     }
-    /* badModelSlug: объявления по марке; badGenSlug — по модели без фильтра поколения */
-    const params = new URLSearchParams();
-    if (brand) params.set("brand_id", String(brand.id));
-    if (model) params.set("model_id", String(model.id));
-    if (generation && !badGenSlug) params.set("generation_id", String(generation.id));
-    if (listSort && listSort !== "date_desc") {
-      params.set("sort", listSort);
+    const fetchKey = catalogFetchKey(segments, listSort);
+    if (skipCarsFetchKeyRef.current === fetchKey) {
+      skipCarsFetchKeyRef.current = null;
+      return;
     }
-    params.set("photo_limit", "8");
+    const resolved = resolveCatalogTree(segments, tree);
+    const params = buildCatalogCarsQuery(resolved, listSort);
+    if (!params) return;
     let cancelled = false;
     (async () => {
       setCarsError(null);
@@ -369,17 +303,7 @@ export default function CatalogTreePage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    router.isReady,
-    segments,
-    brand,
-    model,
-    unknownSlug,
-    badModelSlug,
-    badGenSlug,
-    generation,
-    listSort,
-  ]);
+  }, [ssrReady, segments, tree, unknownSlug, listSort]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -389,6 +313,8 @@ export default function CatalogTreePage() {
       setListSort(String(sv));
     }
   }, [router.isReady, router.query.sort]);
+
+  const scrollRestorePathRef = useRef("");
 
   const tryRestoreCatalogScroll = useCallback(() => {
     if (
@@ -400,6 +326,10 @@ export default function CatalogTreePage() {
     ) {
       return () => {};
     }
+    if (scrollRestorePathRef.current === router.asPath) {
+      return () => {};
+    }
+    scrollRestorePathRef.current = router.asPath;
     return scheduleListScrollRestore({
       storagePrefix: CATALOG_SCROLL_STORAGE_PREFIX,
       path: router.asPath,
@@ -408,72 +338,28 @@ export default function CatalogTreePage() {
   }, [router.isReady, router.asPath, segments, isCatalogListRoute, cars.length]);
 
   useEffect(() => {
+    scrollRestorePathRef.current = "";
     return tryRestoreCatalogScroll();
   }, [tryRestoreCatalogScroll]);
 
-  useEffect(() => {
-    if (!router.isReady || !isCatalogListRoute) return undefined;
+  const breadcrumbItems = useMemo(
+    () => catalogBreadcrumbItems({ brand, model, generation }),
+    [brand, model, generation]
+  );
 
-    const onRouteChangeComplete = () => {
-      tryRestoreCatalogScroll();
-    };
+  const catalogCanon = useMemo(() => catalogCanonicalPath(segments), [segments]);
 
-    router.events.on("routeChangeComplete", onRouteChangeComplete);
-    return () => {
-      router.events.off("routeChangeComplete", onRouteChangeComplete);
-    };
-  }, [router.events, router.isReady, isCatalogListRoute, tryRestoreCatalogScroll]);
+  const catalogSeo = useMemo(
+    () => catalogSeoCopy({ unknownSlug, brand, model, generation }),
+    [unknownSlug, brand, model, generation]
+  );
 
-  const breadcrumbItems = useMemo(() => {
-    const items = [{ label: "Главная", href: "/" }];
-    if (brand) items.push({ label: brand.name, href: `/catalog/${brand.slug}` });
-    if (model) items.push({ label: model.name, href: `/catalog/${brand.slug}/${model.slug}` });
-    if (generation) {
-      items.push({
-        label: generation.name,
-        href: `/catalog/${brand.slug}/${model.slug}/${generation.slug}`,
-      });
-    }
-    return items;
-  }, [brand, model, generation]);
+  const catalogBreadcrumbLd = useMemo(
+    () => breadcrumbListJsonLd(breadcrumbItems),
+    [breadcrumbItems]
+  );
 
-  const catalogCanon = useMemo(() => {
-    if (segments == null || segments.length === 0) return "/catalog";
-    return `/catalog/${segments.join("/")}`;
-  }, [segments]);
-
-  const catalogSeo = useMemo(() => {
-    if (unknownSlug) {
-      return {
-        title: "Раздел не найден — avtovozom",
-        desc: "Проверьте адрес каталога или вернитесь к списку марок.",
-      };
-    }
-    if (generation && brand && model) {
-      return {
-        title: `${brand.name} ${model.name} ${generation.name} — авто из Китая | avtovozom`,
-        desc: `Объявления ${brand.name} ${model.name}, поколение ${generation.name}. Доставка из Китая в Россию.`,
-      };
-    }
-    if (model && brand) {
-      return {
-        title: `${brand.name} ${model.name} — купить из Китая | avtovozom`,
-        desc: `Каталог ${brand.name} ${model.name}: цены, расчёт под ключ до РФ.`,
-      };
-    }
-    if (brand) {
-      return {
-        title: `${brand.name} — автомобили из Китая | avtovozom`,
-        desc: `Модели ${brand.name}: подбор, доставка и растаможка автомобиля из Китая.`,
-      };
-    }
-    return {
-      title: "Каталог автомобилей из Китая | avtovozom",
-      desc: "Подбор марок и моделей, цены, доставка в Россию и сопровождение сделки.",
-    };
-  }, [unknownSlug, brand, model, generation]);
-
-  if (!router.isReady) {
+  if (!ssrReady) {
     return (
       <div className="layout">
         <main className="site-main">
@@ -486,11 +372,13 @@ export default function CatalogTreePage() {
   }
 
   if (isCarDetailRoute) {
+    const detailCarId =
+      initialPayload?.mode === "detail" ? initialPayload.carId : String(segments[2]);
     return (
       <CarDetailView
-        carId={String(segments[2])}
-        pathBrandSlug={segments[0]}
-        pathModelSlug={segments[1]}
+        carId={detailCarId}
+        pathBrandSlug={segments?.[0] ?? initialPayload?.pathBrandSlug ?? null}
+        pathModelSlug={segments?.[1] ?? initialPayload?.pathModelSlug ?? null}
       />
     );
   }
@@ -504,6 +392,7 @@ export default function CatalogTreePage() {
         <meta property="og:title" content={catalogSeo.title} />
         <meta property="og:description" content={catalogSeo.desc} />
         <meta property="og:url" content={absoluteUrl(catalogCanon)} />
+        {catalogBreadcrumbLd ? <script {...jsonLdScriptProps(catalogBreadcrumbLd)} /> : null}
       </Head>
       <header className="site-header">
         <div className="container site-header__inner">
@@ -816,7 +705,6 @@ export default function CatalogTreePage() {
                           <Link
                             href={listingCarHref(car)}
                             className="catalog-card__main"
-                            scroll={false}
                             onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
                           >
                             <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
@@ -869,13 +757,12 @@ export default function CatalogTreePage() {
                                   openRequestForModal(car);
                                 }}
                               >
-                                Заказать расчёт
+                                Получить расчёт
                               </button>
                             ) : null}
                             <Link
                               href={listingCarHref(car)}
                               className="btn btn-secondary btn-sm"
-                              scroll={false}
                               onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
                             >
                               Подробнее
@@ -904,4 +791,9 @@ export default function CatalogTreePage() {
       </main>
     </div>
   );
+}
+
+export async function getServerSideProps(context) {
+  const { fetchCatalogPageProps } = await import("../../lib/catalogServerProps");
+  return fetchCatalogPageProps(context);
 }

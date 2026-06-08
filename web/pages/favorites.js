@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import CatalogCardMedia from "../components/CatalogCardMedia";
 import HeaderFavoritesLink from "../components/HeaderFavoritesLink";
@@ -18,7 +18,7 @@ import {
 } from "../lib/auth";
 import { listingCarHref } from "../lib/carRoutes";
 import { scheduleListScrollRestore } from "../lib/listScrollRestore";
-import { saveListingReturnPath } from "../lib/listingNavigation";
+import { saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const FAVORITES_SCROLL_STORAGE_PREFIX = "avt_favorites_scroll:";
@@ -48,6 +48,7 @@ export default function FavoritesPage() {
       const card = event.currentTarget?.closest?.("[data-favorites-car-id]");
       const rect = card?.getBoundingClientRect?.();
       saveListingReturnPath(router.asPath);
+      markScrollRestoreTarget(router.asPath);
       const storageKey = `${FAVORITES_SCROLL_STORAGE_PREFIX}${router.asPath}`;
       sessionStorage.setItem(
         storageKey,
@@ -62,10 +63,16 @@ export default function FavoritesPage() {
     [router.asPath]
   );
 
+  const scrollRestorePathRef = useRef("");
+
   const tryRestoreFavoritesScroll = useCallback(() => {
     if (typeof window === "undefined" || !router.isReady || cars.length === 0) {
       return () => {};
     }
+    if (scrollRestorePathRef.current === router.asPath) {
+      return () => {};
+    }
+    scrollRestorePathRef.current = router.asPath;
     return scheduleListScrollRestore({
       storagePrefix: FAVORITES_SCROLL_STORAGE_PREFIX,
       path: router.asPath,
@@ -74,19 +81,9 @@ export default function FavoritesPage() {
   }, [router.isReady, router.asPath, cars.length]);
 
   useEffect(() => {
+    scrollRestorePathRef.current = "";
     return tryRestoreFavoritesScroll();
   }, [tryRestoreFavoritesScroll]);
-
-  useEffect(() => {
-    if (!router.isReady) return undefined;
-    const onRouteChangeComplete = () => {
-      tryRestoreFavoritesScroll();
-    };
-    router.events.on("routeChangeComplete", onRouteChangeComplete);
-    return () => {
-      router.events.off("routeChangeComplete", onRouteChangeComplete);
-    };
-  }, [router.events, router.isReady, tryRestoreFavoritesScroll]);
 
   const loadFavorites = useCallback(async (accessToken) => {
     setLoading(true);
@@ -221,7 +218,6 @@ export default function FavoritesPage() {
                         <Link
                           href={listingCarHref(car)}
                           className="catalog-card__main"
-                          scroll={false}
                           onClickCapture={(e) => saveFavoritesScrollPosition(e, car.id)}
                         >
                           <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
@@ -256,7 +252,6 @@ export default function FavoritesPage() {
                           <Link
                             href={listingCarHref(car)}
                             className="btn btn-secondary btn-sm"
-                            scroll={false}
                             onClickCapture={(e) => saveFavoritesScrollPosition(e, car.id)}
                           >
                             Открыть

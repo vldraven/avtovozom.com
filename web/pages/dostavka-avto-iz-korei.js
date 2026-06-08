@@ -1,6 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 
+import LeadForm from "../components/LeadForm";
 import { absoluteUrl } from "../lib/siteUrl";
 
 export default function DeliveryFromKoreaPage() {
@@ -49,7 +50,7 @@ export default function DeliveryFromKoreaPage() {
         <title>Доставка автомобилей из Кореи под ключ | avtovozom</title>
         <meta
           name="description"
-          content="Доставка автомобилей из Кореи под ключ: подбор марки и модели, организация выкупа, транспортировка в РФ, помощь с растаможкой и расчёт ориентировочной цены."
+          content="Доставка авто из Кореи (Kia, Hyundai, Genesis): подбор, выкуп и доставка в РФ. Сроки, маршрут и расчёт под ключ — оставьте заявку."
         />
         <link rel="canonical" href={absoluteUrl("/dostavka-avto-iz-korei")} />
         <meta property="og:title" content="Доставка автомобилей из Кореи под ключ | avtovozom" />
@@ -112,6 +113,11 @@ export default function DeliveryFromKoreaPage() {
               <li>Сводка по ориентировочной стоимости под запрос.</li>
             </ul>
           </section>
+
+          <LeadForm
+            title="Заказать расчёт доставки из Кореи"
+            lead="Kia, Hyundai, Genesis и другие модели — оставьте заявку, мы свяжемся и уточним детали."
+          />
 
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1.25rem" }}>
             <Link href="/" className="btn btn-primary">

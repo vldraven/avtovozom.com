@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import Breadcrumbs from "./Breadcrumbs";
 import CatalogCardMedia from "./CatalogCardMedia";
@@ -16,10 +16,11 @@ import RequestConfirmModal from "./RequestConfirmModal";
 import TrimConfigModal from "./TrimConfigModal";
 import { clearToken, getStoredToken } from "../lib/auth";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
-import { consumeListingReturnPath } from "../lib/listingNavigation";
+import { consumeListingReturnPath, handleListingDetailRouteChangeStart } from "../lib/listingNavigation";
 import { mediaSrc } from "../lib/media";
 import { absoluteUrl } from "../lib/siteUrl";
 import { seoDescription } from "../lib/seoText";
+import { breadcrumbListJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -69,9 +70,10 @@ export default function CarDetailView({
   carId,
   pathBrandSlug = null,
   pathModelSlug = null,
+  initialCar = null,
 }) {
   const router = useRouter();
-  const [car, setCar] = useState(null);
+  const [car, setCar] = useState(initialCar);
   const [error, setError] = useState("");
   const [activePhoto, setActivePhoto] = useState(0);
   const [authError, setAuthError] = useState("");
@@ -220,9 +222,18 @@ export default function CarDetailView({
   }
 
   useEffect(() => {
+    if (initialCar != null && String(initialCar.id) === String(carId)) {
+      setCar(initialCar);
+    }
+  }, [initialCar, carId]);
+
+  useEffect(() => {
     if (!carId) return;
+    if (initialCar != null && String(initialCar.id) === String(carId)) {
+      return;
+    }
     loadCarDetails();
-  }, [carId]);
+  }, [carId, initialCar]);
 
   useEffect(() => {
     if (!car?.id || car.price_cny == null) return;
@@ -275,6 +286,11 @@ export default function CarDetailView({
     }
   }, [car, router, pathBrandSlug, pathModelSlug]);
 
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [carId]);
+
   useEffect(() => {
     setActivePhoto(0);
   }, [car?.id]);
@@ -293,6 +309,19 @@ export default function CarDetailView({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!router.isReady) return undefined;
+
+    const onRouteChangeStart = (url) => {
+      handleListingDetailRouteChangeStart(url);
+    };
+
+    router.events.on("routeChangeStart", onRouteChangeStart);
+    return () => {
+      router.events.off("routeChangeStart", onRouteChangeStart);
+    };
+  }, [router.events, router.isReady]);
 
   useEffect(() => {
     function onKey(e) {
@@ -445,6 +474,9 @@ export default function CarDetailView({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
+        {detailBreadcrumbItems.length ? (
+          <script {...jsonLdScriptProps(breadcrumbListJsonLd(detailBreadcrumbItems))} />
+        ) : null}
       </Head>
       <div
         className={`layout layout--car-detail${
@@ -885,7 +917,6 @@ export default function CarDetailView({
                       <Link
                         href={listingCarHref(c)}
                         className="catalog-card__main"
-                        scroll={false}
                       >
                         <CatalogCardMedia photos={c.photos} carId={c.id} car={c} />
                         <div className="catalog-card__content">
@@ -949,7 +980,7 @@ export default function CarDetailView({
               )}
             </div>
             <button type="button" className="btn btn-primary car-detail-cta-bar__btn" onClick={openRequestModal}>
-              Заказать расчёт
+              Получить расчёт
             </button>
           </div>
         </div>

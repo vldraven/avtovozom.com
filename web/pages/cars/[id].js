@@ -1,12 +1,35 @@
 import { useRouter } from "next/router";
 
 import CarDetailView from "../../components/CarDetailView";
+import { getServerApiBase } from "../../lib/serverApiUrl";
 
-export default function CarDetailsPage() {
+export async function getServerSideProps({ params }) {
+  const carId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+  if (!carId || !/^\d+$/.test(String(carId))) {
+    return { notFound: true };
+  }
+  const api = getServerApiBase();
+  try {
+    const res = await fetch(`${api}/cars/${carId}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return { notFound: true };
+    return { props: { initialCar: await res.json() } };
+  } catch {
+    return { notFound: true };
+  }
+}
+
+export default function CarDetailsPage({ initialCar = null }) {
   const router = useRouter();
-  const { id } = router.query;
+  const rawId = router.query.id;
+  const carIdFromRouter =
+    rawId == null ? null : String(Array.isArray(rawId) ? rawId[0] : rawId);
+  const carId =
+    carIdFromRouter || (initialCar?.id != null ? String(initialCar.id) : null);
+  const ssrReady = Boolean(initialCar) || router.isReady;
 
-  if (!router.isReady) {
+  if (!ssrReady) {
     return (
       <div className="layout">
         <main className="site-main">
@@ -18,7 +41,6 @@ export default function CarDetailsPage() {
     );
   }
 
-  const carId = Array.isArray(id) ? id[0] : id;
   if (!carId) {
     return (
       <div className="layout">
@@ -30,5 +52,6 @@ export default function CarDetailsPage() {
       </div>
     );
   }
-  return <CarDetailView carId={String(carId)} />;
+
+  return <CarDetailView carId={carId} initialCar={initialCar} />;
 }

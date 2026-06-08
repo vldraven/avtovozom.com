@@ -138,7 +138,6 @@ export default function DealerPublicPage() {
                         <Link
                           href={listingCarHref(c)}
                           className="dealer-public-card__link"
-                          scroll={false}
                           onClickCapture={() => saveListingReturnPath(router.asPath)}
                         >
                           {ph ? (

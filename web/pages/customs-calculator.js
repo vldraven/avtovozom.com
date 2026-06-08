@@ -109,7 +109,7 @@ export default function CustomsCalculatorPage() {
         <title>Калькулятор растаможки авто из Китая | avtovozom</title>
         <meta
           name="description"
-          content="Оценка таможенных платежей и утильсбора для ввоза автомобиля в РФ: физлицо и юрлицо, курс и ставки."
+          content="Бесплатный калькулятор растаможки авто в РФ: пошлина, акциз, утильсбор для физлица и юрлица. Оцените платежи за минуту."
         />
         <link rel="canonical" href={absoluteUrl("/customs-calculator")} />
         <meta property="og:title" content="Калькулятор растаможки авто из Китая | avtovozom" />

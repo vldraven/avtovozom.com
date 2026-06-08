@@ -1,3 +1,8 @@
+import {
+  clearScrollRestoreTarget,
+  peekScrollRestoreTarget,
+} from "./listingNavigation";
+
 /**
  * Восстановление позиции скролла списка объявлений после возврата из карточки.
  * Возвращает функцию очистки таймеров / rAF.
@@ -6,18 +11,35 @@ export function scheduleListScrollRestore({ storagePrefix, path, cardDataAttr })
   if (typeof window === "undefined" || !path) return () => {};
 
   const storageKey = `${storagePrefix}${path}`;
+  const restoreTarget = peekScrollRestoreTarget();
+  if (!restoreTarget || restoreTarget !== path) {
+    sessionStorage.removeItem(storageKey);
+    return () => {};
+  }
+
   const raw = sessionStorage.getItem(storageKey);
-  if (!raw) return () => {};
+  if (!raw) {
+    clearScrollRestoreTarget();
+    return () => {};
+  }
 
   let saved;
   try {
     saved = JSON.parse(raw);
   } catch {
     sessionStorage.removeItem(storageKey);
+    clearScrollRestoreTarget();
+    return () => {};
+  }
+
+  if (saved?.carId == null) {
+    sessionStorage.removeItem(storageKey);
+    clearScrollRestoreTarget();
     return () => {};
   }
 
   sessionStorage.removeItem(storageKey);
+  clearScrollRestoreTarget();
   const timeoutIds = [];
   let frameId = null;
   let nestedFrameId = null;
@@ -39,7 +61,7 @@ export function scheduleListScrollRestore({ storagePrefix, path, cardDataAttr })
   frameId = window.requestAnimationFrame(() => {
     nestedFrameId = window.requestAnimationFrame(() => {
       restore();
-      [0, 50, 150, 300, 700, 1200].forEach((delay) => {
+      [50, 150, 300, 700].forEach((delay) => {
         timeoutIds.push(window.setTimeout(restore, delay));
       });
     });

@@ -15,8 +15,9 @@ import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { clearToken, getStoredToken } from "../lib/auth";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
-import { saveListingReturnPath } from "../lib/listingNavigation";
+import { saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
+import { organizationAndWebSiteJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { scheduleListScrollRestore } from "../lib/listScrollRestore";
 import { absoluteUrl } from "../lib/siteUrl";
 
@@ -72,7 +73,6 @@ function formatApiErrorDetail(body) {
 
 export default function Home() {
   const router = useRouter();
-  const homePathRef = useRef("");
   const lastExplicitHomeScrollSaveRef = useRef({ path: "", at: 0 });
   const [mobileHeaderMenuOpen, setMobileHeaderMenuOpen] = useState(false);
   const [cars, setCars] = useState([]);
@@ -385,6 +385,7 @@ export default function Home() {
       const card = event.currentTarget?.closest?.("[data-home-car-id]");
       const rect = card?.getBoundingClientRect?.();
       saveListingReturnPath(router.asPath);
+      markScrollRestoreTarget(router.asPath);
       writeHomeScrollPosition(router.asPath, carId, rect ? rect.top : null);
       lastExplicitHomeScrollSaveRef.current = { path: router.asPath, at: Date.now() };
     },
@@ -399,25 +400,6 @@ export default function Home() {
       window.history.scrollRestoration = previous;
     };
   }, []);
-
-  useEffect(() => {
-    if (!router.isReady) return;
-    homePathRef.current = router.asPath;
-
-    const saveCurrentHomeScroll = () => {
-      const explicit = lastExplicitHomeScrollSaveRef.current;
-      if (explicit.path === homePathRef.current && Date.now() - explicit.at < 1000) return;
-      writeHomeScrollPosition(homePathRef.current);
-    };
-
-    router.events.on("routeChangeStart", saveCurrentHomeScroll);
-    window.addEventListener("pagehide", saveCurrentHomeScroll);
-
-    return () => {
-      router.events.off("routeChangeStart", saveCurrentHomeScroll);
-      window.removeEventListener("pagehide", saveCurrentHomeScroll);
-    };
-  }, [router.events, router.isReady, router.asPath, writeHomeScrollPosition]);
 
   async function confirmRequestFromModal() {
     if (!requestModalCar || !token) return;
@@ -999,10 +981,16 @@ export default function Home() {
     loadHomeCatalogParallel();
   }, [loadHomeCatalogParallel]);
 
+  const scrollRestorePathRef = useRef("");
+
   const tryRestoreHomeScroll = useCallback(() => {
     if (typeof window === "undefined" || !router.isReady || cars.length === 0) {
       return () => {};
     }
+    if (scrollRestorePathRef.current === router.asPath) {
+      return () => {};
+    }
+    scrollRestorePathRef.current = router.asPath;
     return scheduleListScrollRestore({
       storagePrefix: HOME_SCROLL_STORAGE_PREFIX,
       path: router.asPath,
@@ -1011,21 +999,9 @@ export default function Home() {
   }, [router.isReady, router.asPath, cars.length]);
 
   useEffect(() => {
+    scrollRestorePathRef.current = "";
     return tryRestoreHomeScroll();
   }, [tryRestoreHomeScroll]);
-
-  useEffect(() => {
-    if (!router.isReady) return undefined;
-
-    const onRouteChangeComplete = () => {
-      tryRestoreHomeScroll();
-    };
-
-    router.events.on("routeChangeComplete", onRouteChangeComplete);
-    return () => {
-      router.events.off("routeChangeComplete", onRouteChangeComplete);
-    };
-  }, [router.events, router.isReady, tryRestoreHomeScroll]);
 
   useEffect(() => {
     setMobileHeaderMenuOpen(false);
@@ -1063,15 +1039,16 @@ export default function Home() {
         <title>Доставка автомобилей из Китая и Кореи в Россию | avtovozom</title>
         <meta
           name="description"
-          content="Заказ автомобилей под ключ из Китая и Кореи: подбор марки и модели, выкуп, доставка в РФ, помощь с растаможкой и оценка ориентировочной цены в России."
+          content="Каталог авто из Китая и Кореи с расчётом под ключ до РФ. Подбор, выкуп, доставка — смотрите цены в ¥ и ориентир в рублях, оставьте заявку."
         />
         <link rel="canonical" href={absoluteUrl("/")} />
         <meta property="og:title" content="Доставка автомобилей из Китая и Кореи в Россию | avtovozom" />
         <meta
           property="og:description"
-          content="Заказ автомобилей под ключ из Китая и Кореи: подбор марки и модели, выкуп, доставка в РФ, помощь с растаможкой и оценка ориентировочной цены в России."
+          content="Каталог авто из Китая и Кореи с расчётом под ключ до РФ. Подбор, выкуп, доставка — смотрите цены и оставьте заявку."
         />
         <meta property="og:url" content={absoluteUrl("/")} />
+        <script {...jsonLdScriptProps(organizationAndWebSiteJsonLd())} />
       </Head>
       <div className="layout">
       <header className="site-header">
@@ -1151,6 +1128,7 @@ export default function Home() {
                   <Link href="/customs-calculator">Калькулятор растаможки</Link>
                   <Link href="/dostavka-avto-iz-kitaya">Доставка авто из Китая</Link>
                   <Link href="/dostavka-avto-iz-korei">Доставка авто из Кореи</Link>
+                  <Link href="/faq">Частые вопросы</Link>
                 </div>
                 <div className="site-header-desktop-menu__column">
                   <p className="site-header-desktop-menu__title">Покупателю</p>
@@ -1186,6 +1164,9 @@ export default function Home() {
                 <Link href="/dostavka-avto-iz-korei" className="site-header-mobile-menu__link">
                   Доставка авто из Кореи
                 </Link>
+                <Link href="/faq" className="site-header-mobile-menu__link">
+                  Частые вопросы
+                </Link>
                 {!token ? (
                   <Link href="/auth" className="site-header-mobile-menu__link">
                     Войти
@@ -1215,6 +1196,9 @@ export default function Home() {
         <div className="container">
           <section className="home-hero" aria-label="Поиск и выбор марки">
             <h1 className="home-hero__title">Доставка автомобилей из Китая и Кореи</h1>
+            <p className="home-hero__subtitle">
+              Подбор, выкуп и доставка до вашего города с гарантией лучшей цены
+            </p>
             <form className="home-search-form" onSubmit={onSearchSubmit} role="search">
               <input
                 className="input"
@@ -1315,6 +1299,11 @@ export default function Home() {
                   </div>
                 </div>
               ) : null}
+              <div className="home-hero__catalog-link">
+                <Link href="/catalog" className="btn btn-primary">
+                  Смотреть каталог
+                </Link>
+              </div>
             </div>
           </section>
 
@@ -1606,7 +1595,6 @@ export default function Home() {
               <Link
                 href={listingCarHref(car)}
                 className="catalog-card__main"
-                scroll={false}
                 onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
               >
                 <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
@@ -1666,12 +1654,11 @@ export default function Home() {
                     openRequestForModal(car);
                   }}
                 >
-                  Заказать расчёт
+                  Получить расчёт
                 </button>
                 <Link
                   href={listingCarHref(car)}
                   className="btn btn-secondary btn-sm"
-                  scroll={false}
                   onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
                 >
                   Подробнее

@@ -1,6 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 
+import LeadForm from "../components/LeadForm";
 import { absoluteUrl } from "../lib/siteUrl";
 
 export default function DeliveryFromChinaPage() {
@@ -49,7 +50,7 @@ export default function DeliveryFromChinaPage() {
         <title>Доставка автомобилей из Китая под ключ | avtovozom</title>
         <meta
           name="description"
-          content="Доставка автомобилей из Китая под ключ: подбор марки и модели, выкуп, транспортировка в РФ, помощь с растаможкой и расчёт ориентировочной цены."
+          content="Доставка авто из Китая под ключ: подбор, выкуп, логистика и помощь с растаможкой. Узнайте ориентировочную цену в РФ — оставьте заявку."
         />
         <link rel="canonical" href={absoluteUrl("/dostavka-avto-iz-kitaya")} />
         <meta property="og:title" content="Доставка автомобилей из Китая под ключ | avtovozom" />
@@ -118,6 +119,11 @@ export default function DeliveryFromChinaPage() {
               <li>Сводка по стоимости: доставка + платежи (в формате ориентировочной цены).</li>
             </ul>
           </section>
+
+          <LeadForm
+            title="Заказать расчёт доставки из Китая"
+            lead="Опишите желаемый автомобиль — подготовим ориентировочный расчёт под ключ до РФ."
+          />
 
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1.25rem" }}>
             <Link href="/" className="btn btn-primary">

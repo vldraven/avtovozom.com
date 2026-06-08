@@ -9,6 +9,7 @@ Allow: /
 Disallow: /auth
 Disallow: /profile
 Disallow: /messages
+Disallow: /favorites
 Disallow: /staff/
 
 Sitemap: ${base}/sitemap.xml

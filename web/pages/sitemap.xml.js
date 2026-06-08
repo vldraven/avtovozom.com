@@ -11,16 +11,56 @@ function escapeXml(s) {
     .replace(/'/g, "&apos;");
 }
 
+function catalogTreeUrls(base, tree) {
+  const urls = [];
+  for (const brand of tree || []) {
+    if (!brand?.slug) continue;
+    urls.push({
+      loc: `${base}/catalog/${brand.slug}`,
+      changefreq: "daily",
+      priority: "0.85",
+    });
+    for (const model of brand.models || []) {
+      if (!model?.slug) continue;
+      urls.push({
+        loc: `${base}/catalog/${brand.slug}/${model.slug}`,
+        changefreq: "daily",
+        priority: "0.8",
+      });
+    }
+  }
+  return urls;
+}
+
 export async function getServerSideProps({ req, res }) {
   const base = getPublicSiteUrlFromRequest(req);
   const API_URL = getServerApiBase();
 
-  const staticPaths = ["/", "/catalog", "/customs-calculator", "/dostavka-avto-iz-kitaya", "/dostavka-avto-iz-korei"];
+  const staticPaths = [
+    "/",
+    "/catalog",
+    "/customs-calculator",
+    "/dostavka-avto-iz-kitaya",
+    "/dostavka-avto-iz-korei",
+    "/faq",
+  ];
   const urls = staticPaths.map((loc) => ({
     loc: `${base}${loc}`,
     changefreq: "daily",
     priority: loc === "/" ? "1.0" : "0.8",
   }));
+
+  try {
+    const treeRes = await fetch(`${API_URL}/catalog/tree`, {
+      headers: { Accept: "application/json" },
+    });
+    if (treeRes.ok) {
+      const tree = await treeRes.json();
+      urls.push(...catalogTreeUrls(base, tree));
+    }
+  } catch {
+    /* только статические URL */
+  }
 
   const limit = 100;
   let page = 1;
@@ -48,7 +88,7 @@ export async function getServerSideProps({ req, res }) {
       if (page > 500) break;
     }
   } catch {
-    // только статические URL
+    /* только статические URL */
   }
 
   const all = [...urls, ...carLocs];
