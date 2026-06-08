@@ -330,3 +330,17 @@ class ChatMessage(Base):
     attachment_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     attachment_original_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FaqItem(Base):
+    __tablename__ = "faq_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    question: Mapped[str] = mapped_column(String(512), nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

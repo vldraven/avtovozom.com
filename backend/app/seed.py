@@ -5,7 +5,8 @@ from pathlib import Path
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from .models import Car, CarBrand, CarGeneration, CarModel, ModelWhitelist, Role, User
+from .faq_defaults import DEFAULT_FAQ_ITEMS
+from .models import Car, CarBrand, CarGeneration, CarModel, FaqItem, ModelWhitelist, Role, User
 from .security import hash_password
 
 log = logging.getLogger(__name__)
@@ -233,3 +234,20 @@ def seed_initial_data(db: Session) -> None:
     except Exception as e:
         log.warning("Справочник поколений (JSON) не применён: %s", e)
     _ensure_default_generations_and_backfill(db)
+    seed_faq_items(db)
+
+
+def seed_faq_items(db: Session) -> None:
+    count = db.scalar(select(func.count(FaqItem.id))) or 0
+    if count > 0:
+        return
+    for i, item in enumerate(DEFAULT_FAQ_ITEMS):
+        db.add(
+            FaqItem(
+                question=item["question"],
+                answer=item["answer"],
+                sort_order=i * 10,
+                is_published=True,
+            )
+        )
+    db.commit()

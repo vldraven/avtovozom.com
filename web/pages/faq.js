@@ -1,13 +1,29 @@
 import Head from "next/head";
 import Link from "next/link";
 
-import LeadForm from "../components/LeadForm";
-import { FAQ_ITEMS, faqPageJsonLd } from "../lib/faqContent";
+import FaqAccordion from "../components/FaqAccordion";
+import { faqPageJsonLd } from "../lib/faqContent";
 import { jsonLdScriptProps } from "../lib/schema";
+import { getServerApiBase } from "../lib/serverApiUrl";
 import { absoluteUrl } from "../lib/siteUrl";
 
-export default function FaqPage() {
-  const jsonLd = faqPageJsonLd();
+export async function getServerSideProps() {
+  const api = getServerApiBase();
+  try {
+    const res = await fetch(`${api}/faq`, {
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      return { props: { initialItems: await res.json() } };
+    }
+  } catch {
+    /* fallback ниже */
+  }
+  return { props: { initialItems: [] } };
+}
+
+export default function FaqPage({ initialItems = [] }) {
+  const jsonLd = faqPageJsonLd(initialItems);
 
   return (
     <div className="layout">
@@ -24,7 +40,7 @@ export default function FaqPage() {
           content="Сроки, стоимость, растаможка и документы при заказе автомобиля из Китая и Кореи."
         />
         <meta property="og:url" content={absoluteUrl("/faq")} />
-        <script {...jsonLdScriptProps(jsonLd)} />
+        {jsonLd ? <script {...jsonLdScriptProps(jsonLd)} /> : null}
       </Head>
 
       <header className="site-header">
@@ -48,30 +64,13 @@ export default function FaqPage() {
 
       <main className="site-main">
         <div className="container page-narrow">
-          <h1 className="section-title">Частые вопросы</h1>
-          <p className="muted faq-page__lead">
-            Ответы о доставке автомобилей из Китая и Кореи в Россию. Не нашли ответ —{" "}
-            <a href="#lead-form">оставьте заявку</a>, мы свяжемся с вами.
-          </p>
+          <h1 className="faq-page__title">Частые вопросы</h1>
 
-          <div className="faq-list">
-            {FAQ_ITEMS.map((item) => (
-              <details key={item.question} className="faq-item panel">
-                <summary className="faq-item__question">{item.question}</summary>
-                <p className="faq-item__answer">{item.answer}</p>
-              </details>
-            ))}
-          </div>
-
-          <LeadForm
-            title="Не нашли ответ?"
-            lead="Опишите ваш вопрос и контакты — менеджер ответит и поможет с расчётом."
-            className="faq-page__lead-form"
-          />
+          <FaqAccordion items={initialItems} />
 
           <div className="faq-page__links">
             <Link href="/catalog" className="btn btn-primary">
-              Смотреть каталог
+              Выбрать авто
             </Link>
             <Link href="/customs-calculator" className="btn btn-secondary">
               Калькулятор растаможки

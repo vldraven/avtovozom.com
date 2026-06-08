@@ -398,6 +398,9 @@ export default function ProfilePage() {
                     <Link href="/staff/admin-customs-calculator" className="btn btn-secondary btn-inline">
                       Редактировать коэффициенты
                     </Link>
+                    <Link href="/staff/admin-faq" className="btn btn-secondary btn-inline">
+                      Редактировать FAQ
+                    </Link>
                   </div>
                 </section>
               )}
