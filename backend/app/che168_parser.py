@@ -2,6 +2,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from playwright.sync_api import sync_playwright
@@ -19,6 +20,8 @@ DEALER_LISTING_RE = re.compile(r"che168\.com/dealer/(\d+)/(\d+)\.html", re.IGNOR
 GLOBAL_CHE168_DETAIL_RE = re.compile(r"global\.che168\.com/detail/(\d+)", re.IGNORECASE)
 # https://www.dongchedi.com/usedcar/{id}
 DONGCHEDI_USEDCAR_RE = re.compile(r"(?:www\.)?dongchedi\.com/usedcar/(\d+)", re.IGNORECASE)
+# https://m.che168.com/cardetail/index?infoid=58721285 — мобильная карточка (SPA)
+MOBILE_CHE168_INFOID_RE = re.compile(r"[?&]infoid=(\d+)", re.IGNORECASE)
 YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
 ENGINE_L_RE = re.compile(r"([0-9]{1,2}(?:\.[0-9])?)\s*L", re.IGNORECASE)
 HORSEPOWER_RE = re.compile(r"([0-9]{2,4})\s*(马力|匹|hp|ps)", re.IGNORECASE)
@@ -31,6 +34,42 @@ UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/120.0.0.0 Safari/537.36"
 )
+MOBILE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+)
+
+
+def _mobile_che168_infoid_from_url(url: str) -> str | None:
+    """infoid из m.che168.com/cardetail/…?infoid=… (тот же id, что i.che168.com/car/…)."""
+    u = (url or "").strip()
+    if not u or "che168" not in u.lower():
+        return None
+    parsed = urlparse(u)
+    host = (parsed.netloc or "").lower()
+    qs = parse_qs(parsed.query)
+    for key in ("infoid", "infoId", "InfoId"):
+        vals = qs.get(key)
+        if vals:
+            val = str(vals[0]).strip()
+            if val.isdigit():
+                return val
+    if host == "m.che168.com" or "/cardetail/" in (parsed.path or "").lower():
+        m = MOBILE_CHE168_INFOID_RE.search(u)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _i_che168_url_from_infoid(infoid: str) -> str:
+    return f"https://i.che168.com/car/{infoid}"
+
+
+def _is_mobile_che168_detail_url(url: str) -> bool:
+    return (
+        _mobile_che168_infoid_from_url(url) is not None
+        and "m.che168.com" in (url or "").lower()
+    )
 
 
 def _body_color_slug_from_vehicle_text(title: str | None, body_text: str | None) -> str | None:
@@ -104,6 +143,8 @@ def http_referer_for_request_url(url: str) -> str:
         return "https://www.dongchedi.com/"
     if "global.che168.com" in u:
         return "https://global.che168.com/"
+    if "m.che168.com" in u:
+        return "https://m.che168.com/"
     return "https://www.che168.com/"
 
 
@@ -369,6 +410,9 @@ def _normalize_listing_href(href: str) -> str | None:
     m = CAR_DETAIL_ID_RE.search(h)
     if m:
         return f"https://i.che168.com/car/{m.group(1)}"
+    infoid = _mobile_che168_infoid_from_url(h)
+    if infoid:
+        return _i_che168_url_from_infoid(infoid)
     return None
 
 
@@ -413,6 +457,9 @@ def source_listing_id_from_url(url: str) -> str:
     m = DEALER_LISTING_RE.search(url)
     if m:
         return f"dealer-{m.group(1)}-{m.group(2)}"
+    infoid = _mobile_che168_infoid_from_url(url)
+    if infoid:
+        return infoid
     raise ValueError(f"Не удалось извлечь id объявления из URL: {url}")
 
 
@@ -538,6 +585,9 @@ def _global_che168_detail_url_from_detail_url(detail_url: str) -> str | None:
 
 def _chinese_i_che168_url_from_detail_url(detail_url: str) -> str | None:
     """Китайская карточка i.che168.com — полные поля и specId Autohome (не global EN)."""
+    infoid = _mobile_che168_infoid_from_url(detail_url)
+    if infoid:
+        return _i_che168_url_from_infoid(infoid)
     m = GLOBAL_CHE168_DETAIL_RE.search(detail_url)
     if m:
         return f"https://i.che168.com/car/{m.group(1)}"
@@ -568,6 +618,11 @@ def _detail_fetch_urls(detail_url: str) -> list[str]:
         seen.add(key)
         out.append(u)
 
+    if _is_mobile_che168_detail_url(detail_url):
+        add(_chinese_i_che168_url_from_detail_url(detail_url))
+        add(_global_che168_detail_url_from_detail_url(detail_url))
+        return out
+
     is_dealer = bool(DEALER_LISTING_RE.search(detail_url))
     if is_dealer:
         add(_single_listing_url_from_input(detail_url))
@@ -582,8 +637,16 @@ def _detail_fetch_urls(detail_url: str) -> list[str]:
 
 def _playwright_fetch_urls(detail_url: str) -> list[str]:
     """Не гоняем Playwright по global-заглушке и лишним URL — только перспективные."""
+    if _is_mobile_che168_detail_url(detail_url):
+        infoid = _mobile_che168_infoid_from_url(detail_url)
+        out: list[str] = []
+        if infoid:
+            out.append(_i_che168_url_from_infoid(infoid))
+        out.append(detail_url.strip())
+        return out
+
     urls = _detail_fetch_urls(detail_url)
-    out: list[str] = []
+    out = []
     for u in urls:
         if "global.che168.com" in u:
             continue
@@ -653,6 +716,70 @@ def _che168_playwright_goto(page, url: str, timeout_ms: int) -> None:
         )
     except Exception:
         page.wait_for_timeout(3000)
+
+
+def _che168_mobile_playwright_goto(page, url: str, timeout_ms: int) -> None:
+    """m.che168.com/cardetail — React SPA; ждём текст карточки после рендера."""
+    page.goto(url, wait_until="commit", timeout=timeout_ms)
+    page.wait_for_timeout(2000)
+    _che168_dismiss_overseas_modal(page)
+    try:
+        page.wait_for_function(
+            """() => {
+                const t = (document.body && document.body.innerText) || '';
+                if (t.includes('表显里程') || t.includes('上牌')) return true;
+                if (t.includes('万公里')) return true;
+                if (/\\d{1,2}\\.\\d{2}\\s*万/.test(t) && !/万\\s*公里/.test(t)) return true;
+                return false;
+            }""",
+            timeout=timeout_ms,
+        )
+    except Exception:
+        page.wait_for_timeout(4000)
+
+
+def _mobile_che168_fetch_spec_id(page: Any, detail_url: str) -> int | None:
+    """Комплектация на m.che168: клик «配置» или прямой URL страницы параметров."""
+    sid = extract_autohome_spec_id(page.content() or "")
+    if sid:
+        return sid
+
+    for sel in (
+        "text=配置",
+        "text=参数配置",
+        "text=查看更多参数",
+        'a[href*="config"]',
+        'a[href*="param"]',
+        'a[href*="peizhi"]',
+    ):
+        try:
+            loc = page.locator(sel).first
+            if loc.count() and loc.is_visible(timeout=1500):
+                loc.click(timeout=3000)
+                page.wait_for_timeout(2500)
+                sid = extract_autohome_spec_id(page.content() or "")
+                if sid:
+                    return sid
+        except Exception:
+            pass
+
+    infoid = _mobile_che168_infoid_from_url(detail_url)
+    if not infoid:
+        return None
+    for path in ("config", "peizhi", "param"):
+        try:
+            page.goto(
+                f"https://m.che168.com/cardetail/{path}?infoid={infoid}",
+                wait_until="commit",
+                timeout=30000,
+            )
+            page.wait_for_timeout(3000)
+            sid = extract_autohome_spec_id(page.content() or "")
+            if sid:
+                return sid
+        except Exception:
+            pass
+    return None
 
 
 def _dongchedi_derive_listing_price_cny(price_block_text: str) -> float | None:
@@ -879,6 +1006,10 @@ def _car_urls_from_html(html: str, max_items: int) -> list[str]:
         push(f"https://i.che168.com/car/{m.group(1)}")
         if len(out) >= max_items:
             return out
+    for m in MOBILE_CHE168_INFOID_RE.finditer(html):
+        push(_i_che168_url_from_infoid(m.group(1)))
+        if len(out) >= max_items:
+            return out
     return out
 
 
@@ -1056,7 +1187,8 @@ def _forced_detail_urls() -> list[str]:
 def normalize_import_detail_url(url: str) -> str | None:
     """
     Канонический URL карточки для ручного импорта:
-    che168 (dealer/… / i.che168.com/car/), global.che168.com/detail/…, dongchedi.com/usedcar/…
+    che168 (dealer/… / i.che168.com/car/ / m.che168.com/cardetail?infoid=…),
+    global.che168.com/detail/…, dongchedi.com/usedcar/…
     """
     u = (url or "").strip()
     if not u:
@@ -1089,6 +1221,9 @@ def _single_listing_url_from_input(url: str) -> str | None:
     m = CAR_DETAIL_ID_RE.search(u)
     if m:
         return f"https://i.che168.com/car/{m.group(1)}"
+    infoid = _mobile_che168_infoid_from_url(u)
+    if infoid:
+        return _i_che168_url_from_infoid(infoid)
     return None
 
 
@@ -1127,6 +1262,7 @@ def parse_che168_listing_links(series_url: str, max_items: int = 20) -> list[str
 
 
 def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> ParsedCar:
+    use_mobile = _is_mobile_che168_detail_url(detail_url)
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -1135,7 +1271,7 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
         )
         ref = http_referer_for_request_url(detail_url)
         context = browser.new_context(
-            user_agent=UA,
+            user_agent=MOBILE_UA if use_mobile else UA,
             locale="zh-CN",
             extra_http_headers={
                 "Accept-Language": "zh-CN,zh;q=0.9",
@@ -1146,7 +1282,10 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
         context.set_default_timeout(nav_ms)
         page = context.new_page()
         page.set_default_timeout(nav_ms)
-        _che168_playwright_goto(page, detail_url, nav_ms)
+        if use_mobile:
+            _che168_mobile_playwright_goto(page, detail_url, nav_ms)
+        else:
+            _che168_playwright_goto(page, detail_url, nav_ms)
         if "captcha" in page.url.lower():
             raise RuntimeError("Страница объявления перенаправила на антибот-проверку (captcha).")
         try:
@@ -1203,6 +1342,11 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
             autohome_spec_id = extract_autohome_spec_id(page.content() or "")
         except Exception:
             pass
+        if use_mobile and autohome_spec_id is None:
+            try:
+                autohome_spec_id = _mobile_che168_fetch_spec_id(page, detail_url)
+            except Exception:
+                pass
 
         photos: list[str] = []
         try:

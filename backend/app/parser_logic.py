@@ -286,7 +286,8 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
         job.status = "failed"
         job.finished_at = datetime.utcnow()
         job.message = (
-            "Нужна прямая ссылка: che168 — …/dealer/…/….html или i.che168.com/car/…; "
+            "Нужна прямая ссылка: che168 — …/dealer/…/….html, i.che168.com/car/… "
+            "или m.che168.com/cardetail?infoid=…; "
             "global.che168 — …/detail/…; dongchedi — …/usedcar/…"
         )
         db.commit()

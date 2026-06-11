@@ -19,6 +19,9 @@ UA = (
 SPEC_ID_PATTERNS = (
     re.compile(r"""id=["']car_specid["'][^>]*value=["'](\d+)["']""", re.I),
     re.compile(r"""value=["'](\d+)["'][^>]*id=["']car_specid["']""", re.I),
+    re.compile(r"""["']spec[Ii]d["']\s*:\s*["']?(\d+)["']?"""),
+    re.compile(r"""specid=(\d+)""", re.I),
+    re.compile(r"""car_specid["']?\s*,\s*["']?(\d+)""", re.I),
 )
 
 

@@ -4966,7 +4966,8 @@ def import_che168_listing(
         raise HTTPException(
             status_code=400,
             detail=(
-                "Некорректная ссылка. Нужна карточка: che168 (…/dealer/… или i.che168.com/car/…), "
+                "Некорректная ссылка. Нужна карточка: che168 (…/dealer/…, i.che168.com/car/… "
+                "или m.che168.com/cardetail?infoid=…), "
                 "global.che168.com/detail/… или www.dongchedi.com/usedcar/…"
             ),
         )
