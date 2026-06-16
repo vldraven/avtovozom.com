@@ -276,8 +276,11 @@ class CalculationRequest(Base):
     user_name: Mapped[str] = mapped_column(String(128), nullable=False)
     user_contact: Mapped[str] = mapped_column(String(128), nullable=False)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), nullable=False)
+    car_id: Mapped[int | None] = mapped_column(ForeignKey("cars.id"), nullable=True)
+    """null — заявка на авто вне каталога (описание в comment)."""
     comment: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(32), default="website")
+    """website | telegram_bot | freeform | …"""
     status: Mapped[str] = mapped_column(String(32), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     offers_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

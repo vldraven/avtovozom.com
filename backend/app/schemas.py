@@ -290,9 +290,10 @@ class CalculationRequestOut(BaseModel):
     id: int
     user_name: str
     user_contact: str
-    car_id: int
+    car_id: int | None = None
     comment: str
     status: str
+    source: str = "website"
     created_at: datetime
 
     class Config:
@@ -332,9 +333,10 @@ class CalculationRequestDealerOut(BaseModel):
     id: int
     user_name: str
     user_contact: str
-    car_id: int
+    car_id: int | None = None
     comment: str
     status: str
+    source: str = "website"
     created_at: datetime
     car_title: str
     car_brand: str
@@ -353,9 +355,10 @@ class CalculationRequestMyOut(BaseModel):
     id: int
     user_name: str
     user_contact: str
-    car_id: int
+    car_id: int | None = None
     comment: str
     status: str
+    source: str = "website"
     created_at: datetime
     car_title: str
     car_brand: str

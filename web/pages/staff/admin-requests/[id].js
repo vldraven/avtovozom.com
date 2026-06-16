@@ -155,13 +155,13 @@ export default function AdminRequestDetailPage() {
                         Открыть объявление в каталоге
                       </a>
                     </p>
-                  ) : (
+                  ) : req.car_id != null ? (
                     <p style={{ margin: 0 }}>
                       <Link href={`/cars/${req.car_id}`} className="btn btn-secondary btn-sm">
                         Объявление #{req.car_id}
                       </Link>
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
               {req.comment ? (

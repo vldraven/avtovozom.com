@@ -1,0 +1,356 @@
+{
+  "name": "Avtovozom — Telegram консультант (бот)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Настройка\n\nВсе параметры — в узле **«Настройки workflow»**.\n\n**backendApiSecret** = `N8N_TELEGRAM_BOT_API_SECRET` в `.env` бэкенда (общий пароль, чтобы n8n мог создавать заявки через API).\n\nCredentials: Telegram и OpenAI — в соответствующих узлах.",
+        "height": 200,
+        "width": 400
+      },
+      "id": "bot-sticky-note-00",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 80]
+    },
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "bot-tg-trigger-01",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 360],
+      "webhookId": "avtovozom-bot-consultant",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-apiBaseUrl",
+              "name": "apiBaseUrl",
+              "value": "https://api.avtovozom.com",
+              "type": "string"
+            },
+            {
+              "id": "cfg-backendApiSecret",
+              "name": "backendApiSecret",
+              "value": "ЗАМЕНИТЕ_на_тот_же_секрет_что_N8N_TELEGRAM_BOT_API_SECRET_в_backend_env",
+              "type": "string"
+            },
+            {
+              "id": "cfg-llmModel",
+              "name": "llmModel",
+              "value": "gpt-5.5",
+              "type": "string"
+            },
+            {
+              "id": "cfg-llmTemperature",
+              "name": "llmTemperature",
+              "value": "0.35",
+              "type": "string"
+            },
+            {
+              "id": "cfg-searchCarsLimit",
+              "name": "searchCarsLimit",
+              "value": "5",
+              "type": "string"
+            },
+            {
+              "id": "cfg-channelHintText",
+              "name": "channelHintText",
+              "value": "Этот бот отвечает в личных сообщениях. Напишите мне в личку, чтобы подобрать авто или оставить заявку на расчёт.",
+              "type": "string"
+            },
+            {
+              "id": "cfg-systemPrompt",
+              "name": "systemPrompt",
+              "value": "Ты консультант avtovozom.com — сервиса подбора и доставки автомобилей из Китая и азиатского рынка под ключ до РФ.\n\nПравила:\n1. Отвечай на русском, кратко и по делу.\n2. Используй только факты из инструментов (search_cars, get_car, get_faq). Не выдумывай цены, наличие и сроки.\n3. Если клиент спрашивает про авто на сайте — ищи через search_cars или get_car.\n4. Если нужного авто нет в каталоге — объясни, что через avtovozom можно заказать практически любое авто с азиатского рынка, и предложи оформить заявку на расчёт (create_lead без car_id).\n5. Для заявки на расчёт собери: имя, контакт (телефон или email), описание авто (марка, модель, год, комплектация, бюджет). Если выбрано объявление с сайта — передай car_id.\n6. После успешного create_lead сообщи клиенту, что заявка принята и менеджер свяжется.\n7. Ориентировочные цены «под ключ» бери из estimated_total_rub / price_breakdown API, с оговоркой что это ориентир.\n8. Не обсуждай конкурентов и не давай юридических гарантий.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bot-set-config-03",
+      "name": "Настройки workflow",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [480, 360],
+      "notesInFlow": true,
+      "notes": "Редактируйте здесь: apiBaseUrl, backendApiSecret, llmModel, systemPrompt и др."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "only-private",
+              "leftValue": "={{ $('Telegram Trigger').item.json.message.chat.type }}",
+              "rightValue": "private",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bot-if-private-02",
+      "name": "Только личка",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 360]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ctx-chatId",
+              "name": "chatId",
+              "value": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+              "type": "string"
+            },
+            {
+              "id": "ctx-username",
+              "name": "username",
+              "value": "={{ $('Telegram Trigger').item.json.message.from.username || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "ctx-userText",
+              "name": "userText",
+              "value": "={{ $('Telegram Trigger').item.json.message.text || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "ctx-firstName",
+              "name": "firstName",
+              "value": "={{ $('Telegram Trigger').item.json.message.from.first_name || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bot-set-context-04",
+      "name": "Контекст чата",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [960, 280]
+    },
+    {
+      "parameters": {
+        "model": "={{ $('Настройки workflow').item.json.llmModel }}",
+        "options": {
+          "temperature": "={{ Number($('Настройки workflow').item.json.llmTemperature) || 0.35 }}"
+        }
+      },
+      "id": "bot-openai-model-05",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [1180, 520],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "Модель и temperature — из «Настройки workflow». API key — в credential."
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Контекст чата').item.json.chatId }}"
+      },
+      "id": "bot-memory-06",
+      "name": "Память диалога",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [1180, 680]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Поиск автомобилей в каталоге avtovozom.com. Вход: q — строка (марка, модель, ключевые слова).",
+        "method": "GET",
+        "url": "={{ $('Настройки workflow').item.json.apiBaseUrl.replace(/\\/$/, '') + '/cars' }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $fromAI('q', 'Поисковый запрос: марка, модель или ключевые слова', 'string') }}"
+            },
+            {
+              "name": "limit",
+              "value": "={{ $('Настройки workflow').item.json.searchCarsLimit || '5' }}"
+            },
+            { "name": "photo_limit", "value": "1" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bot-tool-search-07",
+      "name": "Tool: search_cars",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [1400, 520]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Карточка одного автомобиля по числовому id с сайта. Вход: car_id (integer).",
+        "method": "GET",
+        "url": "={{ $('Настройки workflow').item.json.apiBaseUrl.replace(/\\/$/, '') + '/cars/' + $fromAI('car_id', 'ID автомобиля на сайте', 'number') }}",
+        "options": {}
+      },
+      "id": "bot-tool-car-08",
+      "name": "Tool: get_car",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [1400, 660]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Список частых вопросов и ответов avtovozom. Без параметров.",
+        "method": "GET",
+        "url": "={{ $('Настройки workflow').item.json.apiBaseUrl.replace(/\\/$/, '') + '/faq' }}",
+        "options": {}
+      },
+      "id": "bot-tool-faq-09",
+      "name": "Tool: get_faq",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [1400, 800]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Создать заявку на расчёт под ключ до РФ. Обязательно: user_name, user_contact, comment. Опционально car_id (лот с сайта); без car_id — любое авто с азиатского рынка.",
+        "method": "POST",
+        "url": "={{ $('Настройки workflow').item.json.apiBaseUrl.replace(/\\/$/, '') + '/integrations/n8n/bot/create-request' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8N-Webhook-Secret",
+              "value": "={{ $('Настройки workflow').item.json.backendApiSecret }}"
+            },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user_name: $fromAI('user_name', 'Имя клиента', 'string'), user_contact: $fromAI('user_contact', 'Телефон или email клиента', 'string'), comment: $fromAI('comment', 'Описание авто и пожелания к расчёту', 'string'), car_id: $fromAI('car_id', 'ID авто с сайта или null', 'number', { optional: true }), telegram_chat_id: String($('Контекст чата').item.json.chatId || ''), telegram_username: $('Контекст чата').item.json.username || '' }) }}",
+        "options": {}
+      },
+      "id": "bot-tool-lead-10",
+      "name": "Tool: create_lead",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [1400, 940]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Контекст чата').item.json.userText }}",
+        "options": {
+          "systemMessage": "={{ $('Настройки workflow').item.json.systemPrompt }}"
+        }
+      },
+      "id": "bot-agent-11",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1640, 360]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Контекст чата').item.json.chatId }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {}
+      },
+      "id": "bot-tg-reply-12",
+      "name": "Telegram: ответ",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1900, 360],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $('Настройки workflow').item.json.channelHintText }}",
+        "additionalFields": {}
+      },
+      "id": "bot-tg-channel-hint-13",
+      "name": "Telegram: подсказка канал",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [960, 480],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [[{ "node": "Настройки workflow", "type": "main", "index": 0 }]]
+    },
+    "Настройки workflow": {
+      "main": [[{ "node": "Только личка", "type": "main", "index": 0 }]]
+    },
+    "Только личка": {
+      "main": [
+        [{ "node": "Контекст чата", "type": "main", "index": 0 }],
+        [{ "node": "Telegram: подсказка канал", "type": "main", "index": 0 }]
+      ]
+    },
+    "Контекст чата": {
+      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Память диалога": {
+      "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+    },
+    "Tool: search_cars": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Tool: get_car": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Tool: get_faq": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Tool: create_lead": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "AI Agent": {
+      "main": [[{ "node": "Telegram: ответ", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}

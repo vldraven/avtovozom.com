@@ -173,8 +173,14 @@ from .schemas import (
 )
 from .security import create_access_token, decode_access_token, hash_password, verify_password
 from .seed import seed_initial_data
+from .n8n_bot_integration import (
+    N8nBotCreateRequestIn,
+    N8nBotCreateRequestOut,
+    create_bot_calculation_request,
+    verify_n8n_bot_api_secret,
+)
 from .n8n_client import n8n_webhook_post
-from .telegram_notify import notify_freeform_calculation_request, notify_new_calculation_request
+from .telegram_notify import notify_calculation_request, notify_new_calculation_request
 
 try:
     from webauthn import (
@@ -719,6 +725,21 @@ def startup() -> None:
             text(
                 "ALTER TABLE calculation_requests "
                 "ADD COLUMN IF NOT EXISTS offers_seen_at TIMESTAMP NULL"
+            )
+        )
+        conn.execute(
+            text("ALTER TABLE calculation_requests ALTER COLUMN car_id DROP NOT NULL")
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE calculation_requests "
+                "ADD COLUMN IF NOT EXISTS source VARCHAR(32) DEFAULT 'website'"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE calculation_requests SET source = 'website' "
+                "WHERE source IS NULL OR source = ''"
             )
         )
         conn.execute(
@@ -3983,7 +4004,7 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
         user_name=user_name,
         user_contact=user_contact,
         comment=req.comment or "",
-        car_page_url=_public_car_page_url(db, req.car_id),
+        car_page_url=_public_car_page_url(db, req.car_id) or f"{_public_web_origin()}/cars/{req.car_id}",
     )
     return PublicRequestLeadOut(
         ok=True,
@@ -3997,7 +4018,7 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
 
 
 @app.post("/requests/freeform-lead", response_model=FreeformRequestLeadOut)
-def create_freeform_request_lead(payload: FreeformRequestLeadIn):
+def create_freeform_request_lead(payload: FreeformRequestLeadIn, db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Укажите корректный email")
@@ -4009,10 +4030,25 @@ def create_freeform_request_lead(payload: FreeformRequestLeadIn):
     user_name = full_name or email.split("@", 1)[0]
     user_contact = phone or email
     contact = user_contact if user_contact == email else f"{user_contact}; email: {email}"
-    notify_freeform_calculation_request(
+    req = CalculationRequest(
+        user_name=user_name,
+        user_contact=contact,
+        user_id=None,
+        car_id=None,
+        comment=comment,
+        source="freeform",
+        status="open",
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    notify_calculation_request(
+        request_id=req.id,
+        car_id=None,
         user_name=user_name,
         user_contact=contact,
         comment=comment,
+        source="freeform",
     )
     return FreeformRequestLeadOut(
         ok=True,
@@ -4048,7 +4084,8 @@ def create_request(
         user_name=request.user_name,
         user_contact=request.user_contact,
         comment=request.comment or "",
-        car_page_url=_public_car_page_url(db, request.car_id),
+        car_page_url=_public_car_page_url(db, request.car_id)
+        or f"{_public_web_origin()}/cars/{request.car_id}",
     )
     return request
 
@@ -4058,27 +4095,49 @@ def _unread_offers_count(request: CalculationRequest, offers: list[DealerOffer])
     return sum(1 for o in offers if seen is None or o.created_at > seen)
 
 
+def _car_labels_for_request(r: CalculationRequest, car: Car | None) -> tuple[str, str, str, int | None, str | None]:
+    """Заголовок/марка/модель/год/превью для заявки (в т.ч. без car_id)."""
+    if car and car.brand is not None and car.model is not None:
+        photos = sorted(car.photos or [], key=lambda p: p.sort_order)
+        return (
+            car.title,
+            car.brand.name,
+            car.model.name,
+            car.year,
+            photos[0].storage_url if photos else None,
+        )
+    if r.car_id is None:
+        excerpt = (r.comment or "").strip().replace("\n", " ")
+        if len(excerpt) > 80:
+            excerpt = excerpt[:77] + "…"
+        title = excerpt or "Авто вне каталога"
+        return title, "Заявка", "вне каталога", None, None
+    return "Объявление недоступно", "—", "—", None, None
+
+
 def _calculation_requests_to_my_out(
     db: Session, requests: list[CalculationRequest]
 ) -> list[CalculationRequestMyOut]:
     if not requests:
         return []
 
-    car_ids = [r.car_id for r in requests]
-    cars = (
-        db.execute(
-            select(Car)
-            .where(Car.id.in_(car_ids))
-            .options(
-                joinedload(Car.brand),
-                joinedload(Car.model),
-                joinedload(Car.photos),
+    car_ids = [r.car_id for r in requests if r.car_id is not None]
+    cars: list[Car] = []
+    if car_ids:
+        cars = (
+            db.execute(
+                select(Car)
+                .where(Car.id.in_(car_ids))
+                .options(
+                    joinedload(Car.brand),
+                    joinedload(Car.model),
+                    joinedload(Car.photos),
+                )
             )
+            .unique()
+            .scalars()
+            .all()
         )
-        .unique()
-        .scalars()
-        .all()
-    )
     car_map = {c.id: c for c in cars}
 
     req_ids = [r.id for r in requests]
@@ -4106,20 +4165,8 @@ def _calculation_requests_to_my_out(
 
     out: list[CalculationRequestMyOut] = []
     for r in requests:
-        car = car_map.get(r.car_id)
-        if car and car.brand is not None and car.model is not None:
-            car_title = car.title
-            car_brand = car.brand.name
-            car_model = car.model.name
-            car_year = car.year
-            photos = sorted(car.photos or [], key=lambda p: p.sort_order)
-            car_thumb = photos[0].storage_url if photos else None
-        else:
-            car_title = "Объявление недоступно"
-            car_brand = "—"
-            car_model = "—"
-            car_year = None
-            car_thumb = None
+        car = car_map.get(r.car_id) if r.car_id is not None else None
+        car_title, car_brand, car_model, car_year, car_thumb = _car_labels_for_request(r, car)
 
         offs = offers_by_req[r.id]
         offer_outs = [
@@ -4136,6 +4183,7 @@ def _calculation_requests_to_my_out(
                 car_id=r.car_id,
                 comment=r.comment,
                 status=r.status,
+                source=r.source or "website",
                 created_at=r.created_at,
                 car_title=car_title,
                 car_brand=car_brand,
@@ -4188,7 +4236,9 @@ def _public_web_origin() -> str:
     return (os.getenv("PUBLIC_WEB_ORIGIN") or "http://localhost:3000").rstrip("/")
 
 
-def _public_car_page_url(db: Session, car_id: int) -> str:
+def _public_car_page_url(db: Session, car_id: int | None) -> str | None:
+    if car_id is None:
+        return None
     origin = _public_web_origin()
     car = (
         db.execute(
@@ -4232,7 +4282,9 @@ def admin_list_calculation_requests(
                 **base.model_dump(),
                 client_email=u.email if u else None,
                 client_user_id=r_db.user_id,
-                car_page_url=_public_car_page_url(db, r_db.car_id),
+                car_page_url=(
+                    _public_car_page_url(db, r_db.car_id) if r_db.car_id is not None else None
+                ),
             )
         )
     return out
@@ -4260,7 +4312,9 @@ def admin_get_calculation_request(
         **base.model_dump(),
         client_email=u.email if u else None,
         client_user_id=r.user_id,
-        car_page_url=_public_car_page_url(db, r.car_id),
+        car_page_url=(
+            _public_car_page_url(db, r.car_id) if r.car_id is not None else None
+        ),
     )
 
 
@@ -4276,11 +4330,19 @@ def _format_offer_seed_message(
     lines = [
         f"Предварительный расчёт по заявке №{request.id}",
         "",
-        f"Карточка авто: {car_url}",
-        "",
+    ]
+    if car_url:
+        lines.append(f"Карточка авто: {car_url}")
+        lines.append("")
+    elif request.car_id is None:
+        desc = (request.comment or "").strip()
+        if desc:
+            lines.append(f"Авто: {desc[:300]}")
+            lines.append("")
+    lines.extend([
         f"Итого: {price_s} {offer.currency}",
         f"Ориентировочный срок: {offer.eta_days} дн.",
-    ]
+    ])
     body = (offer.terms_text or "").strip()
     if body:
         lines.extend(["", body])
@@ -4337,21 +4399,23 @@ def dealer_open_requests(
     if not requests:
         return []
 
-    car_ids = [r.car_id for r in requests]
-    cars = (
-        db.execute(
-            select(Car)
-            .where(Car.id.in_(car_ids))
-            .options(
-                joinedload(Car.brand),
-                joinedload(Car.model),
-                joinedload(Car.photos),
+    car_ids = [r.car_id for r in requests if r.car_id is not None]
+    cars: list[Car] = []
+    if car_ids:
+        cars = (
+            db.execute(
+                select(Car)
+                .where(Car.id.in_(car_ids))
+                .options(
+                    joinedload(Car.brand),
+                    joinedload(Car.model),
+                    joinedload(Car.photos),
+                )
             )
+            .unique()
+            .scalars()
+            .all()
         )
-        .unique()
-        .scalars()
-        .all()
-    )
     car_map = {c.id: c for c in cars}
 
     req_ids = [r.id for r in requests]
@@ -4382,20 +4446,8 @@ def dealer_open_requests(
 
     out: list[CalculationRequestDealerOut] = []
     for r in requests:
-        car = car_map.get(r.car_id)
-        if car and car.brand is not None and car.model is not None:
-            car_title = car.title
-            car_brand = car.brand.name
-            car_model = car.model.name
-            car_year = car.year
-            photos = sorted(car.photos or [], key=lambda p: p.sort_order)
-            car_thumb = photos[0].storage_url if photos else None
-        else:
-            car_title = "Объявление недоступно"
-            car_brand = "—"
-            car_model = "—"
-            car_year = None
-            car_thumb = None
+        car = car_map.get(r.car_id) if r.car_id is not None else None
+        car_title, car_brand, car_model, car_year, car_thumb = _car_labels_for_request(r, car)
 
         mo = my_offer_by_req.get(r.id)
         ch = chat_by_req.get(r.id)
@@ -4413,6 +4465,7 @@ def dealer_open_requests(
                 car_id=r.car_id,
                 comment=r.comment,
                 status=r.status,
+                source=r.source or "website",
                 created_at=r.created_at,
                 car_title=car_title,
                 car_brand=car_brand,
@@ -4425,6 +4478,23 @@ def dealer_open_requests(
             )
         )
     return out
+
+
+@app.post(
+    "/integrations/n8n/bot/create-request",
+    response_model=N8nBotCreateRequestOut,
+    dependencies=[Depends(verify_n8n_bot_api_secret)],
+)
+def n8n_bot_create_request(
+    payload: N8nBotCreateRequestIn,
+    db: Session = Depends(get_db),
+):
+    """Создание заявки на расчёт из n8n Telegram-бота (с car_id или без — авто вне каталога)."""
+    return create_bot_calculation_request(
+        db,
+        payload,
+        public_car_page_url=_public_car_page_url,
+    )
 
 
 @app.post("/requests/{request_id}/offers", response_model=DealerOfferOut)
