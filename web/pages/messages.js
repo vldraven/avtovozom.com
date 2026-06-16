@@ -313,7 +313,9 @@ export default function MessagesPage() {
                         </div>
                         <div className="messenger__list-peer muted">{c.peer_display}</div>
                         <div className="messenger__list-preview">
-                          {c.last_message_text || "Нет сообщений"}
+                          <span className="messenger__list-preview-text">
+                            {c.last_message_text || "Нет сообщений"}
+                          </span>
                           {c.unread_count > 0 ? (
                             <span className="messenger__unread-pill">{c.unread_count > 99 ? "99+" : c.unread_count}</span>
                           ) : null}

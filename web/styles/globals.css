@@ -3247,6 +3247,8 @@ code {
   font: inherit;
   color: inherit;
   transition: background 0.12s ease;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .messenger__list-item:hover {
@@ -3280,6 +3282,9 @@ code {
 .messenger__list-peer {
   font-size: 0.78rem;
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .messenger__list-preview {
@@ -3291,6 +3296,19 @@ code {
   justify-content: space-between;
   gap: 8px;
   line-height: 1.35;
+  min-width: 0;
+}
+
+.messenger__list-preview-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .messenger__unread-pill {
