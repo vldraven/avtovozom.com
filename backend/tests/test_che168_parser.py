@@ -3,17 +3,23 @@ import unittest
 from app.che168_parser import (
     ParsedCar,
     _chinese_i_che168_url_from_detail_url,
+    _dealer_url_from_global_carinfo,
+    _dealer_url_from_mobile_che168,
     _detail_fetch_urls,
     _mobile_che168_infoid_from_url,
     _parse_detail_from_html,
     _parse_is_complete,
     _parse_quality_score,
+    _playwright_fetch_urls,
     normalize_import_detail_url,
     source_listing_id_from_url,
 )
 
 MOBILE_SAMPLE = (
     "https://m.che168.com/cardetail/index?infoid=58721285&pvareaid=108721"
+)
+MOBILE_WITH_DEALER = (
+    "https://m.che168.com/cardetail/index?infoid=58661738&adfromid=30363497&pvareaid=108948"
 )
 
 
@@ -32,14 +38,52 @@ class Che168ParserCompletenessTests(unittest.TestCase):
     def test_mobile_url_infoid_extraction(self):
         self.assertEqual(_mobile_che168_infoid_from_url(MOBILE_SAMPLE), "58721285")
 
-    def test_mobile_url_normalizes_to_i_che168(self):
+    def test_dealer_url_from_global_carinfo(self):
+        self.assertEqual(
+            _dealer_url_from_global_carinfo({"infoid": 57982917, "dealeid": 613544}),
+            "https://www.che168.com/dealer/613544/57982917.html",
+        )
+
+    def test_mobile_adfromid_zero_has_no_dealer_from_query(self):
+        url = (
+            "https://m.che168.com/cardetail/index?infoid=57982917&adfromid=0"
+        )
+        self.assertIsNone(_dealer_url_from_mobile_che168(url))
+
+    def test_playwright_urls_include_global_for_mobile(self):
+        url = (
+            "https://m.che168.com/cardetail/index?infoid=57982917&adfromid=0"
+        )
+        urls = _playwright_fetch_urls(url)
+        self.assertIn("https://global.che168.com/detail/57982917", urls)
+        self.assertIn(url, urls)
+
+    def test_mobile_url_without_dealer_keeps_mobile_url(self):
         self.assertEqual(
             normalize_import_detail_url(MOBILE_SAMPLE),
-            "https://i.che168.com/car/58721285",
+            MOBILE_SAMPLE,
+        )
+
+    def test_mobile_url_with_adfromid_normalizes_to_dealer(self):
+        self.assertEqual(
+            normalize_import_detail_url(MOBILE_WITH_DEALER),
+            "https://www.che168.com/dealer/30363497/58661738.html",
+        )
+
+    def test_dealer_url_from_mobile_adfromid(self):
+        self.assertEqual(
+            _dealer_url_from_mobile_che168(MOBILE_WITH_DEALER),
+            "https://www.che168.com/dealer/30363497/58661738.html",
         )
 
     def test_mobile_url_source_listing_id(self):
         self.assertEqual(source_listing_id_from_url(MOBILE_SAMPLE), "58721285")
+        self.assertEqual(source_listing_id_from_url(MOBILE_WITH_DEALER), "58661738")
+        normalized = normalize_import_detail_url(MOBILE_WITH_DEALER)
+        self.assertEqual(
+            source_listing_id_from_url(normalized),
+            "dealer-30363497-58661738",
+        )
 
     def test_chinese_url_from_mobile(self):
         self.assertEqual(
@@ -47,10 +91,19 @@ class Che168ParserCompletenessTests(unittest.TestCase):
             "https://i.che168.com/car/58721285",
         )
 
-    def test_detail_fetch_urls_from_mobile_prefers_i_che168(self):
+    def test_detail_fetch_urls_from_mobile_with_dealer_first(self):
+        urls = _detail_fetch_urls(MOBILE_WITH_DEALER)
+        self.assertEqual(urls[0], "https://www.che168.com/dealer/30363497/58661738.html")
+
+    def test_detail_fetch_urls_from_mobile_without_dealer_keeps_mobile(self):
         urls = _detail_fetch_urls(MOBILE_SAMPLE)
-        self.assertEqual(urls[0], "https://i.che168.com/car/58721285")
-        self.assertNotIn(MOBILE_SAMPLE, urls)
+        self.assertEqual(urls[0], MOBILE_SAMPLE)
+        self.assertIn("https://i.che168.com/car/58721285", urls)
+
+    def test_playwright_urls_skip_global_for_mobile(self):
+        urls = _playwright_fetch_urls(MOBILE_WITH_DEALER)
+        self.assertTrue(all("global.che168.com" not in u for u in urls))
+        self.assertEqual(urls[0], "https://www.che168.com/dealer/30363497/58661738.html")
 
     def test_parse_is_complete_requires_price(self):
         self.assertFalse(_parse_is_complete(ParsedCar(source_listing_id="global-1", title="Used Car")))

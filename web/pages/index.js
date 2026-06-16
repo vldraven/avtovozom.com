@@ -448,21 +448,30 @@ export default function Home() {
   async function loadMe(accessToken) {
     const currentToken = accessToken || token;
     if (!currentToken) return;
-    const res = await fetch(`${API_URL}/auth/me`, {
-      headers: { Authorization: `Bearer ${currentToken}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    setMe(data);
+    try {
+      const res = await fetch(`${API_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      if (res.status === 401) {
+        clearToken();
+        setToken("");
+        setMe(null);
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json();
+      setMe(data);
 
-    if (isStaffRole(data.role)) {
-      await loadLatestParserJob(currentToken);
-      await loadWhitelistCatalog(currentToken);
-    } else {
-      setLatestParserJob(null);
-      setWhitelistCatalog([]);
+      if (isStaffRole(data.role)) {
+        await loadLatestParserJob(currentToken);
+        await loadWhitelistCatalog(currentToken);
+      } else {
+        setLatestParserJob(null);
+        setWhitelistCatalog([]);
+      }
+    } catch {
+      /* API недоступен (backend не запущен) — не роняем главную */
     }
-
   }
 
   async function loadWhitelistCatalog(accessToken) {

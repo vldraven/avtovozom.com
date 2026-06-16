@@ -22,6 +22,7 @@ GLOBAL_CHE168_DETAIL_RE = re.compile(r"global\.che168\.com/detail/(\d+)", re.IGN
 DONGCHEDI_USEDCAR_RE = re.compile(r"(?:www\.)?dongchedi\.com/usedcar/(\d+)", re.IGNORECASE)
 # https://m.che168.com/cardetail/index?infoid=58721285 — мобильная карточка (SPA)
 MOBILE_CHE168_INFOID_RE = re.compile(r"[?&]infoid=(\d+)", re.IGNORECASE)
+GLOBAL_CHE168_CARINFO_API = "https://globalapi.che168.com/api/v1/carinfo/{infoid}"
 YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
 ENGINE_L_RE = re.compile(r"([0-9]{1,2}(?:\.[0-9])?)\s*L", re.IGNORECASE)
 HORSEPOWER_RE = re.compile(r"([0-9]{2,4})\s*(马力|匹|hp|ps)", re.IGNORECASE)
@@ -65,11 +66,111 @@ def _i_che168_url_from_infoid(infoid: str) -> str:
     return f"https://i.che168.com/car/{infoid}"
 
 
+def _dealer_listing_url(dealer_id: str, infoid: str) -> str:
+    return f"https://www.che168.com/dealer/{dealer_id}/{infoid}.html"
+
+
+def _che168_url_query_param(url: str, *keys: str) -> str | None:
+    parsed = urlparse((url or "").strip())
+    qs = parse_qs(parsed.query)
+    for key in keys:
+        for variant in (key, key.lower(), key.capitalize()):
+            vals = qs.get(variant)
+            if vals:
+                val = str(vals[0]).strip()
+                if val.isdigit() and int(val) > 0:
+                    return val
+    return None
+
+
+def _dealer_url_from_mobile_che168(url: str) -> str | None:
+    """adfromid/dealerid в mobile-ссылке → полная SSR-карточка www.che168.com/dealer/…"""
+    infoid = _mobile_che168_infoid_from_url(url)
+    if not infoid:
+        return None
+    dealer_id = _che168_url_query_param(
+        url, "adfromid", "dealerid", "dealerId", "dealer_id"
+    )
+    if dealer_id:
+        return _dealer_listing_url(dealer_id, infoid)
+    return None
+
+
+def _fetch_global_che168_carinfo(infoid: str) -> dict[str, Any] | None:
+    """JSON API global.che168 — dealer id, spec, фото; цена в API — USD (не CNY)."""
+    sid = (infoid or "").strip()
+    if not sid.isdigit():
+        return None
+    url = GLOBAL_CHE168_CARINFO_API.format(infoid=sid)
+    params = {"_appid": "global.pc", "deviceid": "avtovozom-parser", "language": "zh-cn"}
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json",
+        "Referer": "https://global.che168.com/",
+    }
+    try:
+        with httpx.Client(timeout=25.0, follow_redirects=True, headers=headers) as client:
+            r = client.get(url, params=params)
+            r.raise_for_status()
+            data = r.json()
+    except Exception:
+        return None
+    if not isinstance(data, dict) or data.get("returncode") != 0:
+        return None
+    result = data.get("result")
+    return result if isinstance(result, dict) else None
+
+
+def _dealer_url_from_global_carinfo(info: dict[str, Any]) -> str | None:
+    infoid = info.get("infoid")
+    dealer_id = info.get("dealeid") or info.get("dealerid")
+    try:
+        iid = str(int(infoid))
+        did = str(int(dealer_id))
+    except (TypeError, ValueError):
+        return None
+    if int(did) <= 0:
+        return None
+    return _dealer_listing_url(did, iid)
+
+
+def _global_che168_detail_url_from_infoid(infoid: str) -> str:
+    return f"https://global.che168.com/detail/{infoid}"
+
+
 def _is_mobile_che168_detail_url(url: str) -> bool:
     return (
         _mobile_che168_infoid_from_url(url) is not None
         and "m.che168.com" in (url or "").lower()
     )
+
+
+def _mobile_che168_resolve_urls(detail_url: str) -> list[str]:
+    """
+    Порядок разбора mobile Che168:
+    dealer (adfromid или dealeid из global API) → global.en → mobile SPA → i.che168.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(u: str | None) -> None:
+        if not u:
+            return
+        key = u.rstrip("/")
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(u)
+
+    add(_dealer_url_from_mobile_che168(detail_url))
+    infoid = _mobile_che168_infoid_from_url(detail_url)
+    if infoid:
+        add(_global_che168_detail_url_from_infoid(infoid))
+    if _is_mobile_che168_detail_url(detail_url):
+        add(detail_url.strip())
+    if infoid:
+        add(_i_che168_url_from_infoid(infoid))
+    return out
 
 
 def _body_color_slug_from_vehicle_text(title: str | None, body_text: str | None) -> str | None:
@@ -127,6 +228,8 @@ def is_likely_vehicle_photo_url(url: str) -> bool:
             "dcd-cdn",
             "dcarstatic.com",
             "dcd-sign",
+            "erscglobal",
+            "autoimg.cn/escimg",
         )
     ):
         return True
@@ -396,6 +499,126 @@ def _narrow_description(body_text: str) -> str | None:
     return t if t else None
 
 
+def _parsed_car_from_global_carinfo(info: dict[str, Any], source_listing_id: str) -> ParsedCar:
+    """Метаданные без цены в CNY (в API global — экспортная USD)."""
+    mileage_km: int | None = None
+    raw_mileage = info.get("mileage")
+    if raw_mileage is not None:
+        s = str(raw_mileage).replace(",", "").strip()
+        if s.isdigit():
+            mileage_km = int(s)
+
+    registration_date: str | None = None
+    regdate = str(info.get("regdate") or "").strip()
+    m = re.match(r"(\d{4})\.(\d{1,2})", regdate)
+    if m:
+        registration_date = f"{m.group(1)}-{int(m.group(2)):02d}-01"
+
+    production_date: str | None = None
+    producedate = str(info.get("producedate") or "").strip()
+    pm = re.match(r"(\d{4})-(\d{1,2})", producedate)
+    if pm:
+        production_date = f"{pm.group(1)}-{int(pm.group(2)):02d}-01"
+
+    year = _parse_year(str(info.get("yearname") or regdate or ""))
+    title = str(info.get("carname") or "").strip() or None
+    series_raw = str(info.get("specname") or "").strip() or None
+    location_city = str(info.get("cname") or "").strip() or None
+    fuel_type = str(info.get("fuelname") or "").strip() or None
+    transmission = str(info.get("gearbox") or "").strip() or None
+    if transmission in ("--", "-", ""):
+        transmission = None
+    if fuel_type in ("--", "-", ""):
+        fuel_type = None
+
+    autohome_spec_id: int | None = None
+    try:
+        spec_id = info.get("specid")
+        if spec_id is not None:
+            autohome_spec_id = int(spec_id)
+    except (TypeError, ValueError):
+        pass
+
+    photos: list[str] = []
+    for block in info.get("catepiclist") or []:
+        if not isinstance(block, dict):
+            continue
+        for raw in block.get("list") or []:
+            u = str(raw or "").strip()
+            if not u:
+                continue
+            if u.startswith("//"):
+                u = "https:" + u
+            if u not in photos:
+                photos.append(u)
+    photos = filter_vehicle_photo_urls(photos)
+
+    engine_volume_cc = _parse_engine_volume_cc(str(info.get("engine") or title or ""))
+    horsepower = _parse_horsepower(str(info.get("engine") or title or ""))
+
+    return ParsedCar(
+        source_listing_id=source_listing_id,
+        title=title,
+        series_raw=series_raw,
+        description=title,
+        year=year,
+        engine_volume_cc=engine_volume_cc,
+        horsepower=horsepower,
+        mileage_km=mileage_km,
+        fuel_type=fuel_type,
+        transmission=transmission,
+        location_city=location_city,
+        photos=photos or None,
+        registration_date=registration_date,
+        production_date=production_date,
+        autohome_spec_id=autohome_spec_id,
+        body_color_slug=_body_color_slug_from_vehicle_text(
+            title, str(info.get("color") or "")
+        ),
+    )
+
+
+def _merge_parsed_cars(primary: ParsedCar | None, secondary: ParsedCar | None) -> ParsedCar | None:
+    """Объединить карточки: цена и пробелы добираем из более полного источника."""
+    if primary is None:
+        return secondary
+    if secondary is None:
+        return primary
+    if primary.source_listing_id != secondary.source_listing_id:
+        return primary
+    fields = (
+        "title",
+        "series_raw",
+        "description",
+        "year",
+        "engine_volume_cc",
+        "horsepower",
+        "mileage_km",
+        "fuel_type",
+        "transmission",
+        "location_city",
+        "body_color_slug",
+        "price_cny",
+        "registration_date",
+        "production_date",
+        "autohome_spec_id",
+    )
+    merged = {f: getattr(primary, f) for f in fields}
+    for f in fields:
+        if merged[f] in (None, "", 0) and getattr(secondary, f) not in (None, "", 0):
+            merged[f] = getattr(secondary, f)
+    photos = primary.photos or []
+    for p in secondary.photos or []:
+        if p not in photos:
+            photos.append(p)
+    photos = filter_vehicle_photo_urls(photos)
+    return ParsedCar(
+        source_listing_id=primary.source_listing_id,
+        photos=photos or None,
+        **merged,
+    )
+
+
 def _normalize_listing_href(href: str) -> str | None:
     if not href:
         return None
@@ -410,7 +633,12 @@ def _normalize_listing_href(href: str) -> str | None:
     m = CAR_DETAIL_ID_RE.search(h)
     if m:
         return f"https://i.che168.com/car/{m.group(1)}"
+    dealer = _dealer_url_from_mobile_che168(h)
+    if dealer:
+        return dealer
     infoid = _mobile_che168_infoid_from_url(h)
+    if infoid and "m.che168.com" in h.lower():
+        return h.split("#")[0].strip()
     if infoid:
         return _i_che168_url_from_infoid(infoid)
     return None
@@ -555,6 +783,8 @@ def _pw_launch_timeout_ms() -> int:
 
 def _pw_page_navigation_timeout_ms(detail_url: str) -> int:
     """懂车帝 в Docker часто грузится дольше che168 — отдельный лимит goto/DOM."""
+    if _is_mobile_che168_detail_url(detail_url):
+        return int(os.getenv("CHE168_MOBILE_PW_GOTO_TIMEOUT_MS", "35000"))
     if marketplace_from_detail_url(detail_url) == "dongchedi":
         return int(os.getenv("DONGCHEDI_PW_GOTO_TIMEOUT_MS", "90000"))
     return int(os.getenv("CHE168_PW_GOTO_TIMEOUT_MS", "60000"))
@@ -619,8 +849,10 @@ def _detail_fetch_urls(detail_url: str) -> list[str]:
         out.append(u)
 
     if _is_mobile_che168_detail_url(detail_url):
-        add(_chinese_i_che168_url_from_detail_url(detail_url))
-        add(_global_che168_detail_url_from_detail_url(detail_url))
+        for u in _mobile_che168_resolve_urls(detail_url):
+            if "global.che168.com" in u:
+                continue
+            add(u)
         return out
 
     is_dealer = bool(DEALER_LISTING_RE.search(detail_url))
@@ -638,12 +870,7 @@ def _detail_fetch_urls(detail_url: str) -> list[str]:
 def _playwright_fetch_urls(detail_url: str) -> list[str]:
     """Не гоняем Playwright по global-заглушке и лишним URL — только перспективные."""
     if _is_mobile_che168_detail_url(detail_url):
-        infoid = _mobile_che168_infoid_from_url(detail_url)
-        out: list[str] = []
-        if infoid:
-            out.append(_i_che168_url_from_infoid(infoid))
-        out.append(detail_url.strip())
-        return out
+        return _mobile_che168_resolve_urls(detail_url)
 
     urls = _detail_fetch_urls(detail_url)
     out = []
@@ -1221,6 +1448,11 @@ def _single_listing_url_from_input(url: str) -> str | None:
     m = CAR_DETAIL_ID_RE.search(u)
     if m:
         return f"https://i.che168.com/car/{m.group(1)}"
+    dealer = _dealer_url_from_mobile_che168(u)
+    if dealer:
+        return dealer
+    if _is_mobile_che168_detail_url(u):
+        return u.split("#")[0].strip()
     infoid = _mobile_che168_infoid_from_url(u)
     if infoid:
         return _i_che168_url_from_infoid(infoid)
@@ -1261,8 +1493,16 @@ def parse_che168_listing_links(series_url: str, max_items: int = 20) -> list[str
     return _listing_links_playwright(series_url, max_items)
 
 
-def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> ParsedCar:
+def _parse_che168_detail_playwright(
+    detail_url: str,
+    source_listing_id: str,
+    *,
+    mobile_spec_fallback_url: str | None = None,
+) -> ParsedCar:
     use_mobile = _is_mobile_che168_detail_url(detail_url)
+    spec_mobile_url = mobile_spec_fallback_url or (
+        detail_url if use_mobile else None
+    )
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -1342,9 +1582,9 @@ def _parse_che168_detail_playwright(detail_url: str, source_listing_id: str) -> 
             autohome_spec_id = extract_autohome_spec_id(page.content() or "")
         except Exception:
             pass
-        if use_mobile and autohome_spec_id is None:
+        if autohome_spec_id is None and spec_mobile_url:
             try:
-                autohome_spec_id = _mobile_che168_fetch_spec_id(page, detail_url)
+                autohome_spec_id = _mobile_che168_fetch_spec_id(page, spec_mobile_url)
             except Exception:
                 pass
 
@@ -1403,6 +1643,20 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
     best: ParsedCar | None = None
     best_score = 0
 
+    infoid = _mobile_che168_infoid_from_url(detail_url)
+    global_info: dict[str, Any] | None = None
+    if infoid and not is_dongchedi:
+        global_info = _fetch_global_che168_carinfo(infoid)
+        if global_info:
+            global_parsed = _parsed_car_from_global_carinfo(global_info, source_listing_id)
+            score = _parse_quality_score(global_parsed)
+            if score > best_score:
+                best = global_parsed
+                best_score = score
+            dealer_url = _dealer_url_from_global_carinfo(global_info)
+            if dealer_url and dealer_url not in fetch_urls:
+                fetch_urls.insert(0, dealer_url)
+
     captcha_hits = 0
     if not is_dongchedi:
         for url in fetch_urls:
@@ -1415,10 +1669,11 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
                     continue
                 score = _parse_quality_score(parsed)
                 if score > best_score:
-                    best = parsed
-                    best_score = score
+                    best = _merge_parsed_cars(parsed, best) or parsed
+                    best_score = _parse_quality_score(best)
                 if _parse_is_complete(parsed):
-                    return parsed
+                    merged = _merge_parsed_cars(parsed, best)
+                    return merged if merged else parsed
             except RuntimeError as exc:
                 msg = str(exc)
                 if "антибот" in msg or "captcha" in msg.lower():
@@ -1441,17 +1696,29 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
 
     last_err: Exception | None = None
     pw_urls = [detail_url] if is_dongchedi else _playwright_fetch_urls(detail_url)
+    if global_info:
+        dealer_url = _dealer_url_from_global_carinfo(global_info)
+        if dealer_url and dealer_url not in pw_urls:
+            pw_urls.insert(0, dealer_url)
+    mobile_spec_fallback = (
+        detail_url.strip() if _is_mobile_che168_detail_url(detail_url) else None
+    )
     for url in pw_urls:
         try:
-            parsed = _parse_che168_detail_playwright(url, source_listing_id)
+            parsed = _parse_che168_detail_playwright(
+                url,
+                source_listing_id,
+                mobile_spec_fallback_url=mobile_spec_fallback,
+            )
             if is_dongchedi:
                 return parsed
             score = _parse_quality_score(parsed)
             if score > best_score:
-                best = parsed
-                best_score = score
+                best = _merge_parsed_cars(parsed, best) or parsed
+                best_score = _parse_quality_score(best)
             if _parse_is_complete(parsed):
-                return parsed
+                merged = _merge_parsed_cars(parsed, best)
+                return merged if merged else parsed
         except Exception as exc:
             last_err = exc
 
