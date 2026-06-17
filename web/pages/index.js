@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
+import BrandLogoMarquee from "../components/BrandLogoMarquee";
 import CatalogCardMedia from "../components/CatalogCardMedia";
 import CatalogSortDropdown from "../components/CatalogSortDropdown";
 import DealerOpenRequests from "../components/DealerOpenRequests";
@@ -118,6 +119,21 @@ export default function Home() {
       (a, b) =>
         b.listings_count - a.listings_count || a.name.localeCompare(b.name, "ru")
     );
+  }, [catalogBrands]);
+
+  const quickFilterBrands = useMemo(() => {
+    return catalogBrands
+      .filter((b) => b.logo_storage_url && b.slug)
+      .sort((a, b) => {
+        const ar = a.quick_filter_rank;
+        const br = b.quick_filter_rank;
+        if (ar != null && br != null) {
+          return ar - br || b.listings_count - a.listings_count || a.name.localeCompare(b.name, "ru");
+        }
+        if (ar != null) return -1;
+        if (br != null) return 1;
+        return b.listings_count - a.listings_count || a.name.localeCompare(b.name, "ru");
+      });
   }, [catalogBrands]);
 
   const BRANDS_COLLAPSED_DESKTOP = 12;
@@ -897,7 +913,7 @@ export default function Home() {
 
   const loadCatalogBrandsOnly = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/catalog/brands`);
+      const res = await fetch(`${API_URL}/catalog/brands`, { cache: "no-store" });
       if (res.ok) setCatalogBrands(await res.json());
     } catch {
       /* ignore */
@@ -1235,6 +1251,7 @@ export default function Home() {
 
             <div className="catalog-picker">
               <h2 className="catalog-picker__section-title">Марки</h2>
+              <BrandLogoMarquee brands={quickFilterBrands} />
               {selectedBrandId || selectedModelId ? (
                 <div className="catalog-breadcrumb">
                   <button type="button" onClick={clearBrandModel}>
