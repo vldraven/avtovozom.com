@@ -542,6 +542,7 @@ class ParseJobOut(BaseModel):
     total_updated: int
     total_errors: int
     message: str
+    cancel_requested: bool = False
     import_model_id: int | None = None
     """Для type=import_one — модель в справочнике."""
     import_detail_url: str | None = None

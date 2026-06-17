@@ -2509,6 +2509,28 @@ button.detail-back {
   max-width: 720px;
 }
 
+.parser-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.parser-card__head .parser-job-line {
+  flex: 1;
+  min-width: 0;
+}
+
+.parser-card__stop {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.parser-card--cancelled {
+  border-color: #b0bec5;
+  background: #f8fafc;
+}
+
 .parser-bar {
   height: 12px;
   background: #e2e8f0;
@@ -4664,6 +4686,11 @@ code {
 .admin-parser-badge--queued {
   background: #fef3c7;
   color: #92400e;
+}
+
+.admin-parser-badge--cancelled {
+  background: #e2e8f0;
+  color: #475569;
 }
 
 .admin-parser-job-table-wrap {

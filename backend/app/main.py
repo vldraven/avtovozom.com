@@ -67,6 +67,7 @@ from .che168_parser import (
 )
 from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru, russian_listing_title
 from .model_resolver import resolve_model_id_for_listing
+from .parser_cancellation import request_cancel
 from .parser_logic import run_parser_job
 from .translator_ru import translate_to_ru
 from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_source, resolve_trim_for_listing
@@ -198,6 +199,12 @@ try:
         UserVerificationRequirement,
     )
     from webauthn.helpers import options_to_json
+    from webauthn.helpers.parse_authentication_credential_json import (
+        parse_authentication_credential_json,
+    )
+    from webauthn.helpers.parse_registration_credential_json import (
+        parse_registration_credential_json,
+    )
 except Exception:  # pragma: no cover - dependency may be absent in local dev until installed.
     generate_authentication_options = None
     generate_registration_options = None
@@ -210,6 +217,8 @@ except Exception:  # pragma: no cover - dependency may be absent in local dev un
     ResidentKeyRequirement = None
     UserVerificationRequirement = None
     options_to_json = None
+    parse_registration_credential_json = None
+    parse_authentication_credential_json = None
 
 app = FastAPI(title="Avtovozom API", version="0.1.0")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -770,6 +779,11 @@ def startup() -> None:
         )
         conn.execute(
             text(
+                "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN DEFAULT FALSE"
+            )
+        )
+        conn.execute(
+            text(
                 "ALTER TABLE customs_calc_settings ADD COLUMN IF NOT EXISTS "
                 "util_coefficients_individual TEXT"
             )
@@ -1283,10 +1297,16 @@ def _consume_webauthn_challenge(challenge_id: str, kind: str, user_id: int | Non
 
 
 def _credential_from_payload(cls: Any, payload: dict[str, Any]) -> Any:
+    if cls is RegistrationCredential and parse_registration_credential_json is not None:
+        return parse_registration_credential_json(payload)
+    if cls is AuthenticationCredential and parse_authentication_credential_json is not None:
+        return parse_authentication_credential_json(payload)
     raw = json.dumps(payload)
     if hasattr(cls, "model_validate_json"):
         return cls.model_validate_json(raw)
-    return cls.parse_raw(raw)
+    if hasattr(cls, "parse_raw"):
+        return cls.parse_raw(raw)
+    raise TypeError(f"Unsupported WebAuthn credential payload for {cls!r}")
 
 
 @app.post("/auth/register", response_model=TokenOut)
@@ -4994,6 +5014,12 @@ def _run_parser_job_background(job_id: int) -> None:
         job = db.execute(select(ParseJob).where(ParseJob.id == job_id)).scalar_one_or_none()
         if not job or job.status != "queued":
             return
+        if job.cancel_requested:
+            job.status = "cancelled"
+            job.finished_at = datetime.utcnow()
+            job.message = "Остановлено до начала выполнения."
+            db.commit()
+            return
         run_parser_job(db, job)
     except Exception as e:
         row = db.execute(select(ParseJob).where(ParseJob.id == job_id)).scalar_one_or_none()
@@ -5092,4 +5118,36 @@ def parser_job_by_id(
     job = db.execute(select(ParseJob).where(ParseJob.id == job_id)).scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@app.post("/admin/parser/jobs/{job_id}/cancel", response_model=ParseJobOut)
+def cancel_parser_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    job = db.execute(select(ParseJob).where(ParseJob.id == job_id)).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in ("queued", "running"):
+        raise HTTPException(status_code=400, detail="Задача уже завершена и не может быть остановлена.")
+    if job.status == "queued":
+        job.status = "cancelled"
+        job.cancel_requested = True
+        job.finished_at = datetime.utcnow()
+        job.message = "Остановлено пользователем (задача ещё не стартовала)."
+        db.commit()
+        db.refresh(job)
+        request_cancel(job_id)
+        return job
+    job.cancel_requested = True
+    request_cancel(job_id)
+    base = (job.message or "").strip()
+    if base and "Остановка" not in base:
+        job.message = f"{base} · Остановка…"[:500]
+    elif not base:
+        job.message = "Остановка…"
+    db.commit()
+    db.refresh(job)
     return job

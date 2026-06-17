@@ -47,6 +47,8 @@ function statusMeta(status) {
     return { label: "Выполняется", className: "admin-parser-badge admin-parser-badge--running" };
   if (s === "queued")
     return { label: "В очереди", className: "admin-parser-badge admin-parser-badge--queued" };
+  if (s === "cancelled")
+    return { label: "Остановлен", className: "admin-parser-badge admin-parser-badge--cancelled" };
   return { label: status || "—", className: "admin-parser-badge" };
 }
 
@@ -64,6 +66,8 @@ const BACKFILL_BATCH_SIZE = 30;
 export default function AdminParserPanel({ token, jobs, onReload }) {
   const [runBusy, setRunBusy] = useState(false);
   const [runMessage, setRunMessage] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelMessage, setCancelMessage] = useState("");
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillMessage, setBackfillMessage] = useState("");
   const [expandedId, setExpandedId] = useState(null);
@@ -86,6 +90,10 @@ export default function AdminParserPanel({ token, jobs, onReload }) {
   }, [hasActiveJob, reload]);
 
   const latest = jobs[0] ?? null;
+  const activeJob = useMemo(
+    () => jobs.find((j) => j.status === "queued" || j.status === "running") ?? null,
+    [jobs]
+  );
   const summary = useMemo(() => {
     const lastFailed = jobs.find((j) => j.status === "failed");
     return { lastFailed };
@@ -147,6 +155,36 @@ export default function AdminParserPanel({ token, jobs, onReload }) {
     }
   }
 
+  async function cancelActiveParserJob() {
+    if (!token || !activeJob || cancelBusy) return;
+    if (!confirm("Остановить текущую задачу парсера?")) return;
+    setCancelMessage("");
+    setCancelBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/parser/jobs/${activeJob.id}/cancel`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        let detail = "Не удалось остановить задачу.";
+        try {
+          const err = await res.json();
+          if (err.detail) detail = String(err.detail);
+        } catch {
+          /* ignore */
+        }
+        setCancelMessage(detail);
+        return;
+      }
+      setCancelMessage("Запрошена остановка. Статус обновится автоматически.");
+      await reload();
+    } catch {
+      setCancelMessage("Сбой сети. Проверьте, что backend доступен.");
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
   async function runCatalogParser() {
     if (!token) return;
     setRunMessage("");
@@ -193,6 +231,16 @@ export default function AdminParserPanel({ token, jobs, onReload }) {
           >
             {runBusy ? "Запуск…" : "Обновить каталог сейчас"}
           </button>
+          {activeJob ? (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={cancelBusy || activeJob.cancel_requested}
+              onClick={cancelActiveParserJob}
+            >
+              {cancelBusy ? "Остановка…" : activeJob.cancel_requested ? "Останавливается…" : "Остановить задачу"}
+            </button>
+          ) : null}
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => reload()} disabled={!token}>
             Обновить список
           </button>
@@ -200,6 +248,7 @@ export default function AdminParserPanel({ token, jobs, onReload }) {
       </div>
 
       {runMessage ? <p className="admin-parser-panel-profile__inline-msg">{runMessage}</p> : null}
+      {cancelMessage ? <p className="admin-parser-panel-profile__inline-msg">{cancelMessage}</p> : null}
 
       <div className="admin-parser-trim-backfill">
         <div>

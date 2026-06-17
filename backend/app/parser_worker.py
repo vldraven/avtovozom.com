@@ -16,6 +16,15 @@ def process_pending_jobs() -> None:
             select(ParseJob).where(ParseJob.status == "queued").order_by(ParseJob.id.asc())
         ).scalars().all()
         for job in pending:
+            db.refresh(job)
+            if job.status != "queued":
+                continue
+            if job.cancel_requested:
+                job.status = "cancelled"
+                job.finished_at = datetime.utcnow()
+                job.message = "Остановлено до начала выполнения."
+                db.commit()
+                continue
             run_parser_job(db, job)
     finally:
         db.close()

@@ -90,6 +90,7 @@ export default function Home() {
   const [me, setMe] = useState(null);
   const [latestParserJob, setLatestParserJob] = useState(null);
   const [parserJobMessage, setParserJobMessage] = useState("");
+  const [cancelParserBusy, setCancelParserBusy] = useState(false);
   const [whitelistCatalog, setWhitelistCatalog] = useState([]);
   const [catalogUrlDrafts, setCatalogUrlDrafts] = useState({});
   /** Админка парсера: марка → модель → URL (не путать с фильтром каталога объявлений). */
@@ -313,6 +314,41 @@ export default function Home() {
     if (brand) query.brand = String(brand);
     if (model) query.model = String(model);
     router.replace({ pathname: "/", query }, undefined, { shallow: true });
+  }
+
+  async function cancelParserJob(jobId) {
+    if (!token || !jobId || cancelParserBusy) return;
+    if (!confirm("Остановить текущую задачу парсера?")) return;
+    setCancelParserBusy(true);
+    setParserJobMessage("");
+    try {
+      const res = await fetch(`${API_URL}/admin/parser/jobs/${jobId}/cancel`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        let detail = "Не удалось остановить задачу.";
+        try {
+          const err = await res.json();
+          if (err.detail) detail = String(err.detail);
+        } catch {
+          /* ignore */
+        }
+        setParserJobMessage(detail);
+        return;
+      }
+      const job = await res.json();
+      setLatestParserJob(job);
+      setParserJobMessage(
+        job.status === "cancelled"
+          ? "Задача остановлена."
+          : "Запрошена остановка. Дождитесь завершения текущего шага…"
+      );
+    } catch {
+      setParserJobMessage("Сбой связи с API. Проверьте, что backend доступен.");
+    } finally {
+      setCancelParserBusy(false);
+    }
   }
 
   async function runParser() {
@@ -1042,13 +1078,15 @@ export default function Home() {
       const job = await loadParserJobById(id, token);
       if (!job) return;
       setLatestParserJob(job);
-      if (job.status === "success" || job.status === "failed") {
+      if (job.status === "success" || job.status === "failed" || job.status === "cancelled") {
         setParserJobMessage(
           job.status === "success"
             ? job.type === "import_one"
               ? `Импорт выполнен: ${job.message || "готово"}`
               : "Парсер завершил работу. Каталог обновлён."
-            : `Парсер завершился с ошибкой: ${job.message || "см. логи"}`
+            : job.status === "cancelled"
+              ? `Задача остановлена: ${job.message || "отменено пользователем"}`
+              : `Парсер завершился с ошибкой: ${job.message || "см. логи"}`
         );
         loadHomeCatalogParallel();
         loadWhitelistCatalog(token);
@@ -1545,20 +1583,32 @@ export default function Home() {
             className={`panel parser-card${
               j.status === "success" ? " parser-card--success" : ""
             }${j.status === "failed" ? " parser-card--failed" : ""}${
-              j.type === "import_one" && running ? " parser-card--import-running" : ""
-            }`}
+              j.status === "cancelled" ? " parser-card--cancelled" : ""
+            }${j.type === "import_one" && running ? " parser-card--import-running" : ""}`}
           >
-            <p className="parser-job-line">
-              <b>{j.type === "import_one" ? "Импорт объявления" : "Последний запуск парсера"}:</b> #{j.id} ·{" "}
-              <span className="parser-job-status">{String(j.status || "").toUpperCase()}</span>
-              {step && running ? (
-                <span className="parser-job-step">
-                  {" "}
-                  · шаг {step.cur} из {step.total}
-                </span>
+            <div className="parser-card__head">
+              <p className="parser-job-line">
+                <b>{j.type === "import_one" ? "Импорт объявления" : "Последний запуск парсера"}:</b> #{j.id} ·{" "}
+                <span className="parser-job-status">{String(j.status || "").toUpperCase()}</span>
+                {step && running ? (
+                  <span className="parser-job-step">
+                    {" "}
+                    · шаг {step.cur} из {step.total}
+                  </span>
+                ) : null}
+                {j.message ? <> · {j.message}</> : null}
+              </p>
+              {running ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm parser-card__stop"
+                  disabled={cancelParserBusy || j.cancel_requested}
+                  onClick={() => cancelParserJob(j.id)}
+                >
+                  {cancelParserBusy ? "Остановка…" : j.cancel_requested ? "Останавливается…" : "Остановить"}
+                </button>
               ) : null}
-              {j.message ? <> · {j.message}</> : null}
-            </p>
+            </div>
             <div className="parser-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={fillPct}>
               {running && (
                 <div className="parser-bar__shimmer" aria-hidden />

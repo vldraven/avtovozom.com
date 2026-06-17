@@ -250,6 +250,7 @@ class ParseJob(Base):
     total_updated: Mapped[int] = mapped_column(Integer, default=0)
     total_errors: Mapped[int] = mapped_column(Integer, default=0)
     message: Mapped[str] = mapped_column(String(512), default="")
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     import_model_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("car_models.id"), nullable=True
     )

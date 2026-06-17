@@ -20,9 +20,67 @@ from .body_colors import label_for_slug
 from .media_storage import delete_car_photo_files, download_car_photos
 from .models import Car, CarPhoto, CarModel, ModelWhitelist, ParseJob
 from .model_resolver import resolve_model_id_for_listing
-from .parser_timeout import call_with_timeout
+from .parser_cancellation import clear_cancel, is_cancel_requested
+from .parser_timeout import ParserJobCancelled, call_with_cancel_poll, call_with_timeout
 from .translator_ru import translate_to_ru
 from .trim_catalog import resolve_trim_for_listing
+
+
+def _finalize_job_cancelled(
+    db: Session,
+    job: ParseJob,
+    *,
+    total_processed: int = 0,
+    total_created: int = 0,
+    total_updated: int = 0,
+    total_errors: int = 0,
+    message: str | None = None,
+) -> ParseJob:
+    job.status = "cancelled"
+    job.finished_at = datetime.utcnow()
+    job.total_processed = total_processed
+    job.total_created = total_created
+    job.total_updated = total_updated
+    job.total_errors = total_errors
+    if message:
+        job.message = message[:500]
+    elif not (job.message or "").strip():
+        job.message = "Остановлено пользователем."
+    elif "Остановлено" not in job.message:
+        job.message = f"{job.message} · Остановлено пользователем."[:500]
+    db.commit()
+    db.refresh(job)
+    clear_cancel(job.id)
+    return job
+
+
+def _job_cancel_requested(db: Session, job_id: int) -> bool:
+    if is_cancel_requested(job_id):
+        return True
+    val = db.execute(select(ParseJob.cancel_requested).where(ParseJob.id == job_id)).scalar_one_or_none()
+    return bool(val)
+
+
+def _stop_if_cancelled(
+    db: Session,
+    job: ParseJob,
+    *,
+    total_processed: int = 0,
+    total_created: int = 0,
+    total_updated: int = 0,
+    total_errors: int = 0,
+) -> bool:
+    if not _job_cancel_requested(db, job.id):
+        return False
+    _finalize_job_cancelled(
+        db,
+        job,
+        total_processed=total_processed,
+        total_created=total_created,
+        total_updated=total_updated,
+        total_errors=total_errors,
+    )
+    return True
 
 
 def _apply_trim_from_parsed(
@@ -263,6 +321,15 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
     job.started_at = datetime.utcnow()
     db.commit()
     db.refresh(job)
+    if _stop_if_cancelled(
+        db,
+        job,
+        total_processed=total_processed,
+        total_created=total_created,
+        total_updated=total_updated,
+        total_errors=total_errors,
+    ):
+        return job
 
     demo_rows = (
         db.execute(select(Car).where(Car.source_listing_id.like("demo-%"))).scalars().all()
@@ -351,9 +418,26 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             db.refresh(job)
             return job
 
+        def abort_import_if_cancelled() -> bool:
+            return _stop_if_cancelled(
+                db,
+                job,
+                total_processed=total_processed,
+                total_created=total_created,
+                total_updated=total_updated,
+                total_errors=total_errors,
+            )
+
         flush_progress("1/3 Загрузка страницы объявления…")
+        if abort_import_if_cancelled():
+            return job
         try:
-            parsed = call_with_timeout(lambda: parse_che168_detail(detail_url))
+            parsed = call_with_cancel_poll(
+                lambda: parse_che168_detail(detail_url),
+                should_cancel=abort_import_if_cancelled,
+            )
+        except ParserJobCancelled:
+            return job
         except Exception as e:
             total_errors = 1
             total_processed = 1
@@ -479,6 +563,8 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             if job.status == "running":
                 job.status = "failed"
                 job.message = (job.message or "Прервано без сообщения")[:500]
+            elif job.status == "cancelled":
+                pass
             db.commit()
             db.refresh(job)
 
@@ -491,6 +577,8 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
     job.started_at = datetime.utcnow()
     db.commit()
     db.refresh(job)
+    if _stop_if_cancelled(db, job):
+        return job
 
     # Убираем демо-данные, чтобы было видно реальную работу парсера.
     demo_rows = (
@@ -539,6 +627,16 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
         db.commit()
         db.refresh(job)
 
+    def abort_if_cancelled() -> bool:
+        return _stop_if_cancelled(
+            db,
+            job,
+            total_processed=total_processed,
+            total_created=total_created,
+            total_updated=total_updated,
+            total_errors=total_errors,
+        )
+
     force_urls = os.getenv("CHE168_FORCE_DETAIL_URLS", "").strip()
     if force_urls:
         whitelist_models = whitelist_models[:1]
@@ -554,26 +652,41 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
 
     try:
         for wl in whitelist_models:
+            if abort_if_cancelled():
+                return job
             model: CarModel = wl.model
             if not model.che168_url and not force_urls:
                 continue
 
             job.status = "running"
             flush_progress(f"{model.name}: открываю список на che168…")
+            if abort_if_cancelled():
+                return job
 
             links = []
+            list_timeout = float(os.getenv("CHE168_PARSE_LIST_TIMEOUT_SEC", "180"))
             try:
                 series_placeholder = model.che168_url or "https://www.che168.com/"
-                links = parse_che168_listing_links(series_placeholder, max_items=max_links)
+                links = call_with_cancel_poll(
+                    lambda url=series_placeholder: parse_che168_listing_links(url, max_items=max_links),
+                    should_cancel=abort_if_cancelled,
+                    timeout_sec=list_timeout,
+                )
+            except ParserJobCancelled:
+                return job
             except Exception as e:
                 total_errors += 1
                 flush_progress(f"Ошибка ссылок для {model.name}: {e}")
+                if abort_if_cancelled():
+                    return job
                 continue
 
             if not links:
                 flush_progress(
                     f"{model.name}: ссылок на объявления не найдено (пустой список или недоступен сайт)."
                 )
+                if abort_if_cancelled():
+                    return job
                 continue
 
             new_links: list[str] = []
@@ -592,18 +705,31 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
                 flush_progress(
                     f"{model.name}: новых объявлений нет (все {len(links)} из выборки уже в каталоге)."
                 )
+                if abort_if_cancelled():
+                    return job
                 continue
 
             flush_progress(
                 f"{model.name}: к разбору {len(new_links)} новых объявлений (макс. {max_new} за запуск)."
             )
+            if abort_if_cancelled():
+                return job
 
             details_count = 0
             for detail_url in new_links:
+                if abort_if_cancelled():
+                    return job
                 details_count += 1
                 flush_progress(f"{model.name}: карточка {details_count}/{len(new_links)}…")
+                if abort_if_cancelled():
+                    return job
                 try:
-                    parsed = call_with_timeout(lambda u=detail_url: parse_che168_detail(u))
+                    parsed = call_with_cancel_poll(
+                        lambda u=detail_url: parse_che168_detail(u),
+                        should_cancel=abort_if_cancelled,
+                    )
+                except ParserJobCancelled:
+                    return job
                 except Exception as e:
                     total_errors += 1
                     total_processed += 1
@@ -696,5 +822,7 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
             if job.status == "running":
                 job.status = "failed"
                 job.message = (job.message or "Прервано без сообщения")[:500]
+            elif job.status == "cancelled":
+                pass
             db.commit()
             db.refresh(job)
