@@ -14,14 +14,26 @@ export async function fetchCatalogPageProps({ params, query }) {
   const segments = segmentsFromSlugParam(params?.slug ?? null);
 
   if (isCarDetailSegments(segments)) {
+    const carId = String(segments[2]);
+    const api = getServerApiBase();
+    let initialCar = null;
+    try {
+      const carRes = await fetch(`${api}/cars/${carId}`, {
+        headers: { Accept: "application/json" },
+      });
+      if (carRes.ok) initialCar = await carRes.json();
+    } catch {
+      initialCar = null;
+    }
     return {
       props: {
         initialPayload: {
           mode: "detail",
           segments,
-          carId: String(segments[2]),
+          carId,
           pathBrandSlug: segments[0],
           pathModelSlug: segments[1],
+          initialCar,
         },
       },
     };

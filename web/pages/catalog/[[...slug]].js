@@ -383,6 +383,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
         carId={detailCarId}
         pathBrandSlug={segments?.[0] ?? initialPayload?.pathBrandSlug ?? null}
         pathModelSlug={segments?.[1] ?? initialPayload?.pathModelSlug ?? null}
+        initialCar={initialPayload?.mode === "detail" ? initialPayload.initialCar ?? null : null}
       />
     );
   }
