@@ -2,6 +2,14 @@ import { publicCarHref } from "../lib/carRoutes";
 import { getPublicSiteUrlFromRequest } from "../lib/publicSiteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
 
+/** YYYY-MM-DD для <lastmod> (W3C Datetime). Возвращает null, если дата некорректна. */
+function isoDateOnly(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
 function escapeXml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -81,7 +89,15 @@ export async function getServerSideProps({ req, res }) {
       const items = data.items || [];
       for (const car of items) {
         const path = publicCarHref(car);
-        if (path) carLocs.push({ loc: `${base}${path}`, changefreq: "weekly", priority: "0.7" });
+        if (path) {
+          const lastmod = isoDateOnly(car.updated_at);
+          carLocs.push({
+            loc: `${base}${path}`,
+            changefreq: "weekly",
+            priority: "0.7",
+            ...(lastmod ? { lastmod } : {}),
+          });
+        }
       }
       if (items.length < limit) break;
       page += 1;
@@ -97,7 +113,7 @@ export async function getServerSideProps({ req, res }) {
 ${all
   .map(
     (u) => `  <url>
-    <loc>${escapeXml(u.loc)}</loc>
+    <loc>${escapeXml(u.loc)}</loc>${u.lastmod ? `\n    <lastmod>${u.lastmod}</lastmod>` : ""}
     <changefreq>${u.changefreq}</changefreq>
     <priority>${u.priority}</priority>
   </url>`

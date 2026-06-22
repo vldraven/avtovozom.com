@@ -602,6 +602,7 @@ def _car_to_out(
         estimated_total_rub=est,
         trim_id=car.trim_id,
         trim=_trim_to_out(getattr(car, "trim", None)) if include_trim else None,
+        updated_at=getattr(car, "updated_at", None),
     )
 
 

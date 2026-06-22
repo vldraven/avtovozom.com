@@ -145,6 +145,8 @@ class CarOut(BaseModel):
     """Ссылка на справочник комплектаций; для формы редактирования."""
     trim: CarTrimOut | None = None
     """Комплектация из справочника Autohome; заполняется на карточке объявления."""
+    updated_at: datetime | None = None
+    """Дата последнего обновления объявления (для <lastmod> в sitemap)."""
 
 
 class CarsListOut(BaseModel):

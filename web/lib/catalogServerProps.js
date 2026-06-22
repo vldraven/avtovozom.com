@@ -21,7 +21,13 @@ export async function fetchCatalogPageProps({ params, query }) {
       const carRes = await fetch(`${api}/cars/${carId}`, {
         headers: { Accept: "application/json" },
       });
-      if (carRes.ok) initialCar = await carRes.json();
+      if (carRes.ok) {
+        initialCar = await carRes.json();
+      } else if (carRes.status === 404) {
+        // Объявление удалено/неактивно — отдаём 404, чтобы оно корректно выпало из индекса.
+        // На прочих ошибках (5xx, сеть) не роняем в 404, чтобы не деиндексировать живые страницы.
+        return { notFound: true };
+      }
     } catch {
       initialCar = null;
     }
