@@ -21,8 +21,10 @@ import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { organizationAndWebSiteJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { scheduleListScrollRestore } from "../lib/listScrollRestore";
 import { absoluteUrl } from "../lib/siteUrl";
+import { getServerApiBase } from "../lib/serverApiUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const HOME_VALID_SORTS = ["date_desc", "date_asc", "price_asc", "price_desc"];
 
 /** Иначе GET справочников может отдаваться из HTTP-кэша без только что созданной записи. */
 const STAFF_GET_INIT = { cache: "no-store" };
@@ -72,16 +74,16 @@ function formatApiErrorDetail(body) {
   return String(d);
 }
 
-export default function Home() {
+export default function Home({ initialData = null }) {
   const router = useRouter();
   const lastExplicitHomeScrollSaveRef = useRef({ path: "", at: 0 });
   const [mobileHeaderMenuOpen, setMobileHeaderMenuOpen] = useState(false);
-  const [cars, setCars] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [catalogCbr, setCatalogCbr] = useState(null);
-  const [catalogCbrError, setCatalogCbrError] = useState(null);
+  const [cars, setCars] = useState(initialData?.cars ?? []);
+  const [total, setTotal] = useState(initialData?.total ?? 0);
+  const [catalogCbr, setCatalogCbr] = useState(initialData?.cbr ?? null);
+  const [catalogCbrError, setCatalogCbrError] = useState(initialData?.cbrError ?? null);
   const [q, setQ] = useState("");
-  const [catalogBrands, setCatalogBrands] = useState([]);
+  const [catalogBrands, setCatalogBrands] = useState(initialData?.brands ?? []);
   const [brandsExpanded, setBrandsExpanded] = useState(false);
   const [catalogModels, setCatalogModels] = useState([]);
   const [selectedBrandId, setSelectedBrandId] = useState(null);
@@ -110,7 +112,7 @@ export default function Home() {
   const staffBrandsLoadGen = useRef(0);
   const staffModelsLoadGen = useRef(0);
   const staffGensLoadGen = useRef(0);
-  const [listSort, setListSort] = useState("date_desc");
+  const [listSort, setListSort] = useState(initialData?.listSort ?? "date_desc");
   const [profileReady, setProfileReady] = useState(false);
   const [requestModalCar, setRequestModalCar] = useState(null);
   const [requestModalComment, setRequestModalComment] = useState("");
@@ -1314,20 +1316,37 @@ export default function Home() {
                 </div>
               ) : null}
               <div className="brands-compact-grid" role="list">
-                {visibleBrands.map((b) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    role="listitem"
-                    className={`brands-compact-item${selectedBrandId === b.id ? " brands-compact-item--active" : ""}`}
-                    onClick={() => onSelectBrand(b.id)}
-                  >
-                    <span className="brands-compact-item__name">{b.name}</span>
-                    <span className="brands-compact-item__count">
-                      {b.listings_count > 0 ? b.listings_count : "—"}
-                    </span>
-                  </button>
-                ))}
+                {visibleBrands.map((b) => {
+                  const itemClass = `brands-compact-item${selectedBrandId === b.id ? " brands-compact-item--active" : ""}`;
+                  const itemInner = (
+                    <>
+                      <span className="brands-compact-item__name">{b.name}</span>
+                      <span className="brands-compact-item__count">
+                        {b.listings_count > 0 ? b.listings_count : "—"}
+                      </span>
+                    </>
+                  );
+                  /* Со slug — настоящая ссылка на /catalog/{slug} (crawlable + SEO);
+                     без slug — прежнее поведение через query-фильтр. */
+                  if (b.slug) {
+                    return (
+                      <Link key={b.id} href={`/catalog/${b.slug}`} role="listitem" className={itemClass}>
+                        {itemInner}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      role="listitem"
+                      className={itemClass}
+                      onClick={() => onSelectBrand(b.id)}
+                    >
+                      {itemInner}
+                    </button>
+                  );
+                })}
               </div>
               {sortedBrands.length > brandsCollapsedLimit ? (
                 <button
@@ -1792,4 +1811,60 @@ export default function Home() {
     </div>
     </>
   );
+}
+
+/**
+ * SSR публичной части главной (марки + первая страница каталога), чтобы контент и ссылки
+ * на марки попадали в HTML для поисковых ботов. Клиент далее работает как раньше.
+ */
+export async function getServerSideProps({ query }) {
+  const api = getServerApiBase();
+
+  const first = (v) => (Array.isArray(v) ? v[0] : v);
+  const rawQ = first(query.q);
+  const rawB = first(query.brand);
+  const rawM = first(query.model);
+  const rawS = first(query.sort);
+  const listSort =
+    rawS && HOME_VALID_SORTS.includes(String(rawS)) ? String(rawS) : "date_desc";
+
+  const params = new URLSearchParams();
+  if (rawQ != null && String(rawQ).trim() !== "") params.set("q", String(rawQ).trim());
+  if (rawB != null) {
+    const n = Number(rawB);
+    if (!Number.isNaN(n)) params.set("brand_id", String(n));
+  }
+  if (rawM != null) {
+    const n = Number(rawM);
+    if (!Number.isNaN(n)) params.set("model_id", String(n));
+  }
+  if (listSort !== "date_desc") params.set("sort", listSort);
+  params.set("photo_limit", "8");
+  params.set("limit", "100");
+
+  let brands = [];
+  let cars = [];
+  let total = 0;
+  let cbr = null;
+  let cbrError = null;
+  try {
+    const [bRes, cRes] = await Promise.all([
+      fetch(`${api}/catalog/brands`, { headers: { Accept: "application/json" } }),
+      fetch(`${api}/cars?${params.toString()}`, { headers: { Accept: "application/json" } }),
+    ]);
+    if (bRes.ok) brands = await bRes.json();
+    if (cRes.ok) {
+      const d = await cRes.json();
+      cars = d.items || [];
+      total = Number(d.total) || 0;
+      cbr = d.cbr || null;
+      cbrError = d.cbr_error || null;
+    }
+  } catch {
+    /* API недоступен на сервере — отдаём что есть, клиент догрузит */
+  }
+
+  return {
+    props: { initialData: { brands, cars, total, cbr, cbrError, listSort } },
+  };
 }
