@@ -12,8 +12,8 @@ function BrandLogoItem({ brand, eager }) {
       <img
         src={mediaSrc(brand.logo_storage_url)}
         alt=""
-        width={40}
-        height={40}
+        width={48}
+        height={48}
         loading={eager ? "eager" : "lazy"}
         decoding="async"
         draggable={false}
