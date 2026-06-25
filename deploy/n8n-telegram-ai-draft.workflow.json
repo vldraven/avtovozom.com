@@ -90,7 +90,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', temperature: 0.35, messages: [ { role: 'system', content: $json.systemPrompt }, { role: 'user', content: $json.userContent } ] }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-5.5', messages: [ { role: 'system', content: $json.systemPrompt }, { role: 'user', content: $json.userContent } ] }) }}",
         "options": {}
       },
       "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa05",

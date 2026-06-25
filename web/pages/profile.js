@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 
 import AdminParserPanel from "../components/AdminParserPanel";
@@ -31,15 +31,8 @@ function formatRequestDate(iso) {
 }
 
 function requestStatusLabel(status) {
-  if (status === "open") return "Открыта — ждём предложения дилеров";
-  if (status === "in_progress") return "В работе — дилер выбран";
-  return status;
-}
-
-function offerStatusLabel(status) {
-  if (status === "sent") return "На рассмотрении";
-  if (status === "selected") return "Выбрано";
-  if (status === "rejected") return "Отклонено";
+  if (status === "open") return "Принята — ждём расчёт";
+  if (status === "in_progress") return "В работе";
   return status;
 }
 
@@ -62,12 +55,7 @@ export default function ProfilePage() {
   const [supportsPasskey, setSupportsPasskey] = useState(false);
   const [removingCarId, setRemovingCarId] = useState(null);
   const [expandedRequestId, setExpandedRequestId] = useState(null);
-  const [openingChatOfferId, setOpeningChatOfferId] = useState(null);
-
-  const unreadOffersOnProfile = useMemo(
-    () => requests.reduce((s, r) => s + (Number(r.unread_offers_count) || 0), 0),
-    [requests]
-  );
+  const [platformChatId, setPlatformChatId] = useState(null);
 
   async function reloadParserJobsWithToken(t) {
     const j = await fetch(`${API_URL}/admin/parser/jobs`, { headers: { Authorization: `Bearer ${t}` } });
@@ -77,6 +65,12 @@ export default function ProfilePage() {
   async function loadMyRequestsOnly(t) {
     const rr = await fetch(`${API_URL}/requests/my`, { headers: { Authorization: `Bearer ${t}` } });
     if (rr.ok) setRequests(await rr.json());
+    const cr = await fetch(`${API_URL}/chats/my`, { headers: { Authorization: `Bearer ${t}` } });
+    if (cr.ok) {
+      const chats = await cr.json();
+      const platform = (chats || []).find((c) => c.chat_type === "platform") || (chats || [])[0];
+      setPlatformChatId(platform?.id ?? null);
+    }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new Event("avt-requests-updated"));
     }
@@ -269,43 +263,12 @@ export default function ProfilePage() {
     router.push("/");
   }
 
-  async function selectClientOffer(offerId) {
-    setError("");
-    setMessage("");
-    const res = await fetch(`${API_URL}/offers/${offerId}/select`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(typeof body.detail === "string" ? body.detail : "Не удалось выбрать предложение");
-      return;
-    }
-    setMessage("Дилер выбран. Переписка — в разделе «Сообщения» в шапке сайта.");
-    await loadMyRequestsOnly(token);
-  }
-
-  async function openClientOfferChat(offerId) {
-    setError("");
-    setMessage("");
-    setOpeningChatOfferId(offerId);
-    try {
-      const res = await fetch(`${API_URL}/offers/${offerId}/open-chat`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(typeof body.detail === "string" ? body.detail : "Не удалось открыть чат");
-        return;
-      }
-      await loadMyRequestsOnly(token);
-      const cid = body.chat_id;
-      if (cid != null) {
-        router.push(`/messages?chat=${encodeURIComponent(String(cid))}`);
-      }
-    } finally {
-      setOpeningChatOfferId(null);
+  function openPlatformChat(chatId) {
+    const cid = chatId ?? platformChatId;
+    if (cid != null) {
+      router.push(`/messages?chat=${encodeURIComponent(String(cid))}`);
+    } else {
+      router.push("/messages");
     }
   }
 
@@ -447,25 +410,20 @@ export default function ProfilePage() {
 
               {me.role === "user" && (
                 <section className="panel">
-                  <h2 className="section-title panel-heading-sm section-title--inline">
-                    Мои заявки на расчёт
-                    {unreadOffersOnProfile > 0 ? (
-                      <span
-                        className="home-my-requests__new-indicator"
-                        title="Появились новые расчёты от дилеров"
-                        aria-label={`Новых расчётов: ${unreadOffersOnProfile}`}
-                      >
-                        <span className="home-my-requests__new-dot" aria-hidden />
-                        <span className="home-my-requests__new-label">
-                          {unreadOffersOnProfile === 1 ? "Новый расчёт" : `${unreadOffersOnProfile} новых`}
-                        </span>
-                      </span>
-                    ) : null}
-                  </h2>
+                  <h2 className="section-title panel-heading-sm">Мои заявки на расчёт</h2>
                   <p className="muted section-title--flush-top">
-                    Список заявок и расчётов дилеров только здесь. Разверните заявку, чтобы открыть объявление, комментарий
-                    и предложения.
+                    Список заявок и переписка с Avtovozom — в чате. Разверните заявку, чтобы открыть объявление и
+                    комментарий.
                   </p>
+                  {platformChatId ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-inline profile-chat-link"
+                      onClick={() => openPlatformChat(platformChatId)}
+                    >
+                      Чат с Avtovozom
+                    </button>
+                  ) : null}
                   {requests.length === 0 ? (
                     <p className="muted">Заявок пока нет — выберите авто в каталоге и нажмите «Заказать расчёт».</p>
                   ) : (
@@ -503,14 +461,10 @@ export default function ProfilePage() {
                                     {r.car_brand} {r.car_model}
                                     {r.car_year != null ? ` · ${r.car_year}` : ""}
                                   </span>
-                                  {(Number(r.unread_offers_count) || 0) > 0 ? (
-                                    <span className="home-my-requests__pill">Новый расчёт</span>
-                                  ) : null}
                                 </div>
                                 <div className="muted profile-request-card__meta-tight">{r.car_title}</div>
                                 <div className="muted profile-request-card__meta-loose">
                                   {formatRequestDate(r.created_at)} · {requestStatusLabel(r.status)}
-                                  {r.offers?.length ? ` · ${r.offers.length} предлож.` : ""}
                                 </div>
                               </div>
                               <span className="btn btn-ghost btn-sm profile-request-card__toggle">
@@ -520,9 +474,18 @@ export default function ProfilePage() {
                             {expanded ? (
                               <div className="profile-request-card__expanded">
                                 <div className="profile-offer-card__actions">
-                                  <Link href={`/cars/${r.car_id}`} className="btn btn-secondary btn-sm">
-                                    Открыть объявление
-                                  </Link>
+                                  {r.car_id ? (
+                                    <Link href={`/cars/${r.car_id}`} className="btn btn-secondary btn-sm">
+                                      Открыть объявление
+                                    </Link>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => openPlatformChat(r.platform_chat_id || platformChatId)}
+                                  >
+                                    Перейти в чат
+                                  </button>
                                 </div>
                                 {r.comment ? (
                                   <div className="profile-comment-block">
@@ -530,56 +493,6 @@ export default function ProfilePage() {
                                     <p className="profile-comment-block__text">{r.comment}</p>
                                   </div>
                                 ) : null}
-                                <div>
-                                  <div className="profile-offers-heading">Предложения дилеров</div>
-                                  {!r.offers?.length ? (
-                                    <p className="muted profile-offers-empty">
-                                      Пока нет откликов. Как только дилер ответит, предложение появится здесь.
-                                    </p>
-                                  ) : (
-                                    <ul className="profile-offers-list">
-                                      {r.offers.map((o) => (
-                                        <li key={o.id} className="profile-offer-card">
-                                          <div className="profile-offer-card__title">
-                                            {Math.round(o.total_price).toLocaleString("ru-RU")} {o.currency} · срок ~{" "}
-                                            {o.eta_days} дн. · {offerStatusLabel(o.status)}
-                                          </div>
-                                          {o.terms_text ? (
-                                            <p className="profile-offer-card__terms">{o.terms_text}</p>
-                                          ) : null}
-                                          <div className="profile-offer-card__actions">
-                                            {o.chat_id ? (
-                                              <Link
-                                                href={`/messages?chat=${encodeURIComponent(String(o.chat_id))}`}
-                                                className="btn btn-secondary btn-sm"
-                                              >
-                                                Перейти в чат
-                                              </Link>
-                                            ) : (
-                                              <button
-                                                type="button"
-                                                className="btn btn-secondary btn-sm"
-                                                disabled={openingChatOfferId === o.id}
-                                                onClick={() => openClientOfferChat(o.id)}
-                                              >
-                                                {openingChatOfferId === o.id ? "Открываем…" : "Открыть чат"}
-                                              </button>
-                                            )}
-                                            {r.status === "open" && o.status === "sent" ? (
-                                              <button
-                                                type="button"
-                                                className="btn btn-primary btn-sm"
-                                                onClick={() => selectClientOffer(o.id)}
-                                              >
-                                                Выбрать это предложение
-                                              </button>
-                                            ) : null}
-                                          </div>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                </div>
                               </div>
                             ) : null}
                           </article>

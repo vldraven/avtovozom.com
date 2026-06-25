@@ -27,6 +27,7 @@ import {
 import {
   catalogBreadcrumbItems,
   catalogCanonicalPath,
+  catalogPageIntro,
   catalogSeoCopy,
 } from "../../lib/catalogSeo";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../../lib/schema";
@@ -247,10 +248,14 @@ export default function CatalogTreePage({ initialPayload = null }) {
         window.alert("Не удалось отправить заявку. Попробуйте ещё раз.");
         return;
       }
+      const body = await res.json().catch(() => ({}));
       setRequestModalCar(null);
-      window.alert(
-        "Заявка отправлена. Статус и расчёты дилеров — в профиле, раздел «Мои заявки на расчёт»."
-      );
+      const chatId = body.platform_chat_id;
+      if (chatId != null) {
+        router.push(`/messages?chat=${encodeURIComponent(String(chatId))}`);
+        return;
+      }
+      window.alert("Заявка отправлена. Переписка — в разделе «Сообщения».");
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("avt-requests-updated"));
       }
@@ -470,6 +475,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                       ? brand.name
                       : "Каталог автомобилей"}
               </h1>
+              <p className="catalog-seo-intro muted">{catalogPageIntro({ brand, model, generation, total })}</p>
 
               {badModelSlug ? (
                 <div className="alert alert--warn" style={{ marginBottom: "1rem" }}>

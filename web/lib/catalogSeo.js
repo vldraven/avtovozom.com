@@ -48,3 +48,22 @@ export function catalogBreadcrumbItems({ brand, model, generation }) {
   }
   return items;
 }
+
+/** Видимый SEO-текст под H1 на страницах каталога (уникальный контент для краулера). */
+export function catalogPageIntro({ brand, model, generation, total }) {
+  const countHint =
+    typeof total === "number" && total > 0
+      ? ` Сейчас в каталоге ${total} ${total === 1 ? "объявление" : total < 5 ? "объявления" : "объявлений"}.`
+      : "";
+
+  if (generation && brand && model) {
+    return `${brand.name} ${model.name}, ${generation.name} — объявления с ценой в юанях и ориентиром под ключ до РФ. Сравните пробег, комплектации и оставьте заявку на расчёт доставки.${countHint}`;
+  }
+  if (model && brand) {
+    return `Каталог ${brand.name} ${model.name} из Китая: актуальные предложения с фото, пробегом и ценой в ¥. Поможем с проверкой, покупкой и доставкой автомобиля до вашего города.${countHint}`;
+  }
+  if (brand) {
+    return `${brand.name} из Китая — модели, цены и доставка под ключ до России. Выберите модель в каталоге или оставьте заявку на подбор.${countHint}`;
+  }
+  return `Каталог автомобилей из Китая и Кореи: марки, модели, цены в ¥ и ориентир стоимости под ключ до РФ. Выберите авто или закажите индивидуальный подбор.${countHint}`;
+}

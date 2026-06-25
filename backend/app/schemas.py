@@ -273,6 +273,7 @@ class PublicRequestLeadIn(BaseModel):
 class PublicRequestLeadOut(BaseModel):
     ok: bool = True
     request_id: int
+    platform_chat_id: int | None = None
     message: str
 
 
@@ -297,6 +298,7 @@ class CalculationRequestOut(BaseModel):
     status: str
     source: str = "website"
     created_at: datetime
+    platform_chat_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -370,6 +372,7 @@ class CalculationRequestMyOut(BaseModel):
     offers: list[DealerOfferOut] = Field(default_factory=list)
     unread_offers_count: int = 0
     """Число расчётов дилеров, появившихся после последнего просмотра клиентом."""
+    platform_chat_id: int | None = None
 
 
 class AdminCalculationRequestOut(CalculationRequestMyOut):
@@ -713,9 +716,10 @@ class PasswordResetConfirmIn(BaseModel):
 
 class ChatOut(BaseModel):
     id: int
-    request_id: int
+    chat_type: str = "dealer"
+    request_id: int | None = None
     user_id: int
-    dealer_user_id: int
+    dealer_user_id: int | None = None
     status: str
     created_at: datetime
 
@@ -727,9 +731,10 @@ class ChatListItemOut(BaseModel):
     """Элемент списка чатов: превью, собеседник, непрочитанные (как в мессенджерах)."""
 
     id: int
-    request_id: int
+    chat_type: str = "dealer"
+    request_id: int | None = None
     user_id: int
-    dealer_user_id: int
+    dealer_user_id: int | None = None
     status: str
     created_at: datetime
     title: str

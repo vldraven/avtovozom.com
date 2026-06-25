@@ -199,6 +199,19 @@ export default function MessagesPage() {
   }, [router.isReady, router.query.chat, token, narrow, loadThread]);
 
   useEffect(() => {
+    if (!router.isReady || !token || loadingList || chats.length === 0) return;
+    const raw = router.query.chat;
+    if (raw != null && raw !== "") return;
+    if (chats.length === 1) {
+      const only = chats[0];
+      setActiveId(only.id);
+      if (narrow) setListVisible(false);
+      router.replace({ pathname: "/messages", query: { chat: only.id } }, undefined, { shallow: true });
+      loadThread(only.id, token);
+    }
+  }, [router.isReady, router.query.chat, token, chats, loadingList, narrow, loadThread]);
+
+  useEffect(() => {
     if (!token) return undefined;
     const id = setInterval(() => loadChats(token), 26000);
     return () => clearInterval(id);
@@ -295,8 +308,7 @@ export default function MessagesPage() {
                 <p className="muted">Загрузка…</p>
               ) : chats.length === 0 ? (
                 <p className="muted messenger__empty">
-                  Пока нет переписок. Клиенту чат откроется после выбора предложения дилера; дилеру — после
-                  отправки расчёта по заявке.
+                  Напишите нам — ответим в этом чате. Заявки на расчёт тоже попадают сюда автоматически.
                 </p>
               ) : (
                 <ul className="messenger__list">
@@ -352,6 +364,16 @@ export default function MessagesPage() {
                     ) : (
                       <div className="messenger__bubbles" role="log" aria-live="polite">
                         {messages.map((m) => {
+                          if (m.message_type === "system") {
+                            return (
+                              <div key={m.id} className="messenger__system-msg">
+                                <p>{m.text}</p>
+                                <time className="messenger__system-time" dateTime={m.created_at}>
+                                  {formatMsgTime(m.created_at)}
+                                </time>
+                              </div>
+                            );
+                          }
                           const mine = me && m.sender_user_id === me.id;
                           const att = m.attachment_url;
                           const attName = m.attachment_original_name || "файл";

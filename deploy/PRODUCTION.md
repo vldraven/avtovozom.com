@@ -65,6 +65,8 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
+После обновления `Caddyfile` из репозитория (редирект `www` → `avtovozom.com`) выполните `validate` и `reload` — деплой через GitHub Actions пересобирает только Docker, не Caddy.
+
 Откройте в браузере `https://avtovozom.com` и `https://api.avtovozom.com/docs`.
 
 ## 7. Бэкапы

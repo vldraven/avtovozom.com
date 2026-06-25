@@ -43,6 +43,7 @@ export default function RequestQuotePage() {
   const [error, setError] = useState("");
   /** После verify: если есть JWT — пользователь уже в авторизованной зоне. */
   const [verifyMode, setVerifyMode] = useState(null);
+  const [pendingPlatformChatId, setPendingPlatformChatId] = useState(null);
 
   useEffect(() => {
     if (!router.isReady || !carId) return;
@@ -83,6 +84,9 @@ export default function RequestQuotePage() {
         return;
       }
       setMessage(body.message || "Заявка принята.");
+      if (body.platform_chat_id != null) {
+        setPendingPlatformChatId(body.platform_chat_id);
+      }
       if (!carId) {
         setStep("done");
         setVerifyMode("freeform");
@@ -289,8 +293,15 @@ export default function RequestQuotePage() {
                   На главную
                 </Link>
               ) : verifyMode === "authed" ? (
-                <Link href="/profile" className="btn btn-primary">
-                  Мой профиль и заявки
+                <Link
+                  href={
+                    pendingPlatformChatId != null
+                      ? `/messages?chat=${encodeURIComponent(String(pendingPlatformChatId))}`
+                      : "/messages"
+                  }
+                  className="btn btn-primary"
+                >
+                  Открыть чат с Avtovozom
                 </Link>
               ) : (
                 <Link

@@ -1,0 +1,32 @@
+---
+description: n8n workflows — синк с инстансом и правки для Telegram-бота
+globs: deploy/n8n*.json,deploy/N8N*.md,scripts/n8n*.py,scripts/n8n-mcp-wrapper.sh
+alwaysApply: false
+---
+
+# n8n в проекте avtovozom
+
+## Источник правды
+
+- Workflow JSON: `deploy/n8n-telegram-consultant.workflow.json`, `deploy/n8n-telegram-*.workflow.json`
+- Настройка: `deploy/N8N_CURSOR_SETUP_RU.md`, `deploy/N8N_TELEGRAM_BOT_SETUP_RU.md`
+
+## Как вносить изменения на живой n8n
+
+1. Править JSON в `deploy/`
+2. Залить: `python3 scripts/n8n_api.py sync-workflow deploy/<file>.workflow.json`
+3. Или MCP `n8n-mcp` (нужны `N8N_PUBLIC_BASE_URL` + `N8N_API_KEY` в `.env`)
+
+Синк сохраняет **credentials и id узлов** на сервере; обновляет **parameters** по имени узла. Поле **`backendApiSecret`** не перезаписывается placeholder'ом из git.
+
+## Code Tool (AI Agent)
+
+- Возвращать **только string** (`JSON.stringify` для объектов)
+- HTTP: `this.helpers.httpRequest`, не `fetch`
+- Имена tools: только `[a-zA-Z0-9_]` (`search_cars`, не `Tool: search_cars`)
+- `search_cars`: q = марка/модель латиницей; бюджет в `max_total_rub`. Tool нормализует «Ауди до 3 млн» и русские марки (Ауди→Audi)
+
+## Секреты
+
+- `backendApiSecret` в workflow = `N8N_TELEGRAM_BOT_API_SECRET` на бэкенде
+- В git — placeholder; реальные значения только в n8n UI и server `.env`

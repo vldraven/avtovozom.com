@@ -71,6 +71,32 @@ def notify_calculation_request(
     )
 
 
+def notify_platform_chat_message(
+    *,
+    chat_id: int,
+    client_name: str,
+    client_contact: str,
+    message_text: str | None = None,
+    attachment_name: str | None = None,
+    messages_url: str | None = None,
+) -> None:
+    lines = [
+        f"Новое сообщение в чате с клиентом (#{chat_id})",
+        f"Клиент: {client_name}",
+        f"Контакт: {client_contact}",
+    ]
+    text = (message_text or "").strip()
+    if text:
+        lines.append(f"Сообщение: {text[:1200]}")
+    att = (attachment_name or "").strip()
+    if att:
+        lines.append(f"Вложение: {att}")
+    url = (messages_url or "").strip()
+    if url:
+        lines.append(f"Открыть чат: {url}")
+    _send_admin_message("\n".join(lines))
+
+
 def notify_new_calculation_request(
     *,
     request_id: int,

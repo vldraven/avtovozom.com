@@ -18,6 +18,7 @@ import { clearToken, getStoredToken } from "../lib/auth";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
 import { consumeListingReturnPath, handleListingDetailRouteChangeStart } from "../lib/listingNavigation";
 import { mediaSrc } from "../lib/media";
+import MediaImage from "./MediaImage";
 import { absoluteUrl } from "../lib/siteUrl";
 import { seoDescription } from "../lib/seoText";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../lib/schema";
@@ -213,9 +214,13 @@ export default function CarDetailView({
         return;
       }
       setRequestModalOpen(false);
-      setRequestOkMessage(
-        "Заявка отправлена. Отклики — в разделе «Мои заявки на расчёт» в профиле; переписка с дилером — в «Сообщения» в шапке."
-      );
+      const body = await res.json().catch(() => ({}));
+      const chatId = body.platform_chat_id;
+      if (chatId != null) {
+        router.push(`/messages?chat=${encodeURIComponent(String(chatId))}`);
+        return;
+      }
+      setRequestOkMessage("Заявка отправлена. Переписка — в разделе «Сообщения».");
     } finally {
       setRequestModalBusy(false);
     }
@@ -618,10 +623,14 @@ export default function CarDetailView({
                     }
                   }}
                 >
-                  <img
+                  <MediaImage
                     className="photo-gallery__stage"
                     src={mediaSrc(hero.storage_url)}
                     alt={`${car.title} — фото ${safeIndex + 1}`}
+                    fill
+                    sizes="(max-width: 767px) 100vw, 900px"
+                    priority
+                    style={{ objectFit: "contain" }}
                   />
                   {nPhotos > 1 && (
                     <>
@@ -679,7 +688,14 @@ export default function CarDetailView({
                       onClick={() => setActivePhoto(idx)}
                       aria-label={`Миниатюра ${idx + 1}`}
                     >
-                      <img src={mediaSrc(photo.storage_url)} alt="" />
+                      <MediaImage
+                        src={mediaSrc(photo.storage_url)}
+                        alt=""
+                        width={88}
+                        height={66}
+                        loading="lazy"
+                        style={{ objectFit: "cover", width: "100%", height: "100%" }}
+                      />
                     </button>
                   ))}
                 </div>

@@ -6,8 +6,10 @@ import AppLockGate from "../components/AppLockGate";
 import MobileBottomNav from "../components/MobileBottomNav";
 import PwaInstallPrompt from "../components/PwaInstallPrompt";
 import PwaServiceWorker from "../components/PwaServiceWorker";
+import SiteFooter from "../components/SiteFooter";
 import YandexMetrika from "../components/YandexMetrika";
 import { ensureFreshAccessToken } from "../lib/auth";
+import { manrope } from "../lib/fonts";
 import "../styles/globals.css";
 
 /** Личные кабинеты и админка — не индексируем (дублирует robots.txt Disallow). */
@@ -18,7 +20,10 @@ function useSeoNoIndex() {
 }
 
 export default function App({ Component, pageProps }) {
+  const router = useRouter();
   const noindex = useSeoNoIndex();
+  const path = router.pathname || "";
+  const showFooter = !path.startsWith("/staff/") && path !== "/auth" && path !== "/reset-password";
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -56,17 +61,12 @@ export default function App({ Component, pageProps }) {
         <meta property="og:locale" content="ru_RU" />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
       </Head>
-      <div className="app-chrome">
+      <div className={`app-chrome ${manrope.variable} ${manrope.className}`}>
         <AppLockGate>
           <Component {...pageProps} />
         </AppLockGate>
+        {showFooter ? <SiteFooter /> : null}
         <MobileBottomNav />
         <PwaInstallPrompt />
         <PwaServiceWorker />

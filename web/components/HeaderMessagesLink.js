@@ -28,13 +28,17 @@ export default function HeaderMessagesLink({ token, variant = "header" }) {
       setUnreadTotal(0);
       return;
     }
-    const res = await fetch(`${API_URL}/chats/my`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    const sum = (data || []).reduce((s, c) => s + (Number(c.unread_count) || 0), 0);
-    setUnreadTotal(sum);
+    try {
+      const res = await fetch(`${API_URL}/chats/my`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const sum = (data || []).reduce((s, c) => s + (Number(c.unread_count) || 0), 0);
+      setUnreadTotal(sum);
+    } catch {
+      /* API временно недоступен — не роняем шапку */
+    }
   }, [token]);
 
   useEffect(() => {

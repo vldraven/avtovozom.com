@@ -56,10 +56,12 @@ curl -sS -X POST "${N8N_TELEGRAM_PUBLISH_WEBHOOK_URL}" \
 
 ## 4. «Интеграция с агентом в Cursor»
 
-У Cursor **нет встроенного** подключения к n8n. Рабочие варианты:
+Полная настройка (MCP + синк workflow): **[N8N_CURSOR_SETUP_RU.md](N8N_CURSOR_SETUP_RU.md)**.
 
-1. **`N8N_PUBLIC_BASE_URL` + `N8N_API_KEY` в [.env локально]** — затем можно попросить агента выполнить `curl` команды из этого файла (нужен **network** в sandbox или запуск из вашего терминала).
-2. **Cursor MCP** — если вы добавите MCP-сервер «обёртку» над n8n HTTP API, агент сможет вызывать инструменты по схеме (это уже отдельная настройка, не входит в репозиторий).
-3. **Вручную** — вы копируете сюда JSON ответа execution / ошибки из UI n8n, анализируем без API.
+Кратко:
+
+1. **`N8N_PUBLIC_BASE_URL` + `N8N_API_KEY` в `.env`** — агент может `python3 scripts/n8n_api.py list-workflows` / `sync-workflow deploy/….json`.
+2. **MCP `n8n-mcp`** — в проекте [`.cursor/mcp.json`](../.cursor/mcp.json) + [scripts/n8n-mcp-wrapper.sh](../scripts/n8n-mcp-wrapper.sh); ключи из `.env`.
+3. **Вручную** — JSON execution / ошибка из UI n8n в чат.
 
 Не вставляйте **боевые** ключи в чат: лучше «замазывать» ключи или давать уже обезличенные логи.

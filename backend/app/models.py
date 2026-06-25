@@ -305,7 +305,7 @@ class DealerOffer(Base):
 
 
 class Chat(Base):
-    """Один чат на пару (заявка, дилер), чтобы несколько дилеров могли вести переписку по одной заявке."""
+    """Чат клиента с Avtovozom (platform) или legacy-чат по паре (заявка, дилер)."""
 
     __tablename__ = "chats"
     __table_args__ = (
@@ -313,9 +313,10 @@ class Chat(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    request_id: Mapped[int] = mapped_column(ForeignKey("calculation_requests.id"), nullable=False)
+    chat_type: Mapped[str] = mapped_column(String(16), default="dealer", index=True)
+    request_id: Mapped[int | None] = mapped_column(ForeignKey("calculation_requests.id"), nullable=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    dealer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    dealer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     user_last_read_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

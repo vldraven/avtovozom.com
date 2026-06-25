@@ -66,6 +66,18 @@
               "type": "string"
             },
             {
+              "id": "cfg-searchCarsFetchLimit",
+              "name": "searchCarsFetchLimit",
+              "value": "100",
+              "type": "string"
+            },
+            {
+              "id": "cfg-webOrigin",
+              "name": "webOrigin",
+              "value": "https://avtovozom.com",
+              "type": "string"
+            },
+            {
               "id": "cfg-channelHintText",
               "name": "channelHintText",
               "value": "Этот бот отвечает в личных сообщениях. Напишите мне в личку, чтобы подобрать авто или оставить заявку на расчёт.",
@@ -74,7 +86,7 @@
             {
               "id": "cfg-systemPrompt",
               "name": "systemPrompt",
-              "value": "Ты консультант avtovozom.com — сервиса подбора и доставки автомобилей из Китая и азиатского рынка под ключ до РФ.\n\nПравила:\n1. Отвечай на русском, кратко и по делу.\n2. Используй только факты из инструментов (search_cars, get_car, get_faq). Не выдумывай цены, наличие и сроки.\n3. Если клиент спрашивает про авто на сайте — ищи через search_cars или get_car.\n4. Если нужного авто нет в каталоге — объясни, что через avtovozom можно заказать практически любое авто с азиатского рынка, и предложи оформить заявку на расчёт (create_lead без car_id).\n5. Для заявки на расчёт собери: имя, контакт (телефон или email), описание авто (марка, модель, год, комплектация, бюджет). Если выбрано объявление с сайта — передай car_id.\n6. После успешного create_lead сообщи клиенту, что заявка принята и менеджер свяжется.\n7. Ориентировочные цены «под ключ» бери из estimated_total_rub / price_breakdown API, с оговоркой что это ориентир.\n8. Не обсуждай конкурентов и не давай юридических гарантий.",
+              "value": "Ты консультант avtovozom.com — сервиса подбора и доставки автомобилей из Китая и азиатского рынка под ключ до РФ.\n\nПеред вызовом инструмента переводи фразу клиента в параметры API. Не передавай в инструменты сырой текст клиента целиком.\n\nФормат инструментов avtovozom:\n• search_cars — q: марка/модель латиницей как в каталоге (Audi, BMW). Марки на русском переводи: Ауди→Audi, БМВ→BMW, Тойота→Toyota, Мерседес→Mercedes-Benz. Без бюджета в q. max_total_rub в ₽ (3 млн = 3000000). Пример: «Ауди до 3 млн» → {\"q\":\"Audi\",\"max_total_rub\":3000000}\n• get_car — listing_id: только цифры ID объявления с сайта.\n• get_faq — без параметров ({}).\n• create_lead — user_name, user_contact, comment обязательны; car_id опционально (цифры ID лота).\n\nПравила:\n1. Отвечай на русском, дружелюбно и по делу.\n2. Если в памяти диалога ещё нет твоих ответов — один раз коротко поприветствуй. Не дублируй абзацы.\n3. Только факты из инструментов. Не выдумывай цены и наличие.\n4. Бюджет клиента — всегда max_total_rub, не в q. Марка/модель — в q, без бюджета.\n5. «Другие марки» / «не BMW» — новый q или только max_total_rub без старой марки.\n6. Варианты из search_cars — каждый с listing_url отдельной строкой + estimated_total_rub.\n7. Пустой каталог — предложи create_lead без car_id.\n8. create_lead только при имени, контакте и описании авто.\n9. После create_lead с ok и request_id — номер заявки. При error — не говори что принята.\n10. Цены — ориентир по estimated_total_rub.\n11. Не обсуждай конкурентов и не давай юридических гарантий.",
               "type": "string"
             }
           ]
@@ -138,6 +150,18 @@
               "name": "firstName",
               "value": "={{ $('Telegram Trigger').item.json.message.from.first_name || '' }}",
               "type": "string"
+            },
+            {
+              "id": "ctx-llmModel",
+              "name": "llmModel",
+              "value": "={{ $('Настройки workflow').first().json.llmModel || 'gpt-5.5' }}",
+              "type": "string"
+            },
+            {
+              "id": "ctx-systemPrompt",
+              "name": "systemPrompt",
+              "value": "={{ $('Настройки workflow').first().json.systemPrompt }}",
+              "type": "string"
             }
           ]
         },
@@ -151,10 +175,7 @@
     },
     {
       "parameters": {
-        "model": "={{ $('Настройки workflow').item.json.llmModel }}",
-        "options": {
-          "temperature": "={{ Number($('Настройки workflow').item.json.llmTemperature) || 0.35 }}"
-        }
+        "model": "={{ $json.llmModel || 'gpt-5.5' }}"
       },
       "id": "bot-openai-model-05",
       "name": "OpenAI Chat Model",
@@ -168,7 +189,7 @@
         }
       },
       "notesInFlow": true,
-      "notes": "Модель и temperature — из «Настройки workflow». API key — в credential."
+      "notes": "Модель — из $json.llmModel (узел «Контекст чата» ← «Настройки workflow»). Sub-node не видит $('Настройки workflow') напрямую."
     },
     {
       "parameters": {
@@ -183,89 +204,74 @@
     },
     {
       "parameters": {
-        "toolDescription": "Поиск автомобилей в каталоге avtovozom.com. Вход: q — строка (марка, модель, ключевые слова).",
-        "method": "GET",
-        "url": "={{ $('Настройки workflow').item.json.apiBaseUrl.replace(/\\/$/, '') + '/cars' }}",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "q",
-              "value": "={{ $fromAI('q', 'Поисковый запрос: марка, модель или ключевые слова', 'string') }}"
-            },
-            {
-              "name": "limit",
-              "value": "={{ $('Настройки workflow').item.json.searchCarsLimit || '5' }}"
-            },
-            { "name": "photo_limit", "value": "1" }
-          ]
-        },
-        "options": {}
+        "name": "search_cars",
+        "description": "Поиск авто в каталоге avtovozom.com. q — марка/модель латиницей (Audi, Q2); русские марки переводи (Ауди→Audi). Бюджет — max_total_rub. Пример: «Ауди до 3 млн» → q=Audi, max_total_rub=3000000.",
+        "language": "javaScript",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"q\": {\n      \"type\": \"string\",\n      \"description\": \"Марка/модель латиницей как в каталоге (Audi, BMW, Q2). Русские марки переводи в латиницу. Без бюджета\"\n    },\n    \"max_total_rub\": {\n      \"type\": \"number\",\n      \"description\": \"Макс. цена под ключ в рублях: 3000000 для 3 млн, 2500000 для 2.5 млн\"\n    },\n    \"min_total_rub\": {\n      \"type\": \"number\",\n      \"description\": \"Мин. цена под ключ в рублях (необязательно)\"\n    }\n  }\n}",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst webOrigin = String(settings.webOrigin || 'https://avtovozom.com').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\n\nfunction extractSearchParams(raw) {\n  let q = String(raw.q || '').trim();\n  let maxTotalRub = raw.max_total_rub != null && raw.max_total_rub !== '' ? Number(raw.max_total_rub) : null;\n  let minTotalRub = raw.min_total_rub != null && raw.min_total_rub !== '' ? Number(raw.min_total_rub) : null;\n  const src = q;\n  const mlnRe = /(?:до\\s*)?(\\d+(?:[.,]\\d+)?)\\s*млн/gi;\n  let m;\n  while ((m = mlnRe.exec(src)) !== null) {\n    if (!Number.isFinite(maxTotalRub) || maxTotalRub <= 0) {\n      maxTotalRub = Math.round(parseFloat(m[1].replace(',', '.')) * 1000000);\n    }\n  }\n  q = q.replace(/до\\s*\\d+(?:[.,]\\d+)?\\s*млн/gi, ' ')\n    .replace(/\\d+(?:[.,]\\d+)?\\s*млн/gi, ' ')\n    .replace(/до\\s*\\d[\\d\\s]{5,}/gi, ' ')\n    .replace(/(?:₽|руб(?:\\.?|лей)?)/gi, ' ');\n  q = q.replace(/\\b(ищу|нужен[ао]?|хочу|подобрать|найти|авто|машин[ауы]?|покажи|есть ли)\\b/giu, ' ')\n    .replace(/\\s+/g, ' ').trim();\n  q = latinizeBrandQuery(q);\n  return { q, maxTotalRub, minTotalRub };\n}\n\nconst BRAND_ALIASES = [\n  ['мерседес-бенц', 'Mercedes-Benz'], ['мерседес', 'Mercedes-Benz'], ['мерс', 'Mercedes-Benz'],\n  ['фольксваген', 'Volkswagen'], ['фольцваген', 'Volkswagen'], ['фолькс', 'Volkswagen'],\n  ['ленд ровер', 'Land Rover'], ['линк ко', 'Lynk & Co'], ['линк энд ко', 'Lynk & Co'],\n  ['ли авто', 'Li Auto'], ['ли-авто', 'Li Auto'], ['гак трумпчи', 'GAC Trumpchi'],\n  ['альфа ромео', 'Alfa Romeo'], ['грейт вол', 'GWM'], ['ауди', 'Audi'], ['бмв', 'BMW'],\n  ['тойота', 'Toyota'], ['мазда', 'Mazda'], ['ниссан', 'Nissan'], ['хонда', 'Honda'],\n  ['форд', 'Ford'], ['лексус', 'Lexus'], ['хёндай', 'Hyundai'], ['хендай', 'Hyundai'],\n  ['хондай', 'Hyundai'], ['хендэ', 'Hyundai'], ['киа', 'Kia'], ['кия', 'Kia'],\n  ['вольво', 'Volvo'], ['порше', 'Porsche'], ['рено', 'Renault'], ['пежо', 'Peugeot'],\n  ['ситроен', 'Citroën'], ['ситроён', 'Citroën'], ['шкода', 'Škoda'], ['опель', 'Opel'],\n  ['субару', 'Subaru'], ['сузуки', 'Suzuki'], ['мицубиси', 'Mitsubishi'], ['ягуар', 'Jaguar'],\n  ['инфинити', 'Infiniti'], ['джип', 'Jeep'], ['мини', 'MINI'], ['чери', 'Chery'],\n  ['бид', 'BYD'], ['би вай ди', 'BYD'], ['джили', 'Geely'], ['гели', 'Geely'],\n  ['геели', 'Geely'], ['хавал', 'Haval'], ['чанган', 'Changan'], ['хонгци', 'Hongqi'],\n  ['хончи', 'Hongqi'], ['зикр', 'Zeekr'], ['зикер', 'Zeekr'], ['нио', 'NIO'],\n  ['войя', 'Voyah'], ['воя', 'Voyah'], ['танк', 'Tank'], ['вей', 'WEY'], ['эксид', 'Exeed'],\n  ['омода', 'Omoda'], ['джетур', 'Jetour'], ['воях', 'Voyah'],\n];\n\nfunction latinizeBrandQuery(text) {\n  let out = String(text || '');\n  const sorted = BRAND_ALIASES.slice().sort((a, b) => b[0].length - a[0].length);\n  for (const [alias, latin] of sorted) {\n    const re = new RegExp(alias.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'giu');\n    out = out.replace(re, latin);\n  }\n  return out.replace(/\\s+/g, ' ').trim();\n}\n\nconst parsed = extractSearchParams(input);\nlet q = parsed.q;\nlet maxTotalRub = parsed.maxTotalRub;\nlet minTotalRub = parsed.minTotalRub;\nif (!q && !(Number.isFinite(maxTotalRub) && maxTotalRub > 0)) {\n  return JSON.stringify({ error: 'Нужен q (марка/модель) и/или max_total_rub' });\n}\nconst base = settings.apiBaseUrl.replace(/\\/$/, '');\nconst fetchLimit = String(settings.searchCarsFetchLimit || '100');\nconst outLimit = Math.max(1, Number(settings.searchCarsLimit || '5') || 5);\nconst params = [];\nfunction addParam(k, v) { params.push(encodeURIComponent(k) + '=' + encodeURIComponent(String(v))); }\nif (q) addParam('q', q);\naddParam('limit', fetchLimit);\naddParam('photo_limit', '1');\nif (Number.isFinite(maxTotalRub) && maxTotalRub > 0) addParam('sort', 'price_asc');\nconst url = base + '/cars?' + params.join('&');\ntry {\n  const text = await this.helpers.httpRequest({ method: 'GET', url, json: false });\n  const raw = typeof text === 'string' ? text : JSON.stringify(text);\n  let data;\n  try { data = JSON.parse(raw); } catch { return raw; }\n  if (!Array.isArray(data.items)) return raw;\n  let items = data.items.map((car) => ({\n    id: car.id,\n    title: car.title,\n    brand: car.brand,\n    model: car.model,\n    year: car.year,\n    mileage_km: car.mileage_km,\n    price_cny: car.price_cny,\n    estimated_total_rub: car.estimated_total_rub,\n    listing_url: webOrigin + '/cars/' + car.id,\n  }));\n  if (Number.isFinite(maxTotalRub) && maxTotalRub > 0) {\n    items = items.filter((car) => car.estimated_total_rub != null && car.estimated_total_rub <= maxTotalRub);\n  }\n  if (Number.isFinite(minTotalRub) && minTotalRub > 0) {\n    items = items.filter((car) => car.estimated_total_rub != null && car.estimated_total_rub >= minTotalRub);\n  }\n  const totalMatched = items.length;\n  items = items.slice(0, outLimit);\n  return JSON.stringify({\n    query_used: { q: q || null, max_total_rub: Number.isFinite(maxTotalRub) ? maxTotalRub : null },\n    total_catalog: data.total,\n    total_matched: totalMatched,\n    items,\n  });\n} catch (error) {\n  const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n  const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n  return JSON.stringify({ error: 'HTTP ' + status, body });\n}"
       },
       "id": "bot-tool-search-07",
-      "name": "Tool: search_cars",
-      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "name": "search_cars",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
       "position": [1400, 520]
     },
     {
       "parameters": {
-        "toolDescription": "Карточка одного автомобиля по числовому id с сайта. Вход: car_id (integer).",
-        "method": "GET",
-        "url": "={{ $('Настройки workflow').item.json.apiBaseUrl.replace(/\\/$/, '') + '/cars/' + $fromAI('car_id', 'ID автомобиля на сайте', 'number') }}",
-        "options": {}
+        "name": "get_car",
+        "description": "Карточка одного авто по ID объявления на сайте. listing_id — только цифры (не марка и не текст запроса).",
+        "language": "javaScript",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"listing_id\": {\n      \"type\": \"string\",\n      \"description\": \"ID объявления на сайте, только цифры\"\n    }\n  },\n  \"required\": [\"listing_id\"]\n}",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst webOrigin = String(settings.webOrigin || 'https://avtovozom.com').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nconst listing_id = String(input.listing_id || '').replace(/\\D/g, '');\nif (!listing_id) return JSON.stringify({ error: 'Нужен listing_id' });\nconst base = settings.apiBaseUrl.replace(/\\/$/, '');\nconst url = base + '/cars/' + listing_id;\ntry {\n  const text = await this.helpers.httpRequest({ method: 'GET', url, json: false });\n  const raw = typeof text === 'string' ? text : JSON.stringify(text);\n  let car;\n  try { car = JSON.parse(raw); } catch { return raw; }\n  if (car && car.id) car.listing_url = webOrigin + '/cars/' + car.id;\n  return JSON.stringify(car);\n} catch (error) {\n  const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n  const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n  return JSON.stringify({ error: 'HTTP ' + status, body });\n}"
       },
       "id": "bot-tool-car-08",
-      "name": "Tool: get_car",
-      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "name": "get_car",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
       "position": [1400, 660]
     },
     {
       "parameters": {
-        "toolDescription": "Список частых вопросов и ответов avtovozom. Без параметров.",
-        "method": "GET",
-        "url": "={{ $('Настройки workflow').item.json.apiBaseUrl.replace(/\\/$/, '') + '/faq' }}",
-        "options": {}
+        "name": "get_faq",
+        "description": "Список частых вопросов и ответов avtovozom (доставка, таможня). Вызывай без параметров — передай пустой объект {}.",
+        "language": "javaScript",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {}\n}",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst base = settings.apiBaseUrl.replace(/\\/$/, '');\nconst url = base + '/faq';\ntry {\n  const text = await this.helpers.httpRequest({ method: 'GET', url, json: false });\n  return typeof text === 'string' ? text : JSON.stringify(text);\n} catch (error) {\n  const status = error.statusCode ?? error.httpCode ?? '?';\n  const body = String(error.description || error.message || '').slice(0, 800);\n  return JSON.stringify({ error: 'HTTP ' + status, body });\n}"
       },
       "id": "bot-tool-faq-09",
-      "name": "Tool: get_faq",
-      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "name": "get_faq",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
       "position": [1400, 800]
     },
     {
       "parameters": {
-        "toolDescription": "Создать заявку на расчёт под ключ до РФ. Обязательно: user_name, user_contact, comment. Опционально car_id (лот с сайта); без car_id — любое авто с азиатского рынка.",
-        "method": "POST",
-        "url": "={{ $('Настройки workflow').item.json.apiBaseUrl.replace(/\\/$/, '') + '/integrations/n8n/bot/create-request' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "X-N8N-Webhook-Secret",
-              "value": "={{ $('Настройки workflow').item.json.backendApiSecret }}"
-            },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ user_name: $fromAI('user_name', 'Имя клиента', 'string'), user_contact: $fromAI('user_contact', 'Телефон или email клиента', 'string'), comment: $fromAI('comment', 'Описание авто и пожелания к расчёту', 'string'), car_id: $fromAI('car_id', 'ID авто с сайта или null', 'number', { optional: true }), telegram_chat_id: String($('Контекст чата').item.json.chatId || ''), telegram_username: $('Контекст чата').item.json.username || '' }) }}",
-        "options": {}
+        "name": "create_lead",
+        "description": "Создать заявку на расчёт под ключ до РФ. Только когда есть user_name, user_contact и comment. car_id опционален.",
+        "language": "javaScript",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"user_name\": { \"type\": \"string\", \"description\": \"Имя клиента\" },\n    \"user_contact\": { \"type\": \"string\", \"description\": \"Телефон или email\" },\n    \"comment\": { \"type\": \"string\", \"description\": \"Описание авто и пожелания к расчёту\" },\n    \"car_id\": { \"type\": \"string\", \"description\": \"Опционально: ID лота с сайта\" }\n  },\n  \"required\": [\"user_name\", \"user_contact\", \"comment\"]\n}",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nlet ctx = {};\ntry { ctx = $('Контекст чата').first().json; } catch (e) { ctx = {}; }\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nconst secret = String(settings.backendApiSecret || '').trim();\nif (!secret || secret.includes('ЗАМЕНИТЕ')) {\n  return JSON.stringify({ error: 'config', body: 'backendApiSecret не настроен в узле «Настройки workflow»' });\n}\nconst user_name = String(input.user_name || ctx.firstName || 'Клиент').trim();\nconst user_contact = String(input.user_contact || '').trim();\nconst comment = String(input.comment || '').trim();\nif (!user_contact) {\n  return JSON.stringify({ error: 'Нужен user_contact (телефон или email)' });\n}\nif (comment.length < 3) {\n  return JSON.stringify({ error: 'Нужен comment — описание авто (минимум 3 символа)' });\n}\nconst payload = {\n  user_name,\n  user_contact,\n  comment,\n  telegram_chat_id: String(ctx.chatId || ''),\n  telegram_username: String(ctx.username || ''),\n};\nconst rawCarId = input.car_id;\nif (rawCarId !== null && rawCarId !== undefined && String(rawCarId).trim() !== '') {\n  const n = Number(String(rawCarId).replace(/\\D/g, ''));\n  if (Number.isFinite(n) && n > 0) payload.car_id = n;\n}\nconst url = settings.apiBaseUrl.replace(/\\/$/, '') + '/integrations/n8n/bot/create-request';\ntry {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-N8N-Webhook-Secret': secret,\n    },\n    body: JSON.stringify(payload),\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  const status = resp.statusCode || resp.status || 0;\n  const rawBody = resp.body ?? resp.data ?? '';\n  const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n  if (status < 200 || status >= 300) {\n    return JSON.stringify({ error: 'HTTP ' + status, body: text.slice(0, 500) });\n  }\n  let result;\n  try { result = JSON.parse(text); } catch { result = null; }\n  if (result && result.ok === true && result.request_id) {\n    return JSON.stringify({ ok: true, request_id: result.request_id, message: 'Заявка #' + result.request_id + ' принята' });\n  }\n  return JSON.stringify({ error: 'unexpected_response', body: text.slice(0, 500) });\n} catch (error) {\n  const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n  const body = String(error.response?.body || error.description || error.message || '').slice(0, 500);\n  return JSON.stringify({ error: 'HTTP ' + status, body });\n}"
       },
       "id": "bot-tool-lead-10",
-      "name": "Tool: create_lead",
-      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "name": "create_lead",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
       "position": [1400, 940]
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "={{ $('Контекст чата').item.json.userText }}",
+        "text": "={{ $json.userText }}",
         "options": {
-          "systemMessage": "={{ $('Настройки workflow').item.json.systemPrompt }}"
+          "systemMessage": "={{ $json.systemPrompt }}"
         }
       },
       "id": "bot-agent-11",
@@ -273,6 +279,16 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [1640, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String(items[0].json.output ?? '').trim();\n\nfunction dedupeReply(text) {\n  if (!text) return text;\n  const half = Math.floor(text.length / 2);\n  if (text.length > 30) {\n    const left = text.slice(0, half).trim();\n    const right = text.slice(half).trim();\n    if (left === right) return left;\n  }\n  const parts = text.split(/\\n+/).map((p) => p.trim()).filter(Boolean);\n  const unique = [];\n  for (const p of parts) {\n    if (unique[unique.length - 1] !== p) unique.push(p);\n  }\n  return unique.join('\\n');\n}\n\nreturn [{ json: { output: dedupeReply(raw) } }];"
+      },
+      "id": "bot-dedupe-reply-14",
+      "name": "Очистка ответа",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 360]
     },
     {
       "parameters": {
@@ -333,19 +349,22 @@
     "Память диалога": {
       "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
     },
-    "Tool: search_cars": {
+    "search_cars": {
       "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
     },
-    "Tool: get_car": {
+    "get_car": {
       "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
     },
-    "Tool: get_faq": {
+    "get_faq": {
       "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
     },
-    "Tool: create_lead": {
+    "create_lead": {
       "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
     },
     "AI Agent": {
+      "main": [[{ "node": "Очистка ответа", "type": "main", "index": 0 }]]
+    },
+    "Очистка ответа": {
       "main": [[{ "node": "Telegram: ответ", "type": "main", "index": 0 }]]
     }
   },

@@ -5,9 +5,14 @@
 	email you@example.com
 }
 
-avtovozom.com, www.avtovozom.com {
+# Канонический домен без www (SEO: один URL, без дублей).
+avtovozom.com {
 	encode gzip
 	reverse_proxy 127.0.0.1:3000
+}
+
+www.avtovozom.com {
+	redir https://avtovozom.com{uri} permanent
 }
 
 api.avtovozom.com {

@@ -182,7 +182,11 @@ from .n8n_bot_integration import (
     verify_n8n_bot_api_secret,
 )
 from .n8n_client import n8n_webhook_post
-from .telegram_notify import notify_calculation_request, notify_new_calculation_request
+from .telegram_notify import (
+    notify_calculation_request,
+    notify_new_calculation_request,
+    notify_platform_chat_message,
+)
 
 try:
     from webauthn import (
@@ -864,6 +868,15 @@ def startup() -> None:
             )
         )
         conn.execute(text("ALTER TABLE car_trims ALTER COLUMN autohome_spec_id DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS chat_type VARCHAR(16) NOT NULL DEFAULT 'dealer'"))
+        conn.execute(text("ALTER TABLE chats ALTER COLUMN request_id DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE chats ALTER COLUMN dealer_user_id DROP NOT NULL"))
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_platform_user "
+                "ON chats (user_id) WHERE chat_type = 'platform'"
+            )
+        )
     db = next(get_db())
     try:
         seed_initial_data(db)
@@ -4050,9 +4063,12 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
         comment=req.comment or "",
         car_page_url=_public_car_page_url(db, req.car_id) or f"{_public_web_origin()}/cars/{req.car_id}",
     )
+    platform_chat = _post_calculation_request_to_platform_chat(db, req)
+    db.commit()
     return PublicRequestLeadOut(
         ok=True,
         request_id=req.id,
+        platform_chat_id=platform_chat.id,
         message=(
             "Заявка принята. На email отправлен код — введите его ниже. "
             "Для нового аккаунта после кода придёт временный пароль; "
@@ -4131,7 +4147,11 @@ def create_request(
         car_page_url=_public_car_page_url(db, request.car_id)
         or f"{_public_web_origin()}/cars/{request.car_id}",
     )
-    return request
+    platform_chat = _post_calculation_request_to_platform_chat(db, request)
+    db.commit()
+    db.refresh(request)
+    out = CalculationRequestOut.model_validate(request)
+    return out.model_copy(update={"platform_chat_id": platform_chat.id})
 
 
 def _unread_offers_count(request: CalculationRequest, offers: list[DealerOffer]) -> int:
@@ -4160,7 +4180,10 @@ def _car_labels_for_request(r: CalculationRequest, car: Car | None) -> tuple[str
 
 
 def _calculation_requests_to_my_out(
-    db: Session, requests: list[CalculationRequest]
+    db: Session,
+    requests: list[CalculationRequest],
+    *,
+    platform_chat_id: int | None = None,
 ) -> list[CalculationRequestMyOut]:
     if not requests:
         return []
@@ -4236,6 +4259,7 @@ def _calculation_requests_to_my_out(
                 car_thumb_url=car_thumb,
                 offers=offer_outs,
                 unread_offers_count=_unread_offers_count(r, offs),
+                platform_chat_id=platform_chat_id,
             )
         )
     return out
@@ -4255,7 +4279,11 @@ def my_requests(
         .scalars()
         .all()
     )
-    return _calculation_requests_to_my_out(db, requests)
+    platform_chat = _ensure_platform_chat(db, current_user.id)
+    db.commit()
+    return _calculation_requests_to_my_out(
+        db, requests, platform_chat_id=platform_chat.id
+    )
 
 
 @app.post("/requests/{request_id}/mark-offers-seen")
@@ -4689,6 +4717,113 @@ def select_offer(
     return DealerOfferOut.model_validate(offer).model_copy(update={"chat_id": chat.id})
 
 
+def _user_is_staff(user: User) -> bool:
+    return user.role.code in ("admin", "moderator")
+
+
+def _ensure_platform_chat(db: Session, user_id: int) -> Chat:
+    existing = db.execute(
+        select(Chat).where(Chat.chat_type == "platform", Chat.user_id == user_id)
+    ).scalar_one_or_none()
+    if existing:
+        return existing
+    chat = Chat(
+        chat_type="platform",
+        user_id=user_id,
+        request_id=None,
+        dealer_user_id=None,
+        status="open",
+    )
+    db.add(chat)
+    db.flush()
+    return chat
+
+
+def _format_platform_request_system_message(db: Session, request: CalculationRequest) -> str:
+    car = None
+    if request.car_id is not None:
+        car = (
+            db.execute(
+                select(Car)
+                .where(Car.id == request.car_id)
+                .options(joinedload(Car.brand), joinedload(Car.model))
+            )
+            .unique()
+            .scalar_one_or_none()
+        )
+    car_title, _, _, _, _ = _car_labels_for_request(request, car)
+    lines = [f"📋 Новая заявка на расчёт №{request.id}"]
+    if request.car_id is not None:
+        lines.append(f"Авто: {car_title}")
+        url = _public_car_page_url(db, request.car_id)
+        if url:
+            lines.append(f"Объявление: {url}")
+    elif (request.comment or "").strip():
+        lines.append(f"Авто: {(request.comment or '').strip()[:300]}")
+    comment = (request.comment or "").strip()
+    if comment and request.car_id is not None:
+        lines.append(f"Комментарий: {comment[:500]}")
+    return "\n".join(lines)
+
+
+def _post_calculation_request_to_platform_chat(db: Session, request: CalculationRequest) -> Chat:
+    if request.user_id is None:
+        raise HTTPException(status_code=400, detail="Request has no owner user_id")
+    chat = _ensure_platform_chat(db, request.user_id)
+    msg = ChatMessage(
+        chat_id=chat.id,
+        sender_user_id=request.user_id,
+        message_type="system",
+        text=_format_platform_request_system_message(db, request),
+    )
+    db.add(msg)
+    db.flush()
+    db.refresh(msg)
+    chat.last_message_at = msg.created_at
+    return chat
+
+
+def _chat_user_can_access(chat: Chat, user: User, *, is_staff: bool) -> bool:
+    if chat.chat_type == "platform":
+        return is_staff or chat.user_id == user.id
+    return chat.user_id == user.id or chat.dealer_user_id == user.id
+
+
+def _unread_platform_for_client(db: Session, chat: Chat) -> int:
+    lr = chat.user_last_read_message_id or 0
+    return int(
+        db.execute(
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(
+                ChatMessage.chat_id == chat.id,
+                ChatMessage.sender_user_id != chat.user_id,
+                ChatMessage.message_type != "system",
+                ChatMessage.id > lr,
+            )
+        ).scalar_one()
+    )
+
+
+def _unread_platform_for_staff(db: Session, chat: Chat) -> int:
+    lr = chat.dealer_last_read_message_id or 0
+    return int(
+        db.execute(
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(
+                ChatMessage.chat_id == chat.id,
+                ChatMessage.sender_user_id == chat.user_id,
+                ChatMessage.id > lr,
+            )
+        ).scalar_one()
+    )
+
+
+def _platform_chat_messages_url(chat_id: int) -> str:
+    return f"{_public_web_origin()}/messages?chat={chat_id}"
+
+
 def _user_peer_chat_label(user: User | None) -> str:
     if not user:
         return "Участник"
@@ -4738,11 +4873,13 @@ def _build_chat_list_items(
         return []
 
     chat_ids = [c.id for c in chats]
-    req_ids = list({c.request_id for c in chats})
-    reqs = db.execute(select(CalculationRequest).where(CalculationRequest.id.in_(req_ids))).scalars().all()
-    req_map = {r.id: r for r in reqs}
+    req_ids = list({c.request_id for c in chats if c.request_id is not None})
+    req_map: dict[int, CalculationRequest] = {}
+    if req_ids:
+        reqs = db.execute(select(CalculationRequest).where(CalculationRequest.id.in_(req_ids))).scalars().all()
+        req_map = {r.id: r for r in reqs}
 
-    car_ids = [r.car_id for r in reqs if r]
+    car_ids = [r.car_id for r in req_map.values() if r.car_id is not None]
     car_map: dict[int, Car] = {}
     if car_ids:
         for car in (
@@ -4774,7 +4911,8 @@ def _build_chat_list_items(
     user_ids: set[int] = set()
     for c in chats:
         user_ids.add(c.user_id)
-        user_ids.add(c.dealer_user_id)
+        if c.dealer_user_id is not None:
+            user_ids.add(c.dealer_user_id)
     user_map = {
         u.id: u
         for u in db.execute(
@@ -4793,13 +4931,60 @@ def _build_chat_list_items(
 
     out: list[ChatListItemOut] = []
     for chat in chats_sorted:
-        req = req_map.get(chat.request_id)
-        car_title = "Заявка"
-        if req and req.car_id in car_map:
-            car = car_map[req.car_id]
-            if car.brand is not None and car.model is not None:
-                car_title = f"{car.brand.name} {car.model.name}"
-        title = f"{car_title} · №{chat.request_id}"
+        if chat.chat_type == "platform":
+            title = "Чат с Avtovozom"
+            if is_staff:
+                uc = user_map.get(chat.user_id)
+                peer_display = _user_peer_chat_label(uc)
+                peer_role = "client"
+                unread = _unread_platform_for_staff(db, chat)
+            elif current_user.id == chat.user_id:
+                peer_display = "Avtovozom"
+                peer_role = "platform"
+                unread = _unread_platform_for_client(db, chat)
+            else:
+                continue
+        elif is_staff:
+            req = req_map.get(chat.request_id)
+            car_title = "Заявка"
+            if req and req.car_id in car_map:
+                car = car_map[req.car_id]
+                if car.brand is not None and car.model is not None:
+                    car_title = f"{car.brand.name} {car.model.name}"
+            title = f"{car_title} · №{chat.request_id}"
+            uc = user_map.get(chat.user_id)
+            ud = user_map.get(chat.dealer_user_id)
+            peer_display = f"{_user_peer_chat_label(uc)} · {_user_peer_chat_label(ud)}"
+            peer_role = "staff"
+            unread = 0
+        elif current_user.id == chat.user_id:
+            req = req_map.get(chat.request_id)
+            car_title = "Заявка"
+            if req and req.car_id in car_map:
+                car = car_map[req.car_id]
+                if car.brand is not None and car.model is not None:
+                    car_title = f"{car.brand.name} {car.model.name}"
+            title = f"{car_title} · №{chat.request_id}"
+            peer = user_map.get(chat.dealer_user_id)
+            peer_display = _user_peer_chat_label(peer) if peer else "Дилер"
+            peer_role = "dealer"
+            unread = _unread_for_chat(
+                db, chat.id, chat.dealer_user_id, chat.user_last_read_message_id
+            )
+        else:
+            req = req_map.get(chat.request_id)
+            car_title = "Заявка"
+            if req and req.car_id in car_map:
+                car = car_map[req.car_id]
+                if car.brand is not None and car.model is not None:
+                    car_title = f"{car.brand.name} {car.model.name}"
+            title = f"{car_title} · №{chat.request_id}"
+            peer = user_map.get(chat.user_id)
+            peer_display = _user_peer_chat_label(peer) if peer else "Клиент"
+            peer_role = "client"
+            unread = _unread_for_chat(
+                db, chat.id, chat.user_id, chat.dealer_last_read_message_id
+            )
 
         last_msg = last_by_chat.get(chat.id)
         preview: str | None = None
@@ -4814,30 +4999,10 @@ def _build_chat_list_items(
             if chunks:
                 preview = " ".join(chunks)[:220]
 
-        if is_staff:
-            uc = user_map.get(chat.user_id)
-            ud = user_map.get(chat.dealer_user_id)
-            peer_display = f"{_user_peer_chat_label(uc)} · {_user_peer_chat_label(ud)}"
-            peer_role = "staff"
-            unread = 0
-        elif current_user.id == chat.user_id:
-            peer = user_map.get(chat.dealer_user_id)
-            peer_display = _user_peer_chat_label(peer) if peer else "Дилер"
-            peer_role = "dealer"
-            unread = _unread_for_chat(
-                db, chat.id, chat.dealer_user_id, chat.user_last_read_message_id
-            )
-        else:
-            peer = user_map.get(chat.user_id)
-            peer_display = _user_peer_chat_label(peer) if peer else "Клиент"
-            peer_role = "client"
-            unread = _unread_for_chat(
-                db, chat.id, chat.user_id, chat.dealer_last_read_message_id
-            )
-
         out.append(
             ChatListItemOut(
                 id=chat.id,
+                chat_type=chat.chat_type or "dealer",
                 request_id=chat.request_id,
                 user_id=chat.user_id,
                 dealer_user_id=chat.dealer_user_id,
@@ -4859,10 +5024,16 @@ def my_chats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    is_staff = current_user.role.code in ("admin", "moderator")
-    q = select(Chat)
-    if not is_staff:
-        q = q.where((Chat.user_id == current_user.id) | (Chat.dealer_user_id == current_user.id))
+    is_staff = _user_is_staff(current_user)
+    if is_staff:
+        q = select(Chat).where(Chat.chat_type == "platform")
+    else:
+        _ensure_platform_chat(db, current_user.id)
+        db.commit()
+        q = select(Chat).where(
+            Chat.chat_type == "platform",
+            Chat.user_id == current_user.id,
+        )
     chats = list(db.execute(q).scalars().all())
     return _build_chat_list_items(db, chats, current_user, is_staff=is_staff)
 
@@ -4879,10 +5050,8 @@ def chat_messages(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
-    is_staff = current_user.role.code in ("admin", "moderator")
-    if not is_staff and not (
-        chat.user_id == current_user.id or chat.dealer_user_id == current_user.id
-    ):
+    is_staff = _user_is_staff(current_user)
+    if not _chat_user_can_access(chat, current_user, is_staff=is_staff):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     messages = (
@@ -4896,20 +5065,29 @@ def chat_messages(
         .scalars()
         .all()
     )
-    if not is_staff:
-        latest_id = (
-            db.execute(select(func.max(ChatMessage.id)).where(ChatMessage.chat_id == chat_id)).scalar_one_or_none()
-        )
-        if latest_id:
+    latest_id = (
+        db.execute(select(func.max(ChatMessage.id)).where(ChatMessage.chat_id == chat_id)).scalar_one_or_none()
+    )
+    if latest_id:
+        if chat.chat_type == "platform":
+            if is_staff:
+                prev = chat.dealer_last_read_message_id or 0
+                if latest_id > prev:
+                    chat.dealer_last_read_message_id = latest_id
+            elif current_user.id == chat.user_id:
+                prev = chat.user_last_read_message_id or 0
+                if latest_id > prev:
+                    chat.user_last_read_message_id = latest_id
+        elif not is_staff:
             if current_user.id == chat.user_id:
                 prev = chat.user_last_read_message_id or 0
                 if latest_id > prev:
                     chat.user_last_read_message_id = latest_id
-            elif current_user.id == chat.dealer_user_id:
+            elif chat.dealer_user_id is not None and current_user.id == chat.dealer_user_id:
                 prev = chat.dealer_last_read_message_id or 0
                 if latest_id > prev:
                     chat.dealer_last_read_message_id = latest_id
-            db.commit()
+        db.commit()
 
     # вернуть в хронологическом порядке
     return list(reversed(messages))
@@ -4927,10 +5105,8 @@ async def send_chat_message(
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
-    is_staff = current_user.role.code in ("admin", "moderator")
-    if not is_staff and not (
-        chat.user_id == current_user.id or chat.dealer_user_id == current_user.id
-    ):
+    is_staff = _user_is_staff(current_user)
+    if not _chat_user_can_access(chat, current_user, is_staff=is_staff):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     text_clean = (text or "").strip()
@@ -4963,12 +5139,37 @@ async def send_chat_message(
     db.flush()
     db.refresh(msg)
     chat.last_message_at = msg.created_at
-    if current_user.id == chat.user_id:
+    if chat.chat_type == "platform":
+        if is_staff:
+            chat.dealer_last_read_message_id = msg.id
+        elif current_user.id == chat.user_id:
+            chat.user_last_read_message_id = msg.id
+    elif current_user.id == chat.user_id:
         chat.user_last_read_message_id = msg.id
-    elif current_user.id == chat.dealer_user_id:
+    elif chat.dealer_user_id is not None and current_user.id == chat.dealer_user_id:
         chat.dealer_last_read_message_id = msg.id
     db.commit()
     db.refresh(msg)
+
+    if chat.chat_type == "platform" and current_user.id == chat.user_id:
+        client = (
+            db.execute(select(User).where(User.id == chat.user_id))
+            .scalar_one_or_none()
+        )
+        client_name = _user_peer_chat_label(client)
+        client_contact = ""
+        if client:
+            phone = (client.phone or "").strip()
+            client_contact = phone or client.email
+        notify_platform_chat_message(
+            chat_id=chat.id,
+            client_name=client_name,
+            client_contact=client_contact,
+            message_text=text_clean or None,
+            attachment_name=att_name,
+            messages_url=_platform_chat_messages_url(chat.id),
+        )
+
     return msg
 
 
