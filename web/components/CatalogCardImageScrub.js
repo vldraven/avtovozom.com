@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { mediaSrc } from "../lib/media";
+import MediaImage from "./MediaImage";
 
 function indexFromRatio(ratio, n) {
   if (n <= 1) return 0;
@@ -114,14 +115,15 @@ export default function CatalogCardImageScrub({ photos }) {
       onClickCapture={onClickCapture}
     >
       {show ? (
-        <img
+        <MediaImage
           className="catalog-card__image"
           src={mediaSrc(show)}
           alt=""
-          draggable={false}
+          fill
+          sizes="(max-width: 767px) 100vw, (max-width: 1200px) 50vw, 33vw"
           loading="lazy"
-          fetchPriority="low"
-          decoding="async"
+          draggable={false}
+          style={{ objectFit: "cover" }}
         />
       ) : (
         <div className="catalog-card__placeholder">Нет фото</div>

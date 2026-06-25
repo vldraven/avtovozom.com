@@ -19,7 +19,7 @@
   --radius-sm: 8px;
   --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.1);
-  --font: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: var(--font-manrope), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --max-width: 1120px;
 }
 
@@ -1176,6 +1176,7 @@ a:hover {
 }
 
 .catalog-card__image-wrap {
+  position: relative;
   aspect-ratio: 16 / 10;
   background: linear-gradient(145deg, #e2e8f0, #f1f5f9);
   overflow: hidden;
@@ -2892,6 +2893,53 @@ code {
     animation: none;
     flex-wrap: nowrap;
     padding-bottom: 0.25rem;
+  }
+}
+
+/* Главная на десктопе: чуть компактнее hero, чтобы первая строка карточек влезала above the fold */
+@media (min-width: 960px) {
+  .site-main {
+    padding-top: 1rem;
+  }
+
+  .home-hero {
+    padding: 1.15rem 1.25rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .home-hero__title {
+    font-size: 1.35rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .home-hero__subtitle {
+    margin-bottom: 0.75rem;
+    font-size: 0.9375rem;
+  }
+
+  .catalog-picker {
+    margin-top: 0.85rem;
+    padding-top: 0.85rem;
+  }
+
+  .home-hero__catalog-link {
+    margin-top: 0.85rem;
+  }
+
+  .home-hero__catalog-link .btn {
+    min-height: 40px;
+  }
+
+  .catalog-list-toolbar {
+    margin-bottom: 0.35rem;
+  }
+
+  .catalog-cbr-line {
+    margin-bottom: 0.5rem;
+  }
+
+  .catalog-section {
+    margin-top: 0.25rem;
   }
 }
 
@@ -6020,4 +6068,79 @@ code {
 .catalog-focus-filters__dash {
   color: var(--color-muted);
   font-size: 0.9rem;
+}
+
+.catalog-seo-intro {
+  max-width: 52rem;
+  margin: 0 0 1.25rem;
+  line-height: 1.55;
+  font-size: 0.95rem;
+}
+
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  background: #f8fafc;
+  padding: 2rem 0 calc(2rem + env(safe-area-inset-bottom, 0px));
+}
+
+.site-footer__inner {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.site-footer__logo {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.site-footer__tagline {
+  margin: 0.35rem 0 0;
+  max-width: 28rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+.site-footer__links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+}
+
+.site-footer__links a {
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.site-footer__links a:hover {
+  text-decoration: underline;
+}
+
+.site-footer__copy {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+@media (min-width: 768px) {
+  .site-footer__inner {
+    grid-template-columns: 1fr auto;
+    align-items: start;
+  }
+
+  .site-footer__copy {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 767px) {
+  .site-footer {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
 }

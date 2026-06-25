@@ -139,7 +139,7 @@ export default function Home({ initialData = null }) {
       });
   }, [catalogBrands]);
 
-  const BRANDS_COLLAPSED_DESKTOP = 12;
+  const BRANDS_COLLAPSED_DESKTOP = 10;
   const BRANDS_COLLAPSED_MOBILE = 10;
   const [isMobileBrandsLayout, setIsMobileBrandsLayout] = useState(false);
   useEffect(() => {
