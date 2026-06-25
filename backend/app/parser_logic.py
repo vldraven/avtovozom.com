@@ -16,6 +16,7 @@ from .che168_parser import (
     source_listing_id_from_url,
 )
 from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru
+from .indexnow import submit_car as _indexnow_submit_car
 from .body_colors import label_for_slug
 from .media_storage import delete_car_photo_files, download_car_photos
 from .models import Car, CarPhoto, CarModel, ModelWhitelist, ParseJob
@@ -193,6 +194,7 @@ def _insert_car_from_parsed(
         )
     db.commit()
     db.refresh(car)
+    _indexnow_submit_car(db, car)
     return car, None
 
 
@@ -296,6 +298,7 @@ def _revive_inactive_car_from_parsed(
         )
     db.commit()
     db.refresh(car)
+    _indexnow_submit_car(db, car)
     return car, None
 
 

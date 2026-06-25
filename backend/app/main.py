@@ -69,6 +69,7 @@ from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru, russia
 from .model_resolver import resolve_model_id_for_listing
 from .parser_cancellation import request_cancel
 from .parser_logic import run_parser_job
+from .indexnow import submit_urls as _indexnow_submit_urls
 from .translator_ru import translate_to_ru
 from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_source, resolve_trim_for_listing
 from .trim_spec_storage import TrimSpecDocument, load_trim_spec_from_row, save_trim_spec_to_row
@@ -1192,6 +1193,22 @@ def _canonical_catalog_path_for_car(
     if brand_slug and model_slug:
         return f"/catalog/{brand_slug}/{model_slug}/{car.id}"
     return f"/cars/{car.id}"
+
+
+def _ping_indexnow_for_car(db: Session, car: Car) -> None:
+    """Best-effort пинг IndexNow по каноническому URL объявления (создание/обновление/снятие).
+
+    Никогда не бросает исключений: используем уже закешированные slug-карты, а сама
+    отправка уходит в фоновый поток внутри indexnow.submit_urls.
+    """
+    try:
+        origin = _public_web_origin()
+        if not origin.startswith("http"):
+            return
+        path = _canonical_catalog_path_for_car(car, _get_cached_slug_maps(db))
+        _indexnow_submit_urls([f"{origin}{path}"])
+    except Exception:  # noqa: BLE001 — SEO-уведомление не должно влиять на ответ API; ошибки логируются в indexnow
+        pass
 
 
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -2361,6 +2378,7 @@ async def _update_car_from_multipart(
         .unique()
         .scalar_one()
     )
+    _ping_indexnow_for_car(db, car)
     snap, _ = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(car, cbr=snap, full_import=bool(snap), slug_maps=slug_maps)
@@ -2878,6 +2896,7 @@ async def staff_create_car(
         .unique()
         .scalar_one()
     )
+    _ping_indexnow_for_car(db, car)
     snap, _ = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(car, cbr=snap, full_import=False, slug_maps=slug_maps)
@@ -3006,6 +3025,8 @@ def staff_delete_own_car(
         return {"ok": True}
     car.is_active = False
     db.commit()
+    # Снятое объявление вернёт 404 на каноническом URL — просим поисковики перепроверить и выкинуть из индекса.
+    _ping_indexnow_for_car(db, car)
     car_dir = MEDIA_ROOT / "cars" / str(car_id)
     if car_dir.is_dir():
         try:
@@ -3690,6 +3711,8 @@ def admin_delete_car(
         raise HTTPException(status_code=404, detail="Car not found")
     car.is_active = False
     db.commit()
+    # Снятое объявление вернёт 404 на каноническом URL — просим поисковики перепроверить и выкинуть из индекса.
+    _ping_indexnow_for_car(db, car)
     car_dir = MEDIA_ROOT / "cars" / str(car_id)
     if car_dir.is_dir():
         try:
