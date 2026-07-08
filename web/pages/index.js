@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 
 import BrandLogoMarquee from "../components/BrandLogoMarquee";
 import CatalogCardMedia from "../components/CatalogCardMedia";
+import CatalogQuickFilters from "../components/CatalogQuickFilters";
 import CatalogSortDropdown from "../components/CatalogSortDropdown";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
@@ -22,6 +23,12 @@ import { organizationAndWebSiteJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { scheduleListScrollRestore } from "../lib/listScrollRestore";
 import { absoluteUrl } from "../lib/siteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
+import {
+  appendFiltersToSearchParams,
+  catalogFiltersToQuery,
+  EMPTY_CATALOG_FILTERS,
+  parseFiltersFromQuery,
+} from "../lib/catalogFilters";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const HOME_VALID_SORTS = ["date_desc", "date_asc", "price_asc", "price_desc"];
@@ -88,6 +95,8 @@ export default function Home({ initialData = null }) {
   const [catalogModels, setCatalogModels] = useState([]);
   const [selectedBrandId, setSelectedBrandId] = useState(null);
   const [selectedModelId, setSelectedModelId] = useState(null);
+  const [filterDraft, setFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
+  const [quickFilterModels, setQuickFilterModels] = useState([]);
   const [token, setToken] = useState("");
   const [me, setMe] = useState(null);
   const [latestParserJob, setLatestParserJob] = useState(null);
@@ -123,6 +132,15 @@ export default function Home({ initialData = null }) {
         b.listings_count - a.listings_count || a.name.localeCompare(b.name, "ru")
     );
   }, [catalogBrands]);
+
+  const appliedFilters = useMemo(
+    () =>
+      parseFiltersFromQuery(router.query, {
+        brandId: selectedBrandId,
+        modelId: selectedModelId,
+      }),
+    [router.query, selectedBrandId, selectedModelId]
+  );
 
   const quickFilterBrands = useMemo(() => {
     return catalogBrands
@@ -245,6 +263,7 @@ export default function Home({ initialData = null }) {
       const n = Number(model);
       if (!Number.isNaN(n)) params.set("model_id", String(n));
     }
+    appendFiltersToSearchParams(params, parseFiltersFromQuery(router.query));
     if (listSort && listSort !== "date_desc") {
       params.set("sort", listSort);
     }
@@ -263,7 +282,31 @@ export default function Home({ initialData = null }) {
       setCatalogCbr(null);
       setCatalogCbrError("network");
     }
-  }, [router.isReady, router.query.brand, router.query.model, router.query.q, listSort]);
+  }, [router.isReady, router.query, listSort]);
+
+  function applyQuickFilters(filtersOverride) {
+    const fd = filtersOverride || filterDraft;
+    const brandRow = catalogBrands.find((b) => b.id === fd.brandId);
+    const modelRow =
+      quickFilterModels.find((m) => m.id === fd.modelId) || catalogModels.find((m) => m.id === fd.modelId);
+    const filterQuery = catalogFiltersToQuery(fd, { omitBrandModel: true });
+    const qq = q.trim();
+    if (qq) filterQuery.q = qq;
+    if (listSort !== "date_desc") filterQuery.sort = listSort;
+
+    if (brandRow?.slug && modelRow?.slug) {
+      router.push({ pathname: `/catalog/${brandRow.slug}/${modelRow.slug}`, query: filterQuery });
+      return;
+    }
+    if (brandRow?.slug) {
+      router.push({ pathname: `/catalog/${brandRow.slug}`, query: filterQuery });
+      return;
+    }
+    const homeQuery = catalogFiltersToQuery(fd);
+    if (qq) homeQuery.q = qq;
+    if (listSort !== "date_desc") homeQuery.sort = listSort;
+    router.replace({ pathname: "/", query: homeQuery });
+  }
 
   function onSelectBrand(brandId) {
     const row = catalogBrands.find((b) => b.id === brandId);
@@ -981,6 +1024,42 @@ export default function Home({ initialData = null }) {
   }, [selectedBrandId]);
 
   useEffect(() => {
+    if (!router.isReady) return;
+    setFilterDraft(
+      parseFiltersFromQuery(router.query, {
+        brandId: selectedBrandId,
+        modelId: selectedModelId,
+      })
+    );
+  }, [router.isReady, router.query, selectedBrandId, selectedModelId]);
+
+  useEffect(() => {
+    const bid = filterDraft.brandId;
+    if (!bid) {
+      setQuickFilterModels([]);
+      return undefined;
+    }
+    if (bid === selectedBrandId && catalogModels.length > 0) {
+      setQuickFilterModels(catalogModels);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`${API_URL}/catalog/models?brand_id=${bid}`);
+      if (!res.ok || cancelled) return;
+      const list = await res.json();
+      list.sort(
+        (a, b) =>
+          b.listings_count - a.listings_count || a.name.localeCompare(b.name, "ru")
+      );
+      if (!cancelled) setQuickFilterModels(list);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [filterDraft.brandId, selectedBrandId, catalogModels]);
+
+  useEffect(() => {
     if (isAdminRole(me?.role)) return;
     if (parserAdminModelId != null && !whitelistCatalog.some((r) => r.model_id === parserAdminModelId)) {
       setParserAdminModelId(null);
@@ -1283,6 +1362,15 @@ export default function Home({ initialData = null }) {
                 Найти
               </button>
             </form>
+
+            <CatalogQuickFilters
+              brands={sortedBrands}
+              models={quickFilterModels}
+              draft={filterDraft}
+              applied={appliedFilters}
+              onChangeDraft={setFilterDraft}
+              onApply={applyQuickFilters}
+            />
 
             <div className="home-hero__delivery-links">
               <Link href="/dostavka-avto-iz-kitaya" className="btn btn-ghost btn-sm">
@@ -1842,6 +1930,7 @@ export async function getServerSideProps({ query }) {
     const n = Number(rawM);
     if (!Number.isNaN(n)) params.set("model_id", String(n));
   }
+  appendFiltersToSearchParams(params, parseFiltersFromQuery(query));
   if (listSort !== "date_desc") params.set("sort", listSort);
   params.set("photo_limit", "8");
   params.set("limit", "100");

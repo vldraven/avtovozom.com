@@ -6,6 +6,7 @@ import {
   resolveCatalogTree,
   segmentsFromSlugParam,
 } from "./catalogResolve";
+import { catalogFilterKeyFromQuery, parseFiltersFromQuery } from "./catalogFilters";
 import { getServerApiBase } from "./serverApiUrl";
 
 const VALID_SORTS = new Set(["date_desc", "date_asc", "price_asc", "price_desc"]);
@@ -64,7 +65,11 @@ export async function fetchCatalogPageProps({ params, query }) {
   let cars = [];
   let total = 0;
 
-  const carsQuery = buildCatalogCarsQuery(resolved, listSort, CATALOG_SSR_LIMIT);
+  const filterQuery = parseFiltersFromQuery(query, {
+    brandId: resolved.brand?.id ?? null,
+    modelId: resolved.model?.id ?? null,
+  });
+  const carsQuery = buildCatalogCarsQuery(resolved, listSort, CATALOG_SSR_LIMIT, filterQuery);
   if (carsQuery) {
     try {
       const carsRes = await fetch(`${api}/cars?${carsQuery.toString()}`, {
@@ -90,7 +95,7 @@ export async function fetchCatalogPageProps({ params, query }) {
         tree,
         cars,
         total,
-        fetchKey: catalogFetchKey(segments, listSort),
+        fetchKey: catalogFetchKey(segments, listSort, catalogFilterKeyFromQuery(query)),
       },
     },
   };

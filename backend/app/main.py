@@ -83,6 +83,7 @@ from .media_storage import (
     save_uploaded_car_photos,
 )
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
+from .car_list_filters import apply_transmission_filter, cny_bounds_from_rub_bounds
 from .body_colors import BODY_COLOR_OPTIONS, label_for_slug, slug_from_form
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
 from .customs_calc import ensure_settings_row, run_estimate, validate_config_yaml
@@ -1906,6 +1907,13 @@ def list_cars(
     hp_to: int | None = None,
     cny_from: float | None = None,
     cny_to: float | None = None,
+    mileage_to: int | None = None,
+    transmission: str | None = Query(
+        default=None,
+        description="КПП: at|amt|cvt|mt|auto|manual",
+    ),
+    rub_from: float | None = None,
+    rub_to: float | None = None,
     exclude_id: int | None = None,
     manufacturer: str | None = None,
     sort: str | None = Query(
@@ -1964,6 +1972,14 @@ def list_cars(
     if generation_id is not None:
         stmt = stmt.where(Car.generation_id == generation_id)
 
+    snap_pre, _cbr_pre = build_cbr_snapshot()
+    if (rub_from is not None or rub_to is not None) and cny_from is None and cny_to is None:
+        cf, ct = cny_bounds_from_rub_bounds(rub_from, rub_to, snap_pre)
+        if cf is not None:
+            cny_from = cf
+        if ct is not None:
+            cny_to = ct
+
     if year_from is not None:
         stmt = stmt.where(Car.year >= year_from)
     if year_to is not None:
@@ -1980,6 +1996,9 @@ def list_cars(
         stmt = stmt.where(Car.price_cny >= cny_from)
     if cny_to is not None:
         stmt = stmt.where(Car.price_cny <= cny_to)
+    if mileage_to is not None:
+        stmt = stmt.where(Car.mileage_km.isnot(None), Car.mileage_km <= mileage_to)
+    stmt = apply_transmission_filter(stmt, transmission)
     if exclude_id is not None:
         stmt = stmt.where(Car.id != exclude_id)
 

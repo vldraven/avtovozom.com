@@ -1,3 +1,5 @@
+import { appendFiltersToSearchParams } from "./catalogFilters";
+
 export function segmentsFromSlugParam(slug) {
   if (slug == null) return [];
   if (Array.isArray(slug)) return slug.map(String).filter(Boolean);
@@ -100,7 +102,7 @@ export const CATALOG_SSR_LIMIT = 12;
 /** Максимум объявлений в ленте каталога на клиенте. */
 export const CATALOG_LIST_LIMIT = 100;
 
-export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_LIMIT) {
+export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_LIMIT, filterQuery = null) {
   const params = new URLSearchParams();
   const { brand, model, generation, badGenSlug, unknownSlug } = resolved;
   if (unknownSlug) return null;
@@ -108,12 +110,15 @@ export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_L
   if (model) params.set("model_id", String(model.id));
   if (generation && !badGenSlug) params.set("generation_id", String(generation.id));
   if (listSort && listSort !== "date_desc") params.set("sort", listSort);
+  if (filterQuery) {
+    appendFiltersToSearchParams(params, filterQuery);
+  }
   params.set("photo_limit", "8");
   params.set("limit", String(limit));
   return params;
 }
 
-export function catalogFetchKey(segments, listSort) {
+export function catalogFetchKey(segments, listSort, filterKey = "") {
   const seg = segments.length ? segments.join("/") : "";
-  return `${seg}|${listSort || "date_desc"}`;
+  return `${seg}|${listSort || "date_desc"}|${filterKey || ""}`;
 }

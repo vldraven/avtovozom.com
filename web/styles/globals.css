@@ -2791,6 +2791,238 @@ code {
   padding-right: 1.25rem;
 }
 
+/* Быстрые фильтры под поиском (auto.ru-style) */
+.catalog-qf {
+  margin-top: 0.65rem;
+  margin-bottom: 0.25rem;
+}
+
+.catalog-main-panel > .catalog-qf {
+  margin-bottom: 1rem;
+}
+
+.catalog-qf__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.catalog-qf__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  max-width: 100%;
+  padding: 0.42rem 0.72rem;
+  border: none;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.catalog-qf__chip:hover:not(:disabled) {
+  background: #e8edf3;
+}
+
+.catalog-qf__chip--active,
+.catalog-qf__chip--open {
+  background: #0f172a;
+  color: #fff;
+}
+
+.catalog-qf__chip:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.catalog-qf__chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 11rem;
+}
+
+.catalog-qf__chev {
+  flex-shrink: 0;
+  opacity: 0.75;
+  transition: transform 0.15s ease;
+}
+
+.catalog-qf__chev--open {
+  transform: rotate(180deg);
+}
+
+.catalog-qf__apply {
+  margin-left: auto;
+  padding: 0.42rem 1rem;
+  border: none;
+  border-radius: 999px;
+  background: #e8edf3;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: not-allowed;
+}
+
+.catalog-qf__apply--ready {
+  background: #0f172a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.catalog-qf__apply--ready:hover {
+  background: #1e293b;
+}
+
+.catalog-qf__menu {
+  position: absolute;
+  z-index: 50;
+  max-height: min(360px, 70vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.14);
+}
+
+.catalog-qf__menu-reset {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalog-qf__menu-reset:hover {
+  background: #f8fafc;
+}
+
+.catalog-qf__menu-reset-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.catalog-qf__menu-scroll {
+  overflow-y: auto;
+  max-height: 280px;
+}
+
+.catalog-qf__menu-group-title {
+  padding: 0.55rem 0.85rem 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.catalog-qf__menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.85rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalog-qf__menu-item:hover {
+  background: #f1f5f9;
+}
+
+.catalog-qf__menu-item--active {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+
+.catalog-qf__menu-item-sub {
+  color: var(--color-muted);
+  font-size: 0.82rem;
+}
+
+.catalog-qf__price-presets {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.catalog-qf__price-custom {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem 0.35rem;
+}
+
+.catalog-qf__price-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.catalog-qf__price-field-label {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+.catalog-qf__price-input {
+  min-height: 2.5rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.catalog-qf__price-apply {
+  justify-self: start;
+}
+
+.catalog-qf__price-hint {
+  margin: 0;
+  padding: 0 0.85rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .catalog-qf__row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.35rem;
+    padding-bottom: 0.2rem;
+  }
+
+  .catalog-qf__chip {
+    flex: 0 0 auto;
+  }
+
+  .catalog-qf__apply {
+    display: none;
+    margin-left: 0;
+    width: 100%;
+    margin-top: 0.15rem;
+  }
+
+  .catalog-qf__chip-label {
+    max-width: 8.5rem;
+  }
+}
+
 /* Посадочные страницы доступны из бургер-меню в шапке. */
 .home-hero__delivery-links {
   display: none;

@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 
 import Breadcrumbs from "../../components/Breadcrumbs";
 import CatalogCardMedia from "../../components/CatalogCardMedia";
+import CatalogQuickFilters from "../../components/CatalogQuickFilters";
 import CatalogSortDropdown from "../../components/CatalogSortDropdown";
 import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import CarDetailView from "../../components/CarDetailView";
@@ -24,6 +25,12 @@ import {
   resolveCatalogTree,
   segmentsFromSlugParam,
 } from "../../lib/catalogResolve";
+import {
+  catalogFilterKeyFromQuery,
+  catalogFiltersToQuery,
+  EMPTY_CATALOG_FILTERS,
+  parseFiltersFromQuery,
+} from "../../lib/catalogFilters";
 import {
   catalogBreadcrumbItems,
   catalogCanonicalPath,
@@ -69,6 +76,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const [requestModalCar, setRequestModalCar] = useState(null);
   const [requestModalComment, setRequestModalComment] = useState("");
   const [requestModalBusy, setRequestModalBusy] = useState(false);
+  const [filterDraft, setFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
 
   const { brand, model, generation, unknownSlug, badModelSlug, badGenSlug } = useMemo(() => {
     if (segments == null) {
@@ -93,6 +101,46 @@ export default function CatalogTreePage({ initialPayload = null }) {
     initialPayload?.mode === "detail" ||
     (segments != null && isCarDetailSegments(segments));
   const isCatalogListRoute = segments != null && !isCarDetailRoute && !unknownSlug;
+
+  const appliedFilters = useMemo(
+    () =>
+      parseFiltersFromQuery(router.query, {
+        brandId: brand?.id ?? null,
+        modelId: model?.id ?? null,
+      }),
+    [router.query, brand?.id, model?.id]
+  );
+
+  const catalogBrandOptions = useMemo(
+    () =>
+      tree.map((b) => ({
+        id: b.id,
+        name: b.name,
+        slug: b.slug,
+      })),
+    [tree]
+  );
+
+  const quickFilterModelOptions = useMemo(() => {
+    const bid = filterDraft.brandId;
+    if (!bid) return [];
+    const row = tree.find((b) => b.id === bid);
+    if (!row?.models) return [];
+    return [...row.models].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  }, [filterDraft.brandId, tree]);
+
+  const applyCatalogQuickFilters = useCallback((filtersOverride) => {
+    const fd = filtersOverride || filterDraft;
+    const nextBrand = tree.find((b) => b.id === fd.brandId);
+    const nextModel = nextBrand?.models?.find((m) => m.id === fd.modelId);
+    const filterQuery = catalogFiltersToQuery(fd, { omitBrandModel: true });
+    if (listSort !== "date_desc") filterQuery.sort = listSort;
+
+    let pathname = "/catalog";
+    if (nextBrand?.slug) pathname += `/${nextBrand.slug}`;
+    if (nextBrand?.slug && nextModel?.slug) pathname += `/${nextModel.slug}`;
+    router.push({ pathname, query: filterQuery });
+  }, [filterDraft, listSort, router, tree]);
 
   useEffect(() => {
     if (!initialPayload) return;
@@ -265,13 +313,24 @@ export default function CatalogTreePage({ initialPayload = null }) {
   }
 
   useEffect(() => {
+    if (!router.isReady || !isCatalogListRoute) return;
+    setFilterDraft(
+      parseFiltersFromQuery(router.query, {
+        brandId: brand?.id ?? null,
+        modelId: model?.id ?? null,
+      })
+    );
+  }, [router.isReady, router.query, isCatalogListRoute, brand?.id, model?.id]);
+
+  useEffect(() => {
     if (!ssrReady || segments == null) return;
     if (unknownSlug) {
       setCars([]);
       setTotal(0);
       return;
     }
-    const fetchKey = catalogFetchKey(segments, listSort);
+    const filterKey = catalogFilterKeyFromQuery(router.query);
+    const fetchKey = catalogFetchKey(segments, listSort, filterKey);
     if (skipCarsFetchKeyRef.current === fetchKey) {
       skipCarsFetchKeyRef.current = null;
       const initialCars = listInitial?.cars?.length ?? 0;
@@ -281,7 +340,11 @@ export default function CatalogTreePage({ initialPayload = null }) {
       }
     }
     const resolved = resolveCatalogTree(segments, tree);
-    const params = buildCatalogCarsQuery(resolved, listSort);
+    const filterQuery = parseFiltersFromQuery(router.query, {
+      brandId: resolved.brand?.id ?? null,
+      modelId: resolved.model?.id ?? null,
+    });
+    const params = buildCatalogCarsQuery(resolved, listSort, undefined, filterQuery);
     if (!params) return;
     let cancelled = false;
     (async () => {
@@ -312,7 +375,16 @@ export default function CatalogTreePage({ initialPayload = null }) {
     return () => {
       cancelled = true;
     };
-  }, [ssrReady, segments, tree, unknownSlug, listSort, listInitial?.cars?.length, listInitial?.total]);
+  }, [
+    ssrReady,
+    segments,
+    tree,
+    unknownSlug,
+    listSort,
+    router.query,
+    listInitial?.cars?.length,
+    listInitial?.total,
+  ]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -673,6 +745,16 @@ export default function CatalogTreePage({ initialPayload = null }) {
                 </aside>
 
                 <div className="catalog-main-panel">
+                  {isCatalogListRoute ? (
+                    <CatalogQuickFilters
+                      brands={catalogBrandOptions}
+                      models={quickFilterModelOptions}
+                      draft={filterDraft}
+                      applied={appliedFilters}
+                      onChangeDraft={setFilterDraft}
+                      onApply={applyCatalogQuickFilters}
+                    />
+                  ) : null}
                   <div className="catalog-list-toolbar">
                     <h2 className="section-title section-title--flush-top catalog-list-toolbar__title">
                       Объявления <span className="text-muted">· {total}</span>
