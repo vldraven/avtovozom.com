@@ -7,6 +7,26 @@ from __future__ import annotations
 import re
 
 
+def title_looks_like_global_seo_english(s: str | None) -> bool:
+    """SEO-заголовок global.che168 (англ.) — не использовать как название объявления."""
+    if not s or not str(s).strip():
+        return False
+    t = str(s).strip()
+    tl = t.lower()
+    if tl.startswith("used "):
+        return True
+    seo_markers = (
+        "for sale",
+        "near me",
+        "cheap price",
+        "5-seater",
+        "second hand",
+        "china used cars",
+    )
+    hits = sum(1 for m in seo_markers if m in tl)
+    return hits >= 2 or (hits >= 1 and " - " in t and len(t) > 60)
+
+
 def title_looks_corrupted(s: str | None) -> bool:
     if not s or not str(s).strip():
         return True
@@ -89,7 +109,11 @@ def pick_title_ru(
     при мусоре — только шаблон из марки/модели/года.
     """
     for candidate in (translated, raw_title):
-        if candidate and not title_looks_corrupted(candidate):
+        if (
+            candidate
+            and not title_looks_corrupted(candidate)
+            and not title_looks_like_global_seo_english(candidate)
+        ):
             c = str(candidate).strip()
             if len(c) > 180:
                 c = c[:177].rsplit(" ", 1)[0] + "…"

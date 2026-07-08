@@ -728,6 +728,34 @@ def _is_global_che168_stub_html(html: str) -> bool:
     )
 
 
+def _is_global_english_detail_text(body_text: str | None, title: str | None = None) -> bool:
+    """Английская карточка global.che168 без китайских полей — неполный разбор."""
+    blob = f"{title or ''}\n{body_text or ''}".strip()
+    if not blob:
+        return False
+    if "表显里程" in blob or "上牌时间" in blob or "售价" in blob:
+        return False
+    head = blob[:4000]
+    if "Vehicle Details" in head or "China Used Cars Export" in head:
+        return True
+    tl = (title or "").strip().lower()
+    if tl.startswith("used ") and re.search(r"for sale|near me|cheap price", tl):
+        return True
+    return False
+
+
+def incomplete_listing_parse_message(parsed: ParsedCar | None) -> str | None:
+    """Причина, по которой разбор нельзя сохранять в каталог."""
+    if parsed is None:
+        return "не удалось разобрать карточку"
+    if not parsed.price_cny or parsed.price_cny <= 0:
+        return (
+            "не найдена цена в юанях (часто che168 отдаёт английскую заглушку global.che168 "
+            "или captcha с VPS вне Китая)"
+        )
+    return None
+
+
 def _decode_http_response_text(response: httpx.Response) -> str:
     """che168 отдаёт gb2312/gbk; без явного decode кириллица/китайский ломаются."""
     raw = response.content or b""
@@ -935,8 +963,8 @@ def _che168_playwright_goto(page, url: str, timeout_ms: int) -> None:
         page.wait_for_function(
             """() => {
                 const t = (document.body && document.body.innerText) || '';
-                if (t.includes('表显里程') || t.includes('Vehicle Details')) return true;
-                if (/\\d{1,2}\\.\\d{2}\\s*万/.test(t) && t.includes('公里')) return true;
+                if (t.includes('表显里程') || t.includes('上牌时间')) return true;
+                if (/\\d{1,2}\\.\\d{2}\\s*万/.test(t) && !/万\\s*公里/.test(t)) return true;
                 return false;
             }""",
             timeout=timeout_ms,
@@ -1610,7 +1638,7 @@ def _parse_che168_detail_playwright(
         context.close()
         browser.close()
 
-    return ParsedCar(
+    parsed = ParsedCar(
         source_listing_id=source_listing_id,
         title=title,
         series_raw=series_raw,
@@ -1629,6 +1657,12 @@ def _parse_che168_detail_playwright(
         body_color_slug=_body_color_slug_from_vehicle_text(title, body_text),
         autohome_spec_id=autohome_spec_id,
     )
+    if _is_global_english_detail_text(body_text, title) and not _parse_is_complete(parsed):
+        raise RuntimeError(
+            "che168 открыл английскую заглушку global.che168 без цены в юанях. "
+            "Импортируйте с www.che168.com/dealer/… или с локальной машины."
+        )
+    return parsed
 
 
 def parse_che168_detail(detail_url: str) -> ParsedCar:
@@ -1666,6 +1700,9 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
                     continue
                 parsed = _parse_detail_from_html(html, source_listing_id)
                 if parsed is None:
+                    continue
+                body_text = _strip_html_to_text(html)
+                if _is_global_english_detail_text(body_text, parsed.title):
                     continue
                 score = _parse_quality_score(parsed)
                 if score > best_score:
@@ -1722,7 +1759,7 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
         except Exception as exc:
             last_err = exc
 
-    if best and best_score > 0:
+    if best and best_score > 0 and _parse_is_complete(best):
         return best
     if captcha_hits >= len(fetch_urls):
         raise RuntimeError(
@@ -1732,5 +1769,12 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
         )
     if last_err is not None:
         raise last_err
+    incomplete = incomplete_listing_parse_message(best)
+    if incomplete:
+        raise RuntimeError(
+            f"Карточка разобрана неполностью: {incomplete}. "
+            "Попробуйте ссылку www.che168.com/dealer/…/….html, импорт с локального Docker "
+            "или CHE168_FORCE_DETAIL_URLS."
+        )
     raise RuntimeError(f"Не удалось разобрать карточку: {detail_url}")
 

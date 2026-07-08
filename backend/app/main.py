@@ -3099,7 +3099,7 @@ def admin_batch_refresh_from_che168(
     stmt = (
         select(Car)
         .options(joinedload(Car.brand), joinedload(Car.model))
-        .where(Car.is_active.is_(True), Car.source == "che168")
+        .where(Car.is_active.is_(True), Car.source.in_(("che168", "global_che168")))
         .order_by(Car.id.asc())
         .offset(offset)
         .limit(max_cars)

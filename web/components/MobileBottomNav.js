@@ -66,12 +66,16 @@ export default function MobileBottomNav() {
     }
     let cancelled = false;
     (async () => {
-      const res = await fetch(`${API_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (cancelled) return;
-      if (res.ok) setMe(await res.json());
-      else setMe(null);
+      try {
+        const res = await fetch(`${API_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (cancelled) return;
+        if (res.ok) setMe(await res.json());
+        else setMe(null);
+      } catch {
+        if (!cancelled) setMe(null);
+      }
     })();
     return () => {
       cancelled = true;

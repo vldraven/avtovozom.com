@@ -9,6 +9,7 @@ from .che168_parser import (
     ParsedCar,
     car_source_for_marketplace,
     filter_vehicle_photo_urls,
+    incomplete_listing_parse_message,
     marketplace_from_detail_url,
     normalize_import_detail_url,
     parse_che168_detail,
@@ -446,6 +447,21 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             total_processed = 1
             job.status = "failed"
             job.message = str(e)[:500]
+            job.finished_at = datetime.utcnow()
+            job.total_processed = total_processed
+            job.total_created = total_created
+            job.total_updated = total_updated
+            job.total_errors = total_errors
+            db.commit()
+            db.refresh(job)
+            return job
+
+        incomplete_reason = incomplete_listing_parse_message(parsed)
+        if incomplete_reason:
+            total_errors = 1
+            total_processed = 1
+            job.status = "failed"
+            job.message = f"Неполный разбор объявления: {incomplete_reason}"[:500]
             job.finished_at = datetime.utcnow()
             job.total_processed = total_processed
             job.total_created = total_created

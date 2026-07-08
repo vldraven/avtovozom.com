@@ -145,5 +145,20 @@ class Che168ParserCompletenessTests(unittest.TestCase):
         self.assertFalse(_parse_is_complete(parsed))
 
 
+class ListingCopyRuTests(unittest.TestCase):
+    def test_global_seo_title_rejected(self):
+        from app.listing_copy_ru import pick_title_ru, title_looks_like_global_seo_english
+
+        seo = (
+            "Used Mercedes-Benz Mercedes-Benz A-Class 2022 A 180 L Sport Sedan - "
+            "Mercedes-Benz Mercedes-Benz A-Class 5-Seater for Sale - Cheap Price Near Me"
+        )
+        self.assertTrue(title_looks_like_global_seo_english(seo))
+        self.assertEqual(
+            pick_title_ru("Mercedes-Benz", "A", 2022, seo, seo),
+            "Mercedes-Benz A, 2022 г.в.",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
