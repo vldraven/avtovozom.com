@@ -192,8 +192,50 @@ _VALUE_ZH: dict[str, str] = {
     "纵置": "Продольное",
     "横置": "Поперечное",
     "三厢车": "Седан",
+    "两厢车": "Хэтчбек",
+    "掀背车": "Лифтбек",
+    "旅行车": "Универсал",
+    "硬顶敞篷车": "Кабриолет",
+    "软顶敞篷车": "Кабриолет",
+    "跑车": "Спорткар",
+    "皮卡": "Пикап",
+    "MPV": "Минивэн",
+    "SUV": "Внедорожник",
     "汽油": "Бензин",
+    "增程器": "Расширенный диапазон",
+    "涡轮增压": "Турбо",
+    "自然吸气": "Атмосферный",
+    "电动机": "Электромотор",
+    "混合动力": "Гибрид",
+    "插电混动": "Подключаемый гибрид",
+    "纯电动": "Полностью электрический",
+    "柴油": "Дизель",
 }
+
+# Фрагменты для подстановки внутри составных значений param (длинные — первыми).
+_PARAM_VALUE_FRAGMENTS_ZH: list[tuple[str, str]] = sorted(
+    [
+        ("硬顶敞篷车", "кабриолет"),
+        ("软顶敞篷车", "кабриолет"),
+        ("插电混动", "подключаемый гибрид"),
+        ("纯电动", "полностью электрический"),
+        ("增程器", "расширенный диапазон"),
+        ("涡轮增压", "турбо"),
+        ("自然吸气", "атмосферный"),
+        ("混合动力", "гибрид"),
+        ("电动机", "электромотор"),
+        ("三厢车", "седан"),
+        ("两厢车", "хэтчбек"),
+        ("掀背车", "лифтбек"),
+        ("旅行车", "универсал"),
+        ("跑车", "спорткар"),
+        ("皮卡", "пикап"),
+        ("MPV", "минивэн"),
+        ("SUV", "внедорожник"),
+    ],
+    key=lambda x: len(x[0]),
+    reverse=True,
+)
 
 _LABEL_FIXES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bсистема\s+система\b", re.I), "система"),
@@ -303,15 +345,33 @@ def _clean_trim_text_value(raw: str) -> str:
     return s
 
 
+def _translate_cjk_in_param_value(value: str) -> str:
+    """Перевод оставшихся китайских фрагментов в значениях param (двигатель, кузов)."""
+    v = _clean_trim_text_value(value)
+    if not _HAS_CJK.search(v):
+        return v
+    if v in _VALUE_ZH:
+        return _VALUE_ZH[v]
+    for zh, ru in _PARAM_VALUE_FRAGMENTS_ZH:
+        if zh in v:
+            v = v.replace(zh, ru)
+    v = re.sub(r"(\d+)门", r"\1 дв., ", v)
+    v = re.sub(r"(\d+)座", r"\1 мест, ", v)
+    v = v.replace("马力", " л.с.")
+    for zh, ru in _VALUE_ZH.items():
+        if zh in v:
+            v = v.replace(zh, ru)
+    v = re.sub(r"\s+", " ", v).strip(" ,.")
+    if _HAS_CJK.search(v):
+        v = re.sub(r"[\u4e00-\u9fff]+", "", v)
+        v = re.sub(r"\s+", " ", v).strip(" ,.")
+    if re.search(r"\d+\s*л\.с\.?$", v):
+        v = re.sub(r"л\.с\.?$", "л.с.", v)
+    return v
+
+
 def _format_param_value(name_zh: str, value: str) -> str:
     v = _clean_trim_text_value(value)
-    if _HAS_CJK.search(v):
-        for zh, ru in _VALUE_ZH.items():
-            if zh in v:
-                v = v.replace(zh, ru)
-        v = re.sub(r"(\d+)门", r"\1 дв., ", v)
-        v = re.sub(r"(\d+)座", r"\1 мест, ", v)
-        v = re.sub(r"\s+", " ", v).strip(" ,")
     if name_zh in ("发动机",) or "发动机" in name_zh:
         v = v.replace("马力", " л.с.")
     if _DIMS_RE.search(name_zh) or name_zh.startswith("长"):
@@ -329,9 +389,9 @@ def _format_param_value(name_zh: str, value: str) -> str:
     if name_zh == "马力(Ps)" and v.isdigit():
         return f"{v} л.с."
     if name_zh == "能源类型":
-        return _VALUE_ZH.get(v, v)
-    if name_zh == "车身结构" and _HAS_CJK.search(v):
-        return v
+        return _VALUE_ZH.get(v, _translate_cjk_in_param_value(v))
+    if name_zh == "车身结构" or _HAS_CJK.search(v):
+        return _translate_cjk_in_param_value(v)
     return v
 
 
@@ -453,6 +513,31 @@ def filter_param_sections_for_card(sections: list[dict[str, Any]]) -> list[dict[
             for it in sec.get("items") or []
             if isinstance(it, dict) and str(it.get("name") or "") not in _PARAM_CARD_SKIP_LABELS
         ]
+        if items:
+            out.append({"group": str(sec.get("group") or ""), "items": items})
+    return sanitize_param_sections_for_display(out)
+
+
+def sanitize_param_sections_for_display(
+    sections: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Дочистить уже сохранённые param_sections: убрать китайский из значений."""
+    out: list[dict[str, Any]] = []
+    for sec in sections:
+        if not isinstance(sec, dict):
+            continue
+        items: list[dict[str, str]] = []
+        for it in sec.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            name = str(it.get("name") or "").strip()
+            value = str(it.get("value") or "").strip()
+            if not name or not value:
+                continue
+            if _HAS_CJK.search(value):
+                value = _translate_cjk_in_param_value(value)
+            if value and not _HAS_CJK.search(value):
+                items.append({"name": name, "value": value})
         if items:
             out.append({"group": str(sec.get("group") or ""), "items": items})
     return out

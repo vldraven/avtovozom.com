@@ -2,6 +2,7 @@ import unittest
 
 from app.trim_display import (
     classify_trim_value,
+    filter_param_sections_for_card,
     filter_trim_sections_for_ui,
     format_trim_item_for_ui,
     prepare_param_sections_from_zh,
@@ -80,6 +81,42 @@ class TrimDisplayTests(unittest.TestCase):
         self.assertEqual(flat["Колёсная база, мм"], "2961 мм")
         self.assertEqual(flat["Модель двигателя"], "B48B20C")
         self.assertNotIn("Длина, мм", flat)
+        self.assertNotIn("三厢", flat.get("Кузов", ""))
+
+    def test_range_extender_and_liftback_translation(self) -> None:
+        sections = prepare_param_sections_from_zh(
+            [
+                {
+                    "group": "基本参数",
+                    "kind": "param",
+                    "items": [
+                        {"name": "发动机", "value": "增程器 95马力"},
+                        {"name": "车身结构", "value": "5门5座掀背车"},
+                    ],
+                },
+            ]
+        )
+        flat = {it["name"]: it["value"] for sec in sections for it in sec["items"]}
+        self.assertIn("расширенный диапазон", flat["Двигатель"].lower())
+        self.assertIn("95 л.с.", flat["Двигатель"])
+        self.assertIn("лифтбек", flat["Кузов"].lower())
+        self.assertNotRegex(flat["Двигатель"], r"[\u4e00-\u9fff]")
+        self.assertNotRegex(flat["Кузов"], r"[\u4e00-\u9fff]")
+
+    def test_sanitize_stored_param_sections_with_cjk(self) -> None:
+        stored = [
+            {
+                "group": "Технические параметры",
+                "items": [
+                    {"name": "Двигатель", "value": "增程器 95 л.с."},
+                    {"name": "Кузов", "value": "5 дв., 5 мест, 掀背车"},
+                ],
+            }
+        ]
+        out = filter_param_sections_for_card(stored)
+        flat = {it["name"]: it["value"] for sec in out for it in sec["items"]}
+        self.assertEqual(flat["Двигатель"], "расширенный диапазон 95 л.с.")
+        self.assertEqual(flat["Кузов"], "5 дв., 5 мест, лифтбек")
 
     def test_label_fixes(self) -> None:
         row = format_trim_item_for_ui("Аппаратное обеспечение", "●")
