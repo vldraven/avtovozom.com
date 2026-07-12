@@ -96,11 +96,17 @@ export function resolveCatalogTree(segments, tree) {
   };
 }
 
-/** Карточек в HTML при SSR (SEO). Клиент догружает полный список. */
+/** Карточек в HTML при SSR корня каталога (/catalog без марки). */
 export const CATALOG_SSR_LIMIT = 12;
 
 /** Максимум объявлений в ленте каталога на клиенте. */
 export const CATALOG_LIST_LIMIT = 100;
+
+/** Сколько объявлений отдавать в HTML при SSR: на марке/модели — все (до лимита ленты). */
+export function catalogSsrCarsLimit(resolved) {
+  if (resolved?.brand) return CATALOG_LIST_LIMIT;
+  return CATALOG_SSR_LIMIT;
+}
 
 export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_LIMIT, filterQuery = null) {
   const params = new URLSearchParams();

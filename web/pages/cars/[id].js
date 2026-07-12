@@ -1,5 +1,6 @@
 import { useRouter } from "next/router";
 
+import { publicCarHref } from "../../lib/carRoutes";
 import CarDetailView from "../../components/CarDetailView";
 import { getServerApiBase } from "../../lib/serverApiUrl";
 
@@ -14,7 +15,13 @@ export async function getServerSideProps({ params }) {
       headers: { Accept: "application/json" },
     });
     if (!res.ok) return { notFound: true };
-    return { props: { initialCar: await res.json() } };
+    const car = await res.json();
+    const canonicalPath = publicCarHref(car);
+    // SEO: один URL в индексе — /cars/{id} только редирект на /catalog/.../id.
+    if (canonicalPath.startsWith("/catalog/")) {
+      return { redirect: { destination: canonicalPath, permanent: true } };
+    }
+    return { props: { initialCar: car } };
   } catch {
     return { notFound: true };
   }

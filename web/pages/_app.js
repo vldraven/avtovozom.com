@@ -16,7 +16,10 @@ import "../styles/globals.css";
 function useSeoNoIndex() {
   const router = useRouter();
   const path = router.pathname || "";
-  return /^(?:\/auth|\/profile|\/messages)(?:\/|$)/.test(path) || path.startsWith("/staff/");
+  return (
+    /^(?:\/auth|\/profile|\/messages|\/favorites|\/reset-password)(?:\/|$)/.test(path) ||
+    path.startsWith("/staff/")
+  );
 }
 
 export default function App({ Component, pageProps }) {

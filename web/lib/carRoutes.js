@@ -1,9 +1,8 @@
 /** Публичный URL карточки объявления (канонический путь с ЧПУ). */
 
-/** Внутренняя навигация из списков: отдельный маршрут, чтобы «Назад» не подставлял фильтр каталога. */
+/** Ссылка из списков — канонический URL; «Назад» через listingNavigation (sessionStorage). */
 export function listingCarHref(car) {
-  if (car != null && car.id != null) return `/cars/${car.id}`;
-  return "/catalog";
+  return publicCarHref(car);
 }
 
 export function publicCarHref(car) {

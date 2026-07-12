@@ -1,7 +1,7 @@
 import {
   buildCatalogCarsQuery,
   catalogFetchKey,
-  CATALOG_SSR_LIMIT,
+  catalogSsrCarsLimit,
   isCarDetailSegments,
   resolveCatalogTree,
   segmentsFromSlugParam,
@@ -62,6 +62,22 @@ export async function fetchCatalogPageProps({ params, query }) {
   }
 
   const resolved = resolveCatalogTree(segments, tree);
+
+  if (resolved.unknownSlug && segments.length > 0) {
+    return { notFound: true };
+  }
+  if (resolved.badModelSlug && resolved.brand?.slug) {
+    return { redirect: { destination: `/catalog/${resolved.brand.slug}`, permanent: true } };
+  }
+  if (resolved.badGenSlug && resolved.brand?.slug && resolved.model?.slug) {
+    return {
+      redirect: {
+        destination: `/catalog/${resolved.brand.slug}/${resolved.model.slug}`,
+        permanent: true,
+      },
+    };
+  }
+
   let cars = [];
   let total = 0;
 
@@ -69,7 +85,8 @@ export async function fetchCatalogPageProps({ params, query }) {
     brandId: resolved.brand?.id ?? null,
     modelId: resolved.model?.id ?? null,
   });
-  const carsQuery = buildCatalogCarsQuery(resolved, listSort, CATALOG_SSR_LIMIT, filterQuery);
+  const ssrLimit = catalogSsrCarsLimit(resolved);
+  const carsQuery = buildCatalogCarsQuery(resolved, listSort, ssrLimit, filterQuery);
   if (carsQuery) {
     try {
       const carsRes = await fetch(`${api}/cars?${carsQuery.toString()}`, {
