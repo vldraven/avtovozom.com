@@ -18,7 +18,6 @@ from .avito_feed import (
     default_car_type,
     default_contact_phone,
     default_region,
-    feed_ad_id_for_car,
     render_ad_xml,
     render_feed_xml,
 )
@@ -27,8 +26,9 @@ from .avito_mappings import (
     AVITO_CAR_TYPES,
     AVITO_DRIVE_TYPES,
     AVITO_REGIONS,
+    feed_ad_id_for_car,
 )
-from .listing_compose import ListingMarketingCompose, build_listing_marketing_compose
+from .listing_compose import ListingMarketingCompose
 from .models import Car, CarExternalPublication
 
 ACTIVE_FEED_STATUSES = frozenset({"pending_upload", "published"})
