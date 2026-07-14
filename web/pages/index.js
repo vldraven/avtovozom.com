@@ -1856,9 +1856,14 @@ export default function Home({ initialData = null }) {
                     <span className="catalog-card__admin-label">Администратор</span>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                       {isAdminRole(me?.role) ? (
-                        <Link href={`/staff/publish-telegram/${car.id}`} className="btn btn-secondary btn-sm">
-                          В Telegram
-                        </Link>
+                        <>
+                          <Link href={`/staff/publish-telegram/${car.id}`} className="btn btn-secondary btn-sm">
+                            В Telegram
+                          </Link>
+                          <Link href={`/staff/publish-avito/${car.id}`} className="btn btn-secondary btn-sm">
+                            На Avito
+                          </Link>
+                        </>
                       ) : null}
                       <button
                         type="button"

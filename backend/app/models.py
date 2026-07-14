@@ -349,3 +349,42 @@ class FaqItem(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class CarExternalPublication(Base):
+    """Связь объявления avtovozom с внешней площадкой (Avito Autoload)."""
+
+    __tablename__ = "car_external_publications"
+    __table_args__ = (UniqueConstraint("car_id", "channel", name="uq_car_external_publication_car_channel"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(32), default="avito", nullable=False)
+    feed_ad_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    avito_item_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    avito_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    """draft | pending_upload | published | error | deactivated"""
+    last_upload_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    compose_snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    car = relationship("Car")
+
+
+class AvitoFieldMapping(Base):
+    """Локальное значение → допустимое значение в фиде Avito."""
+
+    __tablename__ = "avito_field_mappings"
+    __table_args__ = (UniqueConstraint("entity_type", "local_value", name="uq_avito_field_mapping"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    entity_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    """brand | model | fuel | transmission | color"""
+    local_value: Mapped[str] = mapped_column(String(256), nullable=False)
+    avito_value: Mapped[str] = mapped_column(String(256), nullable=False)

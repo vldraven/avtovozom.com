@@ -620,6 +620,87 @@ class TelegramPublishOut(BaseModel):
     n8n: dict | None = None
 
 
+class AvitoComposePhotoOut(BaseModel):
+    id: int
+    storage_url: str
+    sort_order: int
+    absolute_url: str
+
+
+class AvitoPublicationOut(BaseModel):
+    status: str
+    feed_ad_id: str
+    avito_item_id: int | None = None
+    avito_url: str | None = None
+    last_error: str | None = None
+    published_at: str | None = None
+
+
+class AvitoComposeOut(BaseModel):
+    car_id: int
+    title: str
+    brand: str
+    model: str
+    generation: str | None = None
+    year: int
+    mileage_km: int | None = None
+    engine_volume_cc: int
+    horsepower: int
+    fuel_type: str | None = None
+    transmission: str | None = None
+    location_city: str | None = None
+    price_cny: float
+    description: str
+    rub_china: float | None = None
+    estimated_total_rub: float | None = None
+    canonical_path: str
+    canonical_web_url: str
+    photos: list[AvitoComposePhotoOut]
+    defaults: dict[str, str]
+    options: dict[str, list[str]]
+    mapped: dict[str, str | None]
+    warnings: list[str]
+    avito_configured: bool
+    publication: AvitoPublicationOut | None = None
+
+
+class AvitoPublishIn(BaseModel):
+    description: str = Field(..., min_length=1, max_length=12000)
+    region: str = Field(..., min_length=1, max_length=128)
+    car_type: str = Field(..., min_length=1, max_length=64)
+    body_type: str = Field(..., min_length=1, max_length=64)
+    drive_type: str = Field(..., min_length=1, max_length=64)
+    contact_phone: str = Field(..., min_length=5, max_length=32)
+    make: str = Field(..., min_length=1, max_length=128)
+    model: str = Field(..., min_length=1, max_length=128)
+    photo_ids: list[int] = Field(default_factory=list)
+    price_rub: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _cap_photo_ids(self) -> AvitoPublishIn:
+        if len(self.photo_ids) > 20:
+            raise ValueError("photo_ids: не более 20 для Avito")
+        return self
+
+
+class AvitoPublishOut(BaseModel):
+    ok: bool
+    detail: str | None = None
+    feed_ad_id: str | None = None
+    publication_status: str | None = None
+
+
+class AvitoStatusOut(BaseModel):
+    ok: bool
+    detail: str | None = None
+    publication_status: str | None = None
+    avito_item_id: int | None = None
+    avito_url: str | None = None
+    last_error: str | None = None
+    item_status: str | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
 class RegisterIn(BaseModel):
     email: str
     phone: str

@@ -6,7 +6,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .faq_defaults import DEFAULT_FAQ_ITEMS
-from .models import Car, CarBrand, CarGeneration, CarModel, FaqItem, ModelWhitelist, Role, User
+from .models import Car, CarBrand, CarGeneration, CarModel, AvitoFieldMapping, FaqItem, ModelWhitelist, Role, User
 from .security import hash_password
 
 log = logging.getLogger(__name__)
@@ -235,6 +235,60 @@ def seed_initial_data(db: Session) -> None:
         log.warning("Справочник поколений (JSON) не применён: %s", e)
     _ensure_default_generations_and_backfill(db)
     seed_faq_items(db)
+    seed_avito_field_mappings(db)
+
+
+def seed_avito_field_mappings(db: Session) -> None:
+    """Identity-маппинг брендов и базовые enum для Avito Autoload."""
+    existing = db.scalar(select(func.count(AvitoFieldMapping.id))) or 0
+    if existing > 0:
+        return
+
+    brands = db.execute(select(CarBrand.name)).scalars().all()
+    for name in brands:
+        if name and name.strip():
+            db.add(
+                AvitoFieldMapping(
+                    entity_type="brand",
+                    local_value=name.strip(),
+                    avito_value=name.strip(),
+                )
+            )
+
+    static_rows: list[tuple[str, str, str]] = [
+        ("fuel", "бензин", "Бензин"),
+        ("fuel", "дизель", "Дизель"),
+        ("fuel", "электро", "Электро"),
+        ("fuel", "гибрид", "Гибрид"),
+        ("transmission", "автомат", "Автомат"),
+        ("transmission", "механика", "Механика"),
+        ("transmission", "вариатор", "Вариатор"),
+        ("transmission", "робот", "Робот"),
+        ("color", "white", "Белый"),
+        ("color", "black", "Чёрный"),
+        ("color", "silver", "Серебристый"),
+        ("color", "gray", "Серый"),
+        ("color", "blue", "Синий"),
+        ("color", "red", "Красный"),
+        ("color", "green", "Зелёный"),
+        ("color", "brown", "Коричневый"),
+        ("color", "orange", "Оранжевый"),
+        ("color", "yellow", "Жёлтый"),
+        ("color", "purple", "Фиолетовый"),
+        ("color", "gold", "Золотистый"),
+        ("color", "beige", "Бежевый"),
+        ("color", "champagne", "Шампань"),
+        ("color", "pink", "Розовый"),
+    ]
+    for entity_type, local_value, avito_value in static_rows:
+        db.add(
+            AvitoFieldMapping(
+                entity_type=entity_type,
+                local_value=local_value,
+                avito_value=avito_value,
+            )
+        )
+    db.commit()
 
 
 def seed_faq_items(db: Session) -> None:

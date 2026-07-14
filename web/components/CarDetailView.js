@@ -125,17 +125,6 @@ export default function CarDetailView({
     return trimParamItems(car.trim).filter((it) => !skip.has(it.name));
   }, [car]);
 
-  async function loadCarDetails() {
-    setError("");
-    const res = await fetch(`${API_URL}/cars/${carId}`);
-    if (!res.ok) {
-      setError("Не удалось загрузить карточку автомобиля.");
-      return;
-    }
-    const data = await res.json();
-    setCar(data);
-  }
-
   async function loadMe(accessToken) {
     if (!accessToken) return;
     const res = await fetch(`${API_URL}/auth/me`, {
@@ -227,18 +216,39 @@ export default function CarDetailView({
   }
 
   useEffect(() => {
+    if (!carId) return;
     if (initialCar != null && String(initialCar.id) === String(carId)) {
       setCar(initialCar);
+      return;
     }
-  }, [initialCar, carId]);
+    setCar((prev) => (prev != null && String(prev.id) !== String(carId) ? null : prev));
+  }, [carId, initialCar]);
 
   useEffect(() => {
     if (!carId) return;
-    if (initialCar != null && String(initialCar.id) === String(carId)) {
-      return;
-    }
-    loadCarDetails();
+    if (initialCar != null && String(initialCar.id) === String(carId)) return;
+    let cancelled = false;
+    (async () => {
+      setError("");
+      const res = await fetch(`${API_URL}/cars/${carId}`);
+      if (cancelled) return;
+      if (!res.ok) {
+        setError("Не удалось загрузить карточку автомобиля.");
+        return;
+      }
+      const data = await res.json();
+      if (cancelled) return;
+      setCar(data);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [carId, initialCar]);
+
+  useEffect(() => {
+    setSimilarCars([]);
+    setSimilarError("");
+  }, [carId]);
 
   useEffect(() => {
     if (!car?.id || car.price_cny == null) return;
@@ -277,7 +287,8 @@ export default function CarDetailView({
   }, [car?.id, car?.price_cny]);
 
   useEffect(() => {
-    if (!car || !router.isReady) return;
+    if (!car || !router.isReady || !carId) return;
+    if (String(car.id) !== String(carId)) return;
     const bs = car.brand_slug;
     const ms = car.model_slug;
     if (!bs || !ms) return;
@@ -289,7 +300,7 @@ export default function CarDetailView({
         router.replace(canonical);
       }
     }
-  }, [car, router, pathBrandSlug, pathModelSlug]);
+  }, [car, carId, router, pathBrandSlug, pathModelSlug]);
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
@@ -731,9 +742,14 @@ export default function CarDetailView({
                   </Link>
                 )}
                 {isAdminRole(me.role) && carId != null && (
-                  <Link href={`/staff/publish-telegram/${carId}`} className="btn btn-secondary">
-                    Пост в Telegram
-                  </Link>
+                  <>
+                    <Link href={`/staff/publish-telegram/${carId}`} className="btn btn-secondary">
+                      Пост в Telegram
+                    </Link>
+                    <Link href={`/staff/publish-avito/${carId}`} className="btn btn-secondary">
+                      На Avito
+                    </Link>
+                  </>
                 )}
                 <button type="button" className="btn btn-danger" onClick={deleteListing}>
                   Удалить из каталога

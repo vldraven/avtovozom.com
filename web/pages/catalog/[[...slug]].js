@@ -440,6 +440,22 @@ export default function CatalogTreePage({ initialPayload = null }) {
     [breadcrumbItems]
   );
 
+  const detailCarId = useMemo(() => {
+    if (segments != null && isCarDetailSegments(segments)) {
+      return String(segments[2]);
+    }
+    if (initialPayload?.mode === "detail" && initialPayload.carId != null) {
+      return String(initialPayload.carId);
+    }
+    return null;
+  }, [segments, initialPayload]);
+
+  const detailInitialCar = useMemo(() => {
+    const ic = initialPayload?.mode === "detail" ? initialPayload.initialCar : null;
+    if (ic && detailCarId && String(ic.id) === detailCarId) return ic;
+    return null;
+  }, [initialPayload, detailCarId]);
+
   if (!ssrReady) {
     return (
       <div className="layout">
@@ -452,15 +468,14 @@ export default function CatalogTreePage({ initialPayload = null }) {
     );
   }
 
-  if (isCarDetailRoute) {
-    const detailCarId =
-      initialPayload?.mode === "detail" ? initialPayload.carId : String(segments[2]);
+  if (isCarDetailRoute && detailCarId) {
     return (
       <CarDetailView
+        key={detailCarId}
         carId={detailCarId}
         pathBrandSlug={segments?.[0] ?? initialPayload?.pathBrandSlug ?? null}
         pathModelSlug={segments?.[1] ?? initialPayload?.pathModelSlug ?? null}
-        initialCar={initialPayload?.mode === "detail" ? initialPayload.initialCar ?? null : null}
+        initialCar={detailInitialCar}
       />
     );
   }

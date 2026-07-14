@@ -65,6 +65,16 @@ from .che168_parser import (
     normalize_import_detail_url,
     parse_che168_detail,
 )
+from .avito_feed import AvitoComposeOverrides, MAX_AVITO_PHOTOS
+from .avito_publish import (
+    build_avito_compose_response,
+    generate_feed_xml,
+    get_publication,
+    publish_to_avito,
+    refresh_avito_status,
+    verify_feed_secret,
+)
+from .listing_compose import build_listing_marketing_compose
 from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru, russian_listing_title
 from .model_resolver import resolve_model_id_for_listing
 from .parser_cancellation import request_cancel
@@ -155,6 +165,10 @@ from .schemas import (
     ParseJobOut,
     ParserImportListingIn,
     PasswordChangeIn,
+    AvitoComposeOut,
+    AvitoPublishIn,
+    AvitoPublishOut,
+    AvitoStatusOut,
     TelegramAiDraftIn,
     TelegramAiDraftOut,
     TelegramComposeOut,
@@ -878,6 +892,53 @@ def startup() -> None:
                 "ON chats (user_id) WHERE chat_type = 'platform'"
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS car_external_publications (
+                    id SERIAL PRIMARY KEY,
+                    car_id INTEGER NOT NULL REFERENCES cars(id) ON DELETE CASCADE,
+                    channel VARCHAR(32) NOT NULL DEFAULT 'avito',
+                    feed_ad_id VARCHAR(128) NOT NULL,
+                    avito_item_id BIGINT NULL,
+                    avito_url VARCHAR(512) NULL,
+                    status VARCHAR(32) NOT NULL DEFAULT 'draft',
+                    last_upload_id VARCHAR(64) NULL,
+                    last_error TEXT NULL,
+                    compose_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    published_at TIMESTAMP NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                    updated_at TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                    CONSTRAINT uq_car_external_publication_car_channel UNIQUE (car_id, channel)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_car_external_publications_feed_ad_id "
+                "ON car_external_publications (feed_ad_id)"
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS avito_field_mappings (
+                    id SERIAL PRIMARY KEY,
+                    entity_type VARCHAR(32) NOT NULL,
+                    local_value VARCHAR(256) NOT NULL,
+                    avito_value VARCHAR(256) NOT NULL,
+                    CONSTRAINT uq_avito_field_mapping UNIQUE (entity_type, local_value)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_avito_field_mappings_entity_type "
+                "ON avito_field_mappings (entity_type)"
+            )
+        )
     db = next(get_db())
     try:
         seed_initial_data(db)
@@ -1198,6 +1259,43 @@ def _absolute_public_asset_url(storage_url: str) -> str:
         return u
     base = _public_api_origin()
     return f"{base}{u}" if u.startswith("/") else f"{base}/{u}"
+
+
+def _admin_listing_pricing(car: Car, db: Session) -> tuple[float | None, float | None]:
+    snap, _ = build_cbr_snapshot()
+    settings_row = ensure_settings_row(db)
+    rub: float | None = None
+    if snap is not None:
+        try:
+            rub = round(float(rub_china_for_car(car, snap)), 2)
+        except Exception:
+            rub = None
+    est: float | None = None
+    try:
+        pb = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
+    except Exception:
+        pb = None
+    if pb is not None:
+        est = float(pb.total_rub)
+    elif snap is not None:
+        try:
+            est = _compute_estimated_total_rub(car, settings_row, snap)
+        except Exception:
+            est = None
+    return rub, est
+
+
+def _admin_build_listing_compose(car: Car, db: Session):
+    slug_maps = _get_cached_slug_maps(db)
+    rub, est = _admin_listing_pricing(car, db)
+    return build_listing_marketing_compose(
+        car,
+        public_web_origin=_public_web_origin(),
+        slug_maps=slug_maps,
+        absolute_url_fn=_absolute_public_asset_url,
+        rub_china=rub,
+        estimated_total_rub=est,
+    )
 
 
 def _canonical_catalog_path_for_car(
@@ -2111,6 +2209,9 @@ def get_car(car_id: int, db: Session = Depends(get_db)):
         estimated_total_rub=est,
         include_trim=True,
     )
+
+
+@app.get("/public/dealers/{user_id}", response_model=DealerPublicProfileOut)
 def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
     user = (
         db.execute(select(User).where(User.id == user_id).options(joinedload(User.role)))
@@ -3425,65 +3526,35 @@ def admin_car_telegram_compose(
     _: User = Depends(require_roles("admin")),
 ):
     car = _admin_require_active_catalog_car(db, car_id)
-
-    snap, _ = build_cbr_snapshot()
-    settings_row = ensure_settings_row(db)
-    price_breakdown = None
-    try:
-        price_breakdown = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
-    except Exception:
-        price_breakdown = None
-    est: float | None = None
-    if price_breakdown is not None:
-        est = float(price_breakdown.total_rub)
-    elif snap is not None:
-        try:
-            est = _compute_estimated_total_rub(car, settings_row, snap)
-        except Exception:
-            est = None
-
-    rub: float | None = None
-    if snap is not None:
-        try:
-            rub = round(float(rub_china_for_car(car, snap)), 2)
-        except Exception:
-            rub = None
-
-    slug_maps = _get_cached_slug_maps(db)
-    path = _canonical_catalog_path_for_car(car, slug_maps)
-    listing_url = f"{_public_web_origin()}{path}"
-
-    photos_sorted = sorted(car.photos or [], key=lambda p: (p.sort_order, p.id))
+    compose = _admin_build_listing_compose(car, db)
     photos_out = [
         TelegramComposePhotoOut(
-            id=p.id,
-            storage_url=p.storage_url,
-            sort_order=p.sort_order,
-            absolute_url=_absolute_public_asset_url(p.storage_url),
+            id=p[0],
+            storage_url=p[1],
+            sort_order=p[2],
+            absolute_url=p[3],
         )
-        for p in photos_sorted
+        for p in compose.photos
     ]
-    gen = getattr(car, "generation", None)
-
     return TelegramComposeOut(
-        car_id=car.id,
-        title=car.title,
-        brand=car.brand.name,
-        model=car.model.name,
-        generation=(gen.name if gen is not None else None),
-        year=car.year,
-        mileage_km=car.mileage_km,
-        engine_volume_cc=car.engine_volume_cc,
-        horsepower=car.horsepower,
-        fuel_type=car.fuel_type,
-        transmission=car.transmission,
-        location_city=car.location_city,
-        price_cny=float(car.price_cny),
-        description=(car.description or "").strip(),
-        rub_china=rub,
-        estimated_total_rub=est,
-        canonical_path=path,
-        canonical_web_url=listing_url,
+        car_id=compose.car_id,
+        title=compose.title,
+        brand=compose.brand,
+        model=compose.model,
+        generation=compose.generation,
+        year=compose.year,
+        mileage_km=compose.mileage_km,
+        engine_volume_cc=compose.engine_volume_cc,
+        horsepower=compose.horsepower,
+        fuel_type=compose.fuel_type,
+        transmission=compose.transmission,
+        location_city=compose.location_city,
+        price_cny=compose.price_cny,
+        description=compose.description,
+        rub_china=compose.rub_china,
+        estimated_total_rub=compose.estimated_total_rub,
+        canonical_path=compose.canonical_path,
+        canonical_web_url=compose.canonical_web_url,
         photos=photos_out,
     )
 
@@ -3634,6 +3705,104 @@ def admin_car_telegram_publish(
             n8n=n8n_dict,
         )
     return TelegramPublishOut(ok=True, detail=None, n8n=n8n_dict)
+
+
+@app.get("/admin/cars/{car_id}/avito-compose", response_model=AvitoComposeOut)
+def admin_car_avito_compose(
+    car_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+    compose = _admin_build_listing_compose(car, db)
+    publication = get_publication(db, car.id)
+    data = build_avito_compose_response(compose, db=db, car=car, publication=publication)
+    return AvitoComposeOut(**data)
+
+
+@app.post("/admin/cars/{car_id}/avito/publish", response_model=AvitoPublishOut)
+def admin_car_avito_publish(
+    car_id: int,
+    payload: AvitoPublishIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+    compose = _admin_build_listing_compose(car, db)
+
+    by_photo = {p[0]: p for p in compose.photos}
+    photo_urls: list[str] = []
+    for pid in payload.photo_ids:
+        row = by_photo.get(pid)
+        if not row:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Фото id={pid} не принадлежит объявлению",
+            )
+        photo_urls.append(row[3])
+
+    description = payload.description.strip()
+    if compose.canonical_web_url and compose.canonical_web_url not in description:
+        from .avito_feed import build_description_footer
+
+        description = f"{description}{build_description_footer(compose.canonical_web_url)}".strip()
+
+    overrides = AvitoComposeOverrides(
+        description=description,
+        region=payload.region.strip(),
+        car_type=payload.car_type.strip(),
+        body_type=payload.body_type.strip(),
+        drive_type=payload.drive_type.strip(),
+        contact_phone=payload.contact_phone.strip(),
+        make=payload.make.strip(),
+        model=payload.model.strip(),
+        photo_urls=photo_urls[:MAX_AVITO_PHOTOS],
+        price_rub=payload.price_rub,
+    )
+
+    ok, detail, pub = publish_to_avito(
+        db,
+        car,
+        overrides=overrides,
+        estimated_total_rub=compose.estimated_total_rub,
+        trigger_upload=True,
+    )
+    return AvitoPublishOut(
+        ok=ok,
+        detail=detail,
+        feed_ad_id=pub.feed_ad_id,
+        publication_status=pub.status,
+    )
+
+
+@app.get("/admin/cars/{car_id}/avito/status", response_model=AvitoStatusOut)
+def admin_car_avito_status(
+    car_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    _admin_require_active_catalog_car(db, car_id)
+    pub, data = refresh_avito_status(db, car_id)
+    if pub is None:
+        return AvitoStatusOut(ok=False, detail=data.get("detail"))
+    return AvitoStatusOut(**data)
+
+
+@app.get("/integrations/avito/feed.xml")
+def public_avito_feed_xml(
+    secret: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    if not verify_feed_secret(secret):
+        raise HTTPException(status_code=403, detail="Invalid feed secret")
+    slug_maps = _get_cached_slug_maps(db)
+    xml = generate_feed_xml(
+        db,
+        public_web_origin=_public_web_origin(),
+        slug_maps=slug_maps,
+        canonical_path_fn=_canonical_catalog_path_for_car,
+    )
+    return Response(content=xml, media_type="application/xml; charset=utf-8")
 
 
 @app.get("/admin/cars/{car_id}", response_model=CarOut)
