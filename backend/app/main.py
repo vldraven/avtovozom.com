@@ -54,6 +54,7 @@ from .models import (
     Role,
     User,
     UserFavorite,
+    UserPushDevice,
     UserSession,
     UserWebAuthnCredential,
 )
@@ -159,6 +160,7 @@ from .schemas import (
     LoginIn,
     LogoutSessionIn,
     OpenChatOut,
+    OkOut,
     MeOut,
     CarModelCatalogIn,
     ModelWhitelistItem,
@@ -178,6 +180,7 @@ from .schemas import (
     PasswordResetConfirmIn,
     PasswordResetStartIn,
     ProfileUpdateIn,
+    PushDeviceRegisterIn,
     PublicRequestLeadIn,
     PublicRequestLeadOut,
     RegisterIn,
@@ -197,6 +200,11 @@ from .n8n_bot_integration import (
     verify_n8n_bot_api_secret,
 )
 from .n8n_client import n8n_webhook_post
+from .push_notify import (
+    chat_message_recipient_user_id,
+    notify_chat_message,
+    notify_new_offer,
+)
 from .telegram_notify import (
     notify_calculation_request,
     notify_new_calculation_request,
@@ -1671,6 +1679,61 @@ def me(current_user: User = Depends(get_current_user)):
         email_verified=current_user.email_verified,
         must_change_password=current_user.must_change_password,
     )
+
+
+@app.post("/devices/register", response_model=OkOut)
+def register_push_device(
+    payload: PushDeviceRegisterIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    platform = (payload.platform or "").strip().lower()[:16] or "android"
+    token = (payload.push_token or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="push_token required")
+    device_name = (payload.device_name or "").strip()[:128]
+    row = db.execute(
+        select(UserPushDevice).where(
+            UserPushDevice.user_id == current_user.id,
+            UserPushDevice.push_token == token,
+        )
+    ).scalar_one_or_none()
+    if row:
+        row.platform = platform
+        row.device_name = device_name
+        row.updated_at = datetime.utcnow()
+    else:
+        db.add(
+            UserPushDevice(
+                user_id=current_user.id,
+                platform=platform,
+                push_token=token,
+                device_name=device_name,
+            )
+        )
+    db.commit()
+    return OkOut(ok=True)
+
+
+@app.delete("/devices/{push_token:path}", response_model=OkOut)
+def unregister_push_device(
+    push_token: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    token = (push_token or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="push_token required")
+    row = db.execute(
+        select(UserPushDevice).where(
+            UserPushDevice.user_id == current_user.id,
+            UserPushDevice.push_token == token,
+        )
+    ).scalar_one_or_none()
+    if row:
+        db.delete(row)
+        db.commit()
+    return OkOut(ok=True)
 
 
 def _favorite_car_ids(db: Session, user_id: int) -> list[int]:
@@ -3569,7 +3632,7 @@ def admin_car_telegram_ai_draft(
     car = _admin_require_active_catalog_car(db, car_id)
     webhook_url = os.getenv("N8N_TELEGRAM_AI_WEBHOOK_URL")
     webhook_secret = os.getenv("N8N_TELEGRAM_AI_WEBHOOK_SECRET")
-    timeout = float(os.getenv("N8N_TELEGRAM_AI_TIMEOUT_SEC", "90"))
+    timeout = float(os.getenv("N8N_TELEGRAM_AI_TIMEOUT_SEC", "120"))
 
     slug_maps = _get_cached_slug_maps(db)
     path = _canonical_catalog_path_for_car(car, slug_maps)
@@ -4803,6 +4866,16 @@ def create_dealer_offer(
     db.add(offer)
     db.commit()
     db.refresh(offer)
+
+    if request.user_id:
+        dealer_label = (current_user.company_name or current_user.display_name or current_user.full_name or "Дилер").strip()
+        notify_new_offer(
+            db,
+            recipient_user_id=request.user_id,
+            request_id=request.id,
+            dealer_label=dealer_label,
+        )
+
     return DealerOfferOut.model_validate(offer).model_copy(update={"chat_id": None})
 
 
@@ -5357,6 +5430,11 @@ async def send_chat_message(
             attachment_name=att_name,
             messages_url=_platform_chat_messages_url(chat.id),
         )
+
+    recipient_id = chat_message_recipient_user_id(chat, current_user.id)
+    if recipient_id:
+        preview = text_clean or (att_name or "Вложение")
+        notify_chat_message(db, recipient_user_id=recipient_id, chat_id=chat.id, preview=preview)
 
     return msg
 

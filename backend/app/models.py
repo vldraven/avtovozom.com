@@ -270,6 +270,20 @@ class UserFavorite(Base):
     car = relationship("Car")
 
 
+class UserPushDevice(Base):
+    __tablename__ = "user_push_devices"
+    __table_args__ = (UniqueConstraint("user_id", "push_token", name="uq_user_push_device"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(16), default="android")
+    push_token: Mapped[str] = mapped_column(Text, nullable=False)
+    device_name: Mapped[str] = mapped_column(String(128), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+
 class CalculationRequest(Base):
     __tablename__ = "calculation_requests"
 

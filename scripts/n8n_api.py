@@ -80,12 +80,12 @@ def _merge_set_assignments(remote_params: dict[str, Any], local_params: dict[str
 def merge_workflow(remote: dict[str, Any], local: dict[str, Any]) -> dict[str, Any]:
     """Обновить parameters узлов по имени; сохранить id/credentials/webhookId на сервере."""
     remote_by_name = {node["name"]: node for node in remote.get("nodes", [])}
+    merged_nodes: list[dict[str, Any]] = []
 
     for local_node in local.get("nodes", []):
         name = local_node["name"]
         if name not in remote_by_name:
             remote_by_name[name] = local_node
-            continue
         remote_node = remote_by_name[name]
         local_params = local_node.get("parameters", {})
         remote_params = remote_node.get("parameters", {})
@@ -93,17 +93,82 @@ def merge_workflow(remote: dict[str, Any], local: dict[str, Any]) -> dict[str, A
             remote_node["parameters"] = _merge_set_assignments(remote_params, local_params)
         else:
             remote_node["parameters"] = local_params or remote_params
-        for field in ("typeVersion", "notes", "notesInFlow", "type"):
+        for field in ("typeVersion", "notes", "notesInFlow", "type", "position"):
             if field in local_node:
                 remote_node[field] = local_node[field]
+        merged_nodes.append(remote_node)
 
     return {
         "name": local.get("name", remote["name"]),
-        "nodes": list(remote_by_name.values()),
+        "nodes": merged_nodes,
         "connections": local.get("connections", remote.get("connections", {})),
         "settings": local.get("settings", remote.get("settings", {})),
         "staticData": remote.get("staticData"),
     }
+
+
+def _workflow_put_body(workflow: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": workflow["name"],
+        "nodes": workflow["nodes"],
+        "connections": workflow.get("connections", {}),
+        "settings": workflow.get("settings", {}),
+        "staticData": workflow.get("staticData"),
+    }
+
+
+def _node_credentials(node: dict[str, Any], credential_type: str) -> dict[str, Any] | None:
+    creds = node.get("credentials") or {}
+    value = creds.get(credential_type)
+    if not isinstance(value, dict):
+        return None
+    cred_id = str(value.get("id") or "").strip()
+    if not cred_id or _is_placeholder(cred_id):
+        return None
+    return value
+
+
+def copy_node_credentials(
+    *,
+    target_workflow_id: str,
+    target_node_name: str,
+    source_workflow_name: str,
+    source_node_name: str,
+    credential_type: str = "openAiApi",
+) -> bool:
+    """Скопировать credential с одного workflow на другой (если на целевом узле placeholder)."""
+    source_meta = find_workflow_by_name(source_workflow_name)
+    if not source_meta:
+        return False
+
+    source_wf = get_workflow(str(source_meta["id"]))
+    target_wf = get_workflow(target_workflow_id)
+
+    source_cred: dict[str, Any] | None = None
+    for node in source_wf.get("nodes", []):
+        if node.get("name") == source_node_name:
+            source_cred = _node_credentials(node, credential_type)
+            break
+    if not source_cred:
+        return False
+
+    changed = False
+    for node in target_wf.get("nodes", []):
+        if node.get("name") != target_node_name:
+            continue
+        if _node_credentials(node, credential_type):
+            return False
+        creds = dict(node.get("credentials") or {})
+        creds[credential_type] = source_cred
+        node["credentials"] = creds
+        changed = True
+        break
+
+    if not changed:
+        return False
+
+    update_workflow(target_workflow_id, _workflow_put_body(target_wf))
+    return True
 
 
 def update_workflow(workflow_id: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -142,7 +207,16 @@ def sync_workflow(file_path: Path, dry_run: bool = False) -> None:
         print(json.dumps(merged, ensure_ascii=False, indent=2)[:8000])
         return
 
-    result = update_workflow(str(remote_meta["id"]), merged)
+    workflow_id = str(remote_meta["id"])
+    result = update_workflow(workflow_id, merged)
+    copied_cred = False
+    if name == "Avtovozom — Telegram текст (ИИ)":
+        copied_cred = copy_node_credentials(
+            target_workflow_id=workflow_id,
+            target_node_name="OpenAI Chat Model",
+            source_workflow_name="Avtovozom — Telegram консультант (бот)",
+            source_node_name="OpenAI Chat Model",
+        )
     print(
         json.dumps(
             {
@@ -150,6 +224,7 @@ def sync_workflow(file_path: Path, dry_run: bool = False) -> None:
                 "id": result.get("id"),
                 "name": result.get("name"),
                 "updatedNodes": [n["name"] for n in local.get("nodes", [])],
+                "copiedOpenAiCredential": copied_cred,
             },
             ensure_ascii=False,
         )

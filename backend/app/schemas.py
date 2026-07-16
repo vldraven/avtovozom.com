@@ -868,3 +868,13 @@ class FaqItemUpdateIn(BaseModel):
     answer: str | None = Field(default=None, min_length=1)
     sort_order: int | None = None
     is_published: bool | None = None
+
+
+class PushDeviceRegisterIn(BaseModel):
+    platform: str = Field(..., min_length=2, max_length=16)
+    push_token: str = Field(..., min_length=8, max_length=512)
+    device_name: str | None = None
+
+
+class OkOut(BaseModel):
+    ok: bool = True

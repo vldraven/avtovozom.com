@@ -54,13 +54,13 @@
             {
               "id": "a1",
               "name": "systemPrompt",
-              "value": "Ты пишешь короткий пост на русском для Telegram про объявление авто из присланных данных. Используй только факты из JSON — ничего не выдумывай. В конце добавь перенос строки и явную строку со ссылкой listing_web_url. Без лишних водяных символов, без заголовков «Ответ модели».",
+              "value": "Ты пишешь короткий продающий пост на русском для Telegram про объявление авто.\n\nПравила фактов:\n- Цену, год, пробег, комплектацию, двигатель и прочие данные ЭТОГО объявления бери только из JSON. Не выдумывай цифры и характеристики лота.\n- Если в style_hint просят описание/sales-поинты модели или «найди в интернете» — обязательно используй встроенный Web Search по марке/модели/поколению и опирайся на найденное. Не подставляй выдуманные «тезисы из головы», если поиск доступен.\n- Не вставляй фото, markdown-картинки и URL чужих фото в текст.\n- В конце добавь перенос строки и явную строку со ссылкой listing_web_url из JSON.\n- Соблюдай style_hint, если он передан.\n- Без заголовков вроде «Ответ модели», без водяных символов.",
               "type": "string"
             },
             {
               "id": "a2",
               "name": "userContent",
-              "value": "={{ 'Собери финальный текст одного сообщения Telegram (можно переносы строк). Инструмент JSON:\\n\\n' + JSON.stringify(($json.body) || {}, null, 2) }}",
+              "value": "={{ (() => { const body = ($json.body) || {}; const hint = (body.style_hint || '').trim(); const car = body.car || {}; const brand = car.brand || ''; const model = car.model || ''; const gen = car.generation || ''; const year = car.year || ''; const searchHint = [brand, model, gen, year].filter(Boolean).join(' '); let text = 'Собери финальный текст одного сообщения Telegram (можно переносы строк).\\n'; if (hint) text += 'Пожелания к стилю и содержанию (style_hint):\\n' + hint + '\\n\\n'; if (searchHint) text += 'Для Web Search по sales-поинтам модели используй запрос вроде: \"' + searchHint + ' обзор плюсы особенности\".\\n\\n'; text += 'Инструмент JSON объявления:\\n\\n' + JSON.stringify(body, null, 2); return text; })() }}",
               "type": "string"
             }
           ]
@@ -75,35 +75,51 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/chat/completions",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
-            },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'gpt-5.5', messages: [ { role: 'system', content: $json.systemPrompt }, { role: 'user', content: $json.userContent } ] }) }}",
-        "options": {}
+        "promptType": "define",
+        "text": "={{ $json.userContent }}",
+        "options": {
+          "systemMessage": "={{ $json.systemPrompt }}"
+        }
       },
-      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa05",
-      "name": "OpenAI",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [980, 420],
-      "notesInFlow": true,
-      "notes": "Задайте в n8n переменную OPENAI_API_KEY. Или замените заголовок на credential."
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa08",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [980, 420]
     },
     {
       "parameters": {
-        "jsCode": "const j = items[0].json;\nconst raw = j?.choices?.[0]?.message?.content;\nconst text = String(raw ?? '').trim();\nreturn [{ json: { text } }];"
+        "model": {
+          "__rl": true,
+          "value": "gpt-5.5",
+          "mode": "list",
+          "cachedResultName": "gpt-5.5"
+        },
+        "responsesApiEnabled": true,
+        "builtInTools": {
+          "webSearch": {
+            "searchContextSize": "medium"
+          }
+        },
+        "options": {}
+      },
+      "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa09",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [980, 620],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "Credentials OpenAI — в UI n8n. Responses API + Web Search."
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String(items[0].json.output ?? '').trim();\nif (!raw) {\n  const err = items[0].json?.error?.message || items[0].json?.message || 'Пустой ответ AI Agent';\n  throw new Error(String(err).slice(0, 400));\n}\nreturn [{ json: { text: raw } }];"
       },
       "id": "aeb5d3c1-eb9a-4b4c-91d9-aaaaaaaaaa06",
       "name": "Из ответа в text",
@@ -134,10 +150,15 @@
         [{ "node": "Respond Forbidden", "type": "main", "index": 0 }]
       ]
     },
-    "Промпт": { "main": [[{ "node": "OpenAI", "type": "main", "index": 0 }]] },
-    "OpenAI": { "main": [[{ "node": "Из ответа в text", "type": "main", "index": 0 }]] },
+    "Промпт": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "AI Agent": { "main": [[{ "node": "Из ответа в text", "type": "main", "index": 0 }]] },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+    },
     "Из ответа в text": { "main": [[{ "node": "Respond текст", "type": "main", "index": 0 }]] }
   },
-  "settings": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
   "staticData": null
 }

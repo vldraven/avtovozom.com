@@ -23,7 +23,7 @@
 | `PUBLIC_API_ORIGIN` | да для продакшена | В **абсолютные URL фото** (`https://api.../media/...`). Telegram загружает картинки по этим HTTPS-ссылкам | Обычно **тот же origin**, что и публичный API: если фронт ходит на `https://api.avtovozom.com`, сюда тоже **`https://api.avtovozom.com`** (без `/` в конце). Локально: `http://localhost:8000`. |
 | `N8N_TELEGRAM_AI_WEBHOOK_URL` | для ИИ-текста | Production URL второго узла Webhook workflow «AI draft» | После включения workflow в n8n: узел **Webhook** → вкладка **Production URL** → скопировать полный HTTPS URL. Это не Test URL из «Listen for test». |
 | `N8N_TELEGRAM_AI_WEBHOOK_SECRET` | сильно рекомендуется | Серый общий секрет; бэкенд шлёт его в заголовке `X-N8N-Webhook-Secret` | Сгенерируйте длинную случайную строку, например: `openssl rand -hex 32`. **Точно такое же значение** пропишите в n8n (см. ниже `$env`). |
-| `N8N_TELEGRAM_AI_TIMEOUT_SEC` | нет | Таймаут HTTP к n8n (сек.), по умолчанию у кода **90** | Оставить `90` или уменьшить/увеличить при медленном ИИ. |
+| `N8N_TELEGRAM_AI_TIMEOUT_SEC` | нет | Таймаут HTTP к n8n (сек.), по умолчанию у кода **120** | С web_search генерация дольше; при обрывах поднимите до `150`–`180`. |
 | `N8N_TELEGRAM_PUBLISH_WEBHOOK_URL` | для отправки в канал | Production URL второго workflow «publish» | Как для AI URL, но из второго workflow. |
 | `N8N_TELEGRAM_PUBLISH_WEBHOOK_SECRET` | сильно рекомендуется | Отдельный секрет под публикацию (не обязан совпадать с AI-секретом) | Так же `openssl rand -hex 32`, тот же принцип: один и тот же на backend и в n8n для этого webhook. |
 | `N8N_TELEGRAM_PUBLISH_TIMEOUT_SEC` | нет | По умолчанию **45** с | При сложном медиа можно поднять. |
@@ -44,7 +44,6 @@
 |------------------|-----------|
 | `AVTOVOZOM_AI_WEBHOOK_SECRET` | Должна совпадать с **`N8N_TELEGRAM_AI_WEBHOOK_SECRET`** в бэкенде. |
 | `AVTOVOZOM_PUBLISH_WEBHOOK_SECRET` | Должна совпадать с **`N8N_TELEGRAM_PUBLISH_WEBHOOK_SECRET`**. |
-| `OPENAI_API_KEY` | API-ключ OpenAI (или вашего совместимого провайдера), если используете узел HTTP Request к `api.openai.com`. |
 | `TELEGRAM_BOT_TOKEN` | **Обязательно для альбома (2+ фото):** тот же токен, что в credential Telegram. Узел **Данные для поста** (Set) читает `$env` и передаёт `botToken` дальше — Code в n8n 2.1.4 **не видит** `$env` и `getCredentials`. |
 | `TELEGRAM_CHANNEL_ID` | `@username_канала` или числовой id `-100…` — подставляется в **Chat ID** нод через `$env`; можно зафиксировать id канала прямо в нодах, тогда переменную не задают. |
 
@@ -102,6 +101,8 @@ services:
 
 Импортируйте файл **[n8n-telegram-ai-draft.workflow.json](n8n-telegram-ai-draft.workflow.json)**.
 
+Workflow вызывает **AI Agent** + **OpenAI Chat Model** (credential **OpenAI** в UI n8n, как у бота-консультанта). В узле OpenAI Chat Model включены **Use Responses API** и встроенный **Web Search** — модель может искать sales-поинты модели в интернете. Факты конкретного лота (цена, год, пробег) по-прежнему только из JSON webhook. **`OPENAI_API_KEY` в env n8n не нужен.**
+
 После импорта откройте узел **Webhook AI**: при конфликте пути (`avtovozom-telegram-ai`) n8n может предложить другой — тогда в `.env` бэкенда укажите **полный Production URL**, который покажет интерфейс n8n после активации workflow.
 
 ---
@@ -139,7 +140,7 @@ services:
 
 ## 6. После деплоя
 
-1. Импорт обоих JSON → в **«Настройки Telegram»** укажите chat ID и bot token; credential Telegram — у двух Telegram-нод; для ИИ — `OPENAI_API_KEY` в env.
+1. Импорт обоих JSON → в **«Настройки Telegram»** укажите chat ID и bot token; credential Telegram — у двух Telegram-нод; для ИИ — credential **OpenAI** в узле **OpenAI Chat Model** workflow «Telegram текст (ИИ)».
 2. Включить **Production** режим webhook, активировать workflows.
 3. Скопировать **Production webhook URL** каждого в `.env` бэкенда.
 4. Секреты: одинаковые пары **`N8N_TELEGRAM_AI_WEBHOOK_SECRET` ↔ `AVTOVOZOM_AI_WEBHOOK_SECRET`** и **`…PUBLISH…` ↔ `…PUBLISH…`** в n8n.
@@ -151,6 +152,6 @@ services:
 
 ## 7. Замечания по безопасности и типичные проблемы
 
-- Выражения вроде `{{ $env.OPENAI_API_KEY }}` в некоторых установках отключены политикой n8n: тогда добавьте credentials **Header Auth** в узле **OpenAI** или включите переменные окружения для workflow в конфигурации вашего сервера n8n (см. документацию вашей версии).
+- Выражения вроде `{{ $env.OPENAI_API_KEY }}` в workflow ИИ **больше не используются** — ключ OpenAI хранится в credential узла **OpenAI Chat Model**.
 - Если в ответ админке приходит **«Forbidden»**, проверьте совпадение заголовка `X-N8N-Webhook-Secret` между бэкендом и переменными `AVTOVOZOM_*_WEBHOOK_SECRET` в n8n (без пробелов по краям).
 - Если Telegram пишет **«Wrong file …»** или не качает фото — чаще всего `PUBLIC_API_ORIGIN` на API указывает не ту схему/домен (должен быть доступен Telegram по публичному HTTPS).
