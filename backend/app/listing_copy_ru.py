@@ -87,25 +87,91 @@ def normalize_latin_listing_title(s: str | None) -> str:
     return t
 
 
-def english_listing_title(brand: str, model: str, year: int, series_raw: str | None = None) -> str:
-    """Краткий заголовок на английском: Brand Model [Trim] [Year]."""
+def _latin_trim_from_sources(
+    brand: str,
+    model: str,
+    year: int,
+    raw_title: str | None,
+    series_raw: str | None,
+) -> str:
+    """Комплектация латиницей: из объявления без марки/модели/года."""
+    best = ""
+    for src in (raw_title, series_raw):
+        if not src or title_looks_corrupted(src):
+            continue
+        if title_looks_like_global_seo_english(src):
+            continue
+        if title_is_mostly_cyrillic(src):
+            continue
+        c = normalize_latin_listing_title(str(src).strip())
+        if not c or not title_has_usable_latin(c) or title_contains_cjk(c):
+            continue
+        if len(c) > len(best):
+            best = c
+    if not best:
+        return ""
+
+    blob = best
     b = (brand or "").strip()
     m = (model or "").strip()
-    trim = (series_raw or "").strip()
+    y = int(year) if year else 0
+
+    if b:
+        blob = re.sub(re.escape(b), " ", blob, flags=re.IGNORECASE)
+    if m:
+        blob = re.sub(re.escape(m), " ", blob, flags=re.IGNORECASE)
+    if m:
+        # «3 Series» → убрать отдельное «3» из «3 2022 320Li»
+        head = m.split()[0]
+        if head and re.fullmatch(r"\d+[A-Za-z]?", head):
+            blob = re.sub(rf"\b{re.escape(head)}\b", " ", blob, flags=re.IGNORECASE)
+    if y:
+        blob = re.sub(rf"\b{y}\b", " ", blob)
+    blob = re.sub(
+        r"\b(used|for sale|near me|second hand|china used cars)\b",
+        " ",
+        blob,
+        flags=re.IGNORECASE,
+    )
+    blob = re.sub(r"\s+", " ", blob).strip(" -·,，")
+    return blob
+
+
+def catalog_english_listing_title(
+    brand: str,
+    model: str,
+    year: int,
+    raw_title: str | None = None,
+    series_raw: str | None = None,
+) -> str:
+    """
+    Заголовок каталога: Brand Model Year [Trim на латинице].
+    Марка и модель — из справочника (англ.), комплектация — из объявления.
+    """
+    b = (brand or "").strip()
+    m = (model or "").strip()
     y = int(year) if year else 0
     parts: list[str] = []
     if b:
         parts.append(b)
     if m and m.lower() not in (b.lower() if b else ""):
         parts.append(m)
-    if trim:
-        trim = normalize_latin_listing_title(trim)
-        blob = " ".join(parts).lower()
-        if trim and trim.lower() not in blob and title_has_usable_latin(trim):
-            parts.append(trim)
-    if y and str(y) not in " ".join(parts):
+    if y:
         parts.append(str(y))
-    return " ".join(parts) if parts else "Car"
+    trim = _latin_trim_from_sources(b, m, y, raw_title, series_raw)
+    if trim:
+        core = " ".join(parts).lower()
+        if trim.lower() not in core:
+            parts.append(trim)
+    title = " ".join(parts).strip()
+    if len(title) > 180:
+        title = title[:177].rsplit(" ", 1)[0] + "…"
+    return title or "Car"
+
+
+def english_listing_title(brand: str, model: str, year: int, series_raw: str | None = None) -> str:
+    """Краткий заголовок: Brand Model Year [Trim]."""
+    return catalog_english_listing_title(brand, model, year, series_raw=series_raw)
 
 
 def russian_listing_title(brand: str, model: str, year: int) -> str:
@@ -163,27 +229,14 @@ def pick_listing_title(
     translated: str | None = None,
 ) -> str:
     """
-    Итоговый title: латиница/цифры (Brand Model Trim), без китайского и без перевода на русский.
+    Итоговый title: Brand Model Year + комплектация на латинице, без китайского и кириллицы.
     """
-    for candidate in (raw_title, series_raw):
-        if not candidate:
-            continue
-        if title_looks_corrupted(candidate):
-            continue
-        if title_looks_like_global_seo_english(candidate):
-            continue
-        if title_is_mostly_cyrillic(candidate):
-            continue
-        c = normalize_latin_listing_title(str(candidate).strip())
-        if not c or not title_has_usable_latin(c):
-            continue
-        if len(c) > 180:
-            c = c[:177].rsplit(" ", 1)[0] + "…"
-        if title_contains_cjk(c):
-            continue
-        return c
+    title = catalog_english_listing_title(
+        brand, model, year, raw_title=raw_title, series_raw=series_raw
+    )
+    if title != "Car":
+        return title
 
-    # translated только если без кириллицы и без иероглифов
     if translated and not title_looks_corrupted(translated):
         c = normalize_latin_listing_title(str(translated).strip())
         if (
@@ -193,11 +246,11 @@ def pick_listing_title(
             and not title_is_mostly_cyrillic(c)
             and not title_contains_cjk(c)
         ):
-            if len(c) > 180:
-                c = c[:177].rsplit(" ", 1)[0] + "…"
-            return c
+            return catalog_english_listing_title(
+                brand, model, year, raw_title=c, series_raw=series_raw
+            )
 
-    return english_listing_title(brand, model, year, series_raw)
+    return catalog_english_listing_title(brand, model, year, series_raw=series_raw)
 
 
 def pick_title_ru(

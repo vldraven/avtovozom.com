@@ -180,16 +180,27 @@ class ListingCopyRuTests(unittest.TestCase):
         raw = "BMW X5 xDrive40i M Sport"
         self.assertEqual(
             pick_listing_title("BMW", "X5", 2021, raw, translated="БМВ Х5 хДрайв40и М Спорт"),
-            raw,
+            "BMW X5 2021 xDrive40i M Sport",
         )
 
     def test_strips_chinese_from_mixed_title(self):
         from app.listing_copy_ru import pick_listing_title
 
         raw = "马自达CX-5 2021款 2.0L 自动两驱智慧型"
-        self.assertEqual(pick_listing_title("Mazda", "CX-5", 2021, raw), "CX-5 2021 2.0L")
+        self.assertEqual(pick_listing_title("Mazda", "CX-5", 2021, raw), "Mazda CX-5 2021 2.0L")
         raw2 = "宝马X1 2023款 sDrive20Li X设计套装"
-        self.assertEqual(pick_listing_title("BMW", "X1", 2023, raw2), "X1 2023 sDrive20Li X")
+        self.assertEqual(
+            pick_listing_title("BMW", "X1", 2023, raw2),
+            "BMW X1 2023 sDrive20Li X",
+        )
+
+    def test_bmw_3_series_trim_title(self):
+        from app.listing_copy_ru import pick_listing_title
+
+        self.assertEqual(
+            pick_listing_title("BMW", "3 Series", 2022, "3 2022 320Li M"),
+            "BMW 3 Series 2022 320Li M",
+        )
 
 
 if __name__ == "__main__":
