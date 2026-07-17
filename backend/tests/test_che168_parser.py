@@ -145,6 +145,21 @@ class Che168ParserCompletenessTests(unittest.TestCase):
         self.assertFalse(_parse_is_complete(parsed))
 
 
+class EngineVolumeParseTests(unittest.TestCase):
+    def test_320li_does_not_parse_as_20l(self):
+        from app.che168_parser import _parse_engine_volume_cc
+
+        self.assertIsNone(_parse_engine_volume_cc("宝马320Li 2023款 sDrive20Li"))
+        self.assertEqual(_parse_engine_volume_cc("2.0T 156 hp"), 2000)
+        self.assertEqual(_parse_engine_volume_cc("1.6L 自动"), 1600)
+
+    def test_normalize_fixes_10x_parser_bug(self):
+        from app.engine_volume_util import normalize_passenger_engine_volume_cc
+
+        self.assertEqual(normalize_passenger_engine_volume_cc(20000), 2000)
+        self.assertEqual(normalize_passenger_engine_volume_cc(2000), 2000)
+
+
 class ListingCopyRuTests(unittest.TestCase):
     def test_global_seo_title_rejected(self):
         from app.listing_copy_ru import pick_listing_title, title_looks_like_global_seo_english

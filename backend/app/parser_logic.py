@@ -17,6 +17,7 @@ from .che168_parser import (
     parse_che168_listing_links,
     source_listing_id_from_url,
 )
+from .engine_volume_util import normalize_passenger_engine_volume_cc
 from .listing_copy_ru import basic_neutral_description_ru, pick_listing_title
 from .indexnow import submit_car as _indexnow_submit_car
 from .body_colors import label_for_slug
@@ -193,7 +194,7 @@ def _insert_car_from_parsed(
         title=title_en,
         description=desc_ru,
         year=parsed.year or 2020,
-        engine_volume_cc=parsed.engine_volume_cc or 0,
+        engine_volume_cc=normalize_passenger_engine_volume_cc(parsed.engine_volume_cc) or 0,
         horsepower=parsed.horsepower or 0,
         mileage_km=parsed.mileage_km,
         fuel_type=fuel_ru,
@@ -297,7 +298,7 @@ def _revive_inactive_car_from_parsed(
     car.title = title_en
     car.description = desc_ru
     car.year = parsed.year or 2020
-    car.engine_volume_cc = parsed.engine_volume_cc or 0
+    car.engine_volume_cc = normalize_passenger_engine_volume_cc(parsed.engine_volume_cc) or 0
     car.horsepower = parsed.horsepower or 0
     car.mileage_km = parsed.mileage_km
     car.fuel_type = fuel_ru

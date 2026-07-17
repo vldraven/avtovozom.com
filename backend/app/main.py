@@ -97,6 +97,7 @@ from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_
 from .car_list_filters import apply_transmission_filter, cny_bounds_from_rub_bounds
 from .body_colors import BODY_COLOR_OPTIONS, label_for_slug, slug_from_form
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
+from .engine_volume_util import normalize_passenger_engine_volume_cc
 from .customs_calc import ensure_settings_row, run_estimate, validate_config_yaml
 from .additional_expenses import (
     default_additional_expenses_json,
@@ -394,7 +395,7 @@ def _estimate_fingerprint(row: CustomsCalcSettings) -> int:
 def _get_etc_customs_rubs(car: Car, row: CustomsCalcSettings) -> tuple[float, float, float] | None:
     engine_type = _car_engine_type_for_calc(car)
     age_group = _car_age_group_for_calc(car)
-    engine_capacity = max(0, int(car.engine_volume_cc or 0))
+    engine_capacity = normalize_passenger_engine_volume_cc(int(car.engine_volume_cc or 0))
     if engine_type != "electric":
         engine_capacity = max(50, engine_capacity)
     power = max(1, int(car.horsepower or 1))
@@ -609,7 +610,7 @@ def _car_to_out(
         description=car.description,
         year=car.year,
         mileage_km=car.mileage_km,
-        engine_volume_cc=car.engine_volume_cc,
+        engine_volume_cc=normalize_passenger_engine_volume_cc(car.engine_volume_cc),
         horsepower=car.horsepower,
         fuel_type=car.fuel_type,
         transmission=car.transmission,

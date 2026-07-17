@@ -24,7 +24,10 @@ DONGCHEDI_USEDCAR_RE = re.compile(r"(?:www\.)?dongchedi\.com/usedcar/(\d+)", re.
 MOBILE_CHE168_INFOID_RE = re.compile(r"[?&]infoid=(\d+)", re.IGNORECASE)
 GLOBAL_CHE168_CARINFO_API = "https://globalapi.che168.com/api/v1/carinfo/{infoid}"
 YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)")
-ENGINE_L_RE = re.compile(r"([0-9]{1,2}(?:\.[0-9])?)\s*L", re.IGNORECASE)
+ENGINE_L_RE = re.compile(
+    r"([0-9]{1,2}(?:\.[0-9])?)\s*L(?![a-zA-Z])",
+    re.IGNORECASE,
+)
 HORSEPOWER_RE = re.compile(r"([0-9]{2,4})\s*(马力|匹|hp|ps)", re.IGNORECASE)
 MILEAGE_WAN_KM_RE = re.compile(r"([0-9]{1,3}(?:\.[0-9])?)\s*万\s*公里", re.IGNORECASE)
 MILEAGE_KM_RE = re.compile(r"([0-9]{2,6})\s*公里", re.IGNORECASE)
@@ -321,13 +324,13 @@ def _parse_engine_volume_cc(s: str | None) -> int | None:
     # 2.0T -> 2000
     m = re.search(r"(\d\.\d)\s*T", s, re.I)
     if m:
-        return int(round(float(m.group(1)) * 1000))
-    # 1.6L -> 1600
+        return normalize_passenger_engine_volume_cc(int(round(float(m.group(1)) * 1000)))
+    # 1.6L -> 1600 (не «20L» в «320Li» — L не перед буквой)
     m = ENGINE_L_RE.search(s)
     if not m:
         return None
     liters = float(m.group(1))
-    return int(round(liters * 1000))
+    return normalize_passenger_engine_volume_cc(int(round(liters * 1000)))
 
 
 def _parse_horsepower(s: str | None) -> int | None:
