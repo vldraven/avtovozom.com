@@ -168,6 +168,14 @@ class ListingCopyRuTests(unittest.TestCase):
             raw,
         )
 
+    def test_strips_chinese_from_mixed_title(self):
+        from app.listing_copy_ru import pick_listing_title
+
+        raw = "马自达CX-5 2021款 2.0L 自动两驱智慧型"
+        self.assertEqual(pick_listing_title("Mazda", "CX-5", 2021, raw), "CX-5 2021 2.0L")
+        raw2 = "宝马X1 2023款 sDrive20Li X设计套装"
+        self.assertEqual(pick_listing_title("BMW", "X1", 2023, raw2), "X1 2023 sDrive20Li X")
+
 
 if __name__ == "__main__":
     unittest.main()

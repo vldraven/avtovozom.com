@@ -202,11 +202,31 @@ async function sleep(ms) {
 }
 
 async function fetchJob(jobId) {
+  const stored = getStoredToken();
+  if (stored) token = stored;
   const res = await fetch(`${API_URL}/admin/parser/jobs/${jobId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (res.status === 401) {
+    return {
+      status: "failed",
+      message: "Сессия истекла — войдите снова и перезапустите обход",
+      id: jobId,
+      authError: true,
+    };
+  }
   if (!res.ok) return { status: "failed", message: "Не удалось получить статус задачи", id: jobId };
   return res.json();
+}
+
+/** Строка исчерпала попытки в этом обходе — переходим к следующей ссылке. */
+function markRowFailedExhausted(rowId, attempts, message, jobId = null) {
+  patchRow(rowId, {
+    status: "failed",
+    attempts: Math.max(attempts, IMPORT_PLAN_MAX_RETRIES),
+    message: message || "Ошибка импорта",
+    jobId,
+  });
 }
 
 async function pollJob(jobId) {
@@ -365,10 +385,8 @@ async function finishActiveJobsIfAny() {
 
 async function processRow(seed) {
   let attempts = Number(seed.attempts) || 0;
-  // If already mid-retries from a previous run, continue counting up
-  let done = false;
 
-  while (!done && attempts < IMPORT_PLAN_MAX_RETRIES && !stopRequested) {
+  while (attempts < IMPORT_PLAN_MAX_RETRIES && !stopRequested) {
     attempts += 1;
     const current = state.rows.find((r) => r.id === seed.id) || seed;
     patchRow(seed.id, {
@@ -398,25 +416,19 @@ async function processRow(seed) {
     if (!job.id || job.status === "failed") {
       const msg = job.message || "Ошибка запуска";
       if (job.authError) {
-        patchRow(seed.id, { status: "failed", attempts, message: msg, jobId: null });
-        setState({
-          error: msg,
-          banner: "Обход остановлен: нужна повторная авторизация.",
-        });
-        stopRequested = true;
+        markRowFailedExhausted(seed.id, attempts, msg, null);
         return;
       }
       if (attempts >= IMPORT_PLAN_MAX_RETRIES) {
-        patchRow(seed.id, { status: "failed", attempts, message: msg, jobId: null });
-        done = true;
-      } else {
-        patchRow(seed.id, {
-          status: "pending",
-          attempts,
-          message: `${msg} · повтор ${attempts + 1}/${IMPORT_PLAN_MAX_RETRIES}…`,
-        });
-        await sleep(800);
+        markRowFailedExhausted(seed.id, attempts, msg, null);
+        return;
       }
+      patchRow(seed.id, {
+        status: "pending",
+        attempts,
+        message: `${msg} · повтор ${attempts + 1}/${IMPORT_PLAN_MAX_RETRIES}…`,
+      });
+      await sleep(800);
       continue;
     }
 
@@ -447,22 +459,25 @@ async function processRow(seed) {
         message: finished.message || "Готово",
         jobId: job.id,
       });
-      done = true;
-    } else {
-      const msg = finished.message || "Ошибка импорта";
-      if (attempts >= IMPORT_PLAN_MAX_RETRIES) {
-        patchRow(seed.id, { status: "failed", attempts, message: msg, jobId: job.id });
-        done = true;
-      } else {
-        patchRow(seed.id, {
-          status: "pending",
-          attempts,
-          message: `${msg} · повтор ${attempts + 1}/${IMPORT_PLAN_MAX_RETRIES}…`,
-          jobId: job.id,
-        });
-        await sleep(800);
-      }
+      return;
     }
+
+    const msg = finished.message || "Ошибка импорта";
+    if (finished.authError) {
+      markRowFailedExhausted(seed.id, attempts, msg, job.id);
+      return;
+    }
+    if (attempts >= IMPORT_PLAN_MAX_RETRIES) {
+      markRowFailedExhausted(seed.id, attempts, msg, job.id);
+      return;
+    }
+    patchRow(seed.id, {
+      status: "pending",
+      attempts,
+      message: `${msg} · повтор ${attempts + 1}/${IMPORT_PLAN_MAX_RETRIES}…`,
+      jobId: job.id,
+    });
+    await sleep(800);
   }
 }
 
@@ -518,7 +533,6 @@ async function runLoop({ resume }) {
 
     for (const seed of queue) {
       if (stopRequested) break;
-      // Skip if another concurrent update marked success
       const latest = state.rows.find((r) => r.id === seed.id);
       if (!latest || latest.status === "success") continue;
       if (latest.status === "failed" && latest.attempts >= IMPORT_PLAN_MAX_RETRIES) continue;
@@ -528,9 +542,25 @@ async function runLoop({ resume }) {
     activeJobId = null;
     const stopped = stopRequested;
     stopRequested = false;
+    const ok = state.rows.filter((r) => r.status === "success").length;
+    const failed = state.rows.filter(
+      (r) => r.status === "failed" && r.attempts >= IMPORT_PLAN_MAX_RETRIES
+    ).length;
+    const pendingLeft = queueRows(state.rows).length;
+    let banner = stopped ? "Обход остановлен." : "Обход завершён.";
+    if (!stopped && (ok > 0 || failed > 0)) {
+      const parts = [];
+      if (ok) parts.push(`успешно: ${ok}`);
+      if (failed) parts.push(`с ошибкой: ${failed}`);
+      banner = `Обход завершён (${parts.join(", ")}).`;
+      if (failed > 0) {
+        banner += " Неудачные можно повторить кнопкой «Запустить обход».";
+      }
+    }
     setState({
       running: false,
-      banner: stopped ? "Обход остановлен." : "Обход завершён.",
+      banner,
+      error: pendingLeft === 0 && failed > 0 && !stopped ? "" : state.error,
     });
     loopPromise = null;
   }
