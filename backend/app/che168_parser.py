@@ -1708,9 +1708,13 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
                 if score > best_score:
                     best = _merge_parsed_cars(parsed, best) or parsed
                     best_score = _parse_quality_score(best)
+                # Цена есть, но без specId — не выходим: Playwright чаще достаёт комплектацию.
                 if _parse_is_complete(parsed):
-                    merged = _merge_parsed_cars(parsed, best)
-                    return merged if merged else parsed
+                    merged = _merge_parsed_cars(parsed, best) or parsed
+                    if merged.autohome_spec_id:
+                        return merged
+                    best = merged
+                    best_score = _parse_quality_score(best)
             except RuntimeError as exc:
                 msg = str(exc)
                 if "антибот" in msg or "captcha" in msg.lower():
@@ -1754,8 +1758,12 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
                 best = _merge_parsed_cars(parsed, best) or parsed
                 best_score = _parse_quality_score(best)
             if _parse_is_complete(parsed):
-                merged = _merge_parsed_cars(parsed, best)
-                return merged if merged else parsed
+                merged = _merge_parsed_cars(parsed, best) or parsed
+                # С комплектацией — готово; иначе пробуем следующий URL Playwright.
+                if merged.autohome_spec_id:
+                    return merged
+                best = merged
+                best_score = _parse_quality_score(best)
         except Exception as exc:
             last_err = exc
 

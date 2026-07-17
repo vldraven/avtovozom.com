@@ -255,6 +255,9 @@ class ParseJob(Base):
         Integer, ForeignKey("car_models.id"), nullable=True
     )
     import_detail_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    import_generation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("car_generations.id"), nullable=True
+    )
 
 
 class UserFavorite(Base):

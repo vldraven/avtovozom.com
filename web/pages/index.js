@@ -932,6 +932,7 @@ export default function Home({ initialData = null }) {
           model_id: parserAdminModelId,
           che168_url: url,
           marketplace: parserImportMarketplace,
+          generation_id: parserAdminGenId ? Number(parserAdminGenId) : null,
         }),
       });
       if (!res.ok) {
@@ -1521,6 +1522,10 @@ export default function Home({ initialData = null }) {
       {token && isStaffRole(me?.role) && (whitelistCatalog.length > 0 || isAdminRole(me?.role)) && (
         <section className="panel admin-parser-panel">
           <h2 className="section-title panel-heading-sm">Импорт объявления</h2>
+          <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
+            Быстрый импорт одной ссылки. Для списка объявлений с обходом и ретраями —{" "}
+            <Link href="/staff/import-plan">страница плана импорта</Link>.
+          </p>
           {parserCatalogNotice ? (
             <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
               {parserCatalogNotice}

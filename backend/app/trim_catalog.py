@@ -116,6 +116,7 @@ def resolve_trim_for_listing(
     model_id: int,
     year: int | None,
     autohome_spec_id: int | None,
+    preferred_generation_id: int | None = None,
 ) -> int | None:
     """
     Lazy: если spec уже в car_trims — только id; иначе один запрос к Autohome API и insert.
@@ -136,7 +137,13 @@ def resolve_trim_for_listing(
         log.warning("autohome spec fetch failed spec_id=%s: %s", autohome_spec_id, exc)
         return None
 
-    generation_id = pick_generation_id_for_car(db, model_id, year)
+    generation_id = preferred_generation_id
+    if generation_id is not None:
+        gen = db.get(CarGeneration, generation_id)
+        if gen is None or gen.model_id != model_id:
+            generation_id = None
+    if generation_id is None:
+        generation_id = pick_generation_id_for_car(db, model_id, year)
 
     fp_q = select(CarTrim).where(
         CarTrim.model_id == model_id,

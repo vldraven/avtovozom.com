@@ -534,6 +534,7 @@ class ParserImportListingIn(BaseModel):
     model_id: int
     che168_url: str
     marketplace: Literal["che168", "global_che168", "dongchedi"] = "che168"
+    generation_id: int | None = None
 
 
 class ParseJobOut(BaseModel):
@@ -552,6 +553,8 @@ class ParseJobOut(BaseModel):
     """Для type=import_one — модель в справочнике."""
     import_detail_url: str | None = None
     """Для type=import_one — исходная ссылка на объявление che168."""
+    import_generation_id: int | None = None
+    """Для type=import_one — выбранное поколение (необязательно)."""
 
     class Config:
         from_attributes = True

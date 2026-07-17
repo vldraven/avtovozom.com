@@ -1,5 +1,7 @@
 """
-Русские заголовок и нейтральное описание объявления без данных продавца.
+Заголовок и нейтральное описание объявления без данных продавца.
+
+Название (title) храним на английском / латинице (Brand Model Trim), без перевода на русский.
 """
 
 from __future__ import annotations
@@ -44,16 +46,50 @@ def title_looks_corrupted(s: str | None) -> bool:
     return False
 
 
-def russian_listing_title(brand: str, model: str, year: int) -> str:
-    """Краткий заголовок на русском: марка, модель, год."""
+def title_is_mostly_cyrillic(s: str | None) -> bool:
+    """Переведённый на русский заголовок — не используем для поля title."""
+    if not s:
+        return False
+    t = str(s).strip()
+    cyr = len(re.findall(r"[А-Яа-яЁё]", t))
+    lat = len(re.findall(r"[A-Za-z]", t))
+    return cyr >= 3 and cyr > lat
+
+
+def title_has_usable_latin(s: str | None) -> bool:
+    """Есть латиница (марка/модель/комплектация) — подходит для title."""
+    if not s:
+        return False
+    return bool(re.search(r"[A-Za-z]{2,}", str(s)))
+
+
+def english_listing_title(brand: str, model: str, year: int, series_raw: str | None = None) -> str:
+    """Краткий заголовок на английском: Brand Model [Trim] [Year]."""
     b = (brand or "").strip()
     m = (model or "").strip()
+    trim = (series_raw or "").strip()
     y = int(year) if year else 0
-    if b and m and y:
-        return f"{b} {m}, {y} г.в."
-    if b and m:
-        return f"{b} {m}"
-    return b or m or "Автомобиль"
+    parts: list[str] = []
+    if b:
+        parts.append(b)
+    if m and m.lower() not in (b.lower() if b else ""):
+        parts.append(m)
+    if trim:
+        blob = " ".join(parts).lower()
+        if trim.lower() not in blob:
+            # Китайский trim без латиницы пропускаем
+            if title_has_usable_latin(trim) and not re.search(r"[\u4e00-\u9fff]", trim):
+                parts.append(trim)
+            elif not re.search(r"[\u4e00-\u9fff]", trim):
+                parts.append(trim)
+    if y and str(y) not in " ".join(parts):
+        parts.append(str(y))
+    return " ".join(parts) if parts else "Car"
+
+
+def russian_listing_title(brand: str, model: str, year: int) -> str:
+    """Обратная совместимость: шаблон без «г.в.» — латиница Brand Model Year."""
+    return english_listing_title(brand, model, year)
 
 
 def basic_neutral_description_ru(
@@ -97,6 +133,52 @@ def basic_neutral_description_ru(
     return " ".join(parts)
 
 
+def pick_listing_title(
+    brand: str,
+    model: str,
+    year: int,
+    raw_title: str | None,
+    series_raw: str | None = None,
+    translated: str | None = None,
+) -> str:
+    """
+    Итоговый title: без перевода на русский.
+    Предпочитаем исходное название с латиницей (Brand Model Trim); SEO/мусор/кириллицу отбрасываем.
+    """
+    for candidate in (raw_title, series_raw):
+        if not candidate:
+            continue
+        if title_looks_corrupted(candidate):
+            continue
+        if title_looks_like_global_seo_english(candidate):
+            continue
+        if title_is_mostly_cyrillic(candidate):
+            continue
+        c = str(candidate).strip()
+        if len(c) > 180:
+            c = c[:177].rsplit(" ", 1)[0] + "…"
+        # Чистый китайский без латиницы — не подходит
+        if re.search(r"[\u4e00-\u9fff]", c) and not title_has_usable_latin(c):
+            continue
+        return c
+
+    # translated только если без кириллицы и с латиницей (на случай ошибочного вызова)
+    if (
+        translated
+        and not title_looks_corrupted(translated)
+        and not title_looks_like_global_seo_english(translated)
+        and not title_is_mostly_cyrillic(translated)
+        and title_has_usable_latin(translated)
+        and not re.search(r"[\u4e00-\u9fff]", str(translated))
+    ):
+        c = str(translated).strip()
+        if len(c) > 180:
+            c = c[:177].rsplit(" ", 1)[0] + "…"
+        return c
+
+    return english_listing_title(brand, model, year, series_raw)
+
+
 def pick_title_ru(
     brand: str,
     model: str,
@@ -104,21 +186,5 @@ def pick_title_ru(
     raw_title: str | None,
     translated: str | None,
 ) -> str:
-    """
-    Итоговый заголовок: при нормальном переводе с китайского можно оставить краткий вариант;
-    при мусоре — только шаблон из марки/модели/года.
-    """
-    for candidate in (translated, raw_title):
-        if (
-            candidate
-            and not title_looks_corrupted(candidate)
-            and not title_looks_like_global_seo_english(candidate)
-        ):
-            c = str(candidate).strip()
-            if len(c) > 180:
-                c = c[:177].rsplit(" ", 1)[0] + "…"
-            # Латиница/кириллица/цифры — ок; если остался чистый китайский без перевода
-            if re.search(r"[\u4e00-\u9fff]", c) and not re.search(r"[А-Яа-яЁё]", c):
-                continue
-            return c
-    return russian_listing_title(brand, model, year)
+    """Обратная совместимость: title без перевода на русский."""
+    return pick_listing_title(brand, model, year, raw_title, translated=translated)

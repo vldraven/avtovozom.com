@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 function ChevronDown({ open }) {
   return (
@@ -25,6 +26,7 @@ function ChevronDown({ open }) {
 /**
  * Кастомный выпадающий список: меню с галочкой у выбранного пункта (как сортировка / auto.ru).
  * variant="floating" — подпись поля внутри триггера; variant="toolbar" — компактная строка (иконка + текст).
+ * portal — рендер меню в document.body (поверх overflow-контейнеров, напр. таблиц).
  */
 export default function SiteSelectDropdown({
   label,
@@ -45,12 +47,16 @@ export default function SiteSelectDropdown({
   createActionLabel = "Добавить",
   /** Блокировка триггера и пункта «Добавить» (например, во время запроса) */
   busy = false,
+  /** Рендерить меню через portal поверх родителя с overflow */
+  portal = false,
 }) {
   const autoId = useId();
   const baseId = id ?? `site-dd-${autoId}`;
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [menuStyle, setMenuStyle] = useState(null);
   const rootRef = useRef(null);
+  const menuRef = useRef(null);
   const searchInputRef = useRef(null);
 
   const selected = options.find((o) => String(o.value) === String(value));
@@ -82,6 +88,57 @@ export default function SiteSelectDropdown({
       filteredOptions.length === 0
   );
 
+  const updateMenuPosition = useCallback(() => {
+    if (!portal || !open || !rootRef.current) return;
+    const rect = rootRef.current.getBoundingClientRect();
+    const gap = 6;
+    const maxH = Math.min(320, Math.max(160, window.innerHeight - rect.bottom - gap - 12));
+    const spaceBelow = window.innerHeight - rect.bottom - gap;
+    const openUp = spaceBelow < 180 && rect.top > spaceBelow;
+    const width = Math.max(rect.width, 180);
+    const left =
+      menuAlign === "right"
+        ? Math.min(window.innerWidth - width - 8, Math.max(8, rect.right - width))
+        : Math.min(window.innerWidth - width - 8, Math.max(8, rect.left));
+
+    if (openUp) {
+      setMenuStyle({
+        position: "fixed",
+        left,
+        width,
+        bottom: window.innerHeight - rect.top + gap,
+        top: "auto",
+        maxHeight: Math.min(320, Math.max(160, rect.top - gap - 12)),
+        zIndex: 5000,
+      });
+    } else {
+      setMenuStyle({
+        position: "fixed",
+        left,
+        width,
+        top: rect.bottom + gap,
+        bottom: "auto",
+        maxHeight: maxH,
+        zIndex: 5000,
+      });
+    }
+  }, [portal, open, menuAlign]);
+
+  useLayoutEffect(() => {
+    if (!portal || !open) {
+      setMenuStyle(null);
+      return undefined;
+    }
+    updateMenuPosition();
+    const onReposition = () => updateMenuPosition();
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [portal, open, updateMenuPosition]);
+
   useEffect(() => {
     if (!open) setSearchQuery("");
   }, [open]);
@@ -97,9 +154,10 @@ export default function SiteSelectDropdown({
   useEffect(() => {
     if (!open) return undefined;
     const onDoc = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
-        setOpen(false);
-      }
+      const t = e.target;
+      if (rootRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e) => {
       if (e.key === "Escape") setOpen(false);
@@ -115,6 +173,7 @@ export default function SiteSelectDropdown({
   const menuCls = [
     "site-dropdown__menu",
     menuAlign === "right" ? "site-dropdown__menu--align-right" : "",
+    portal ? "site-dropdown__menu--portal" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -134,6 +193,91 @@ export default function SiteSelectDropdown({
       : label
         ? `${label}: ${displayLabel}`
         : displayLabel);
+
+  const menu = open ? (
+    <ul
+      ref={menuRef}
+      className={menuCls}
+      role="listbox"
+      aria-label={ariaLabel ?? label ?? "Варианты"}
+      style={portal ? menuStyle || { visibility: "hidden" } : undefined}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {searchable ? (
+        <li className="site-dropdown__search-row" role="presentation">
+          <input
+            ref={searchInputRef}
+            type="search"
+            className="site-dropdown__search-input"
+            placeholder="Поиск…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Поиск по списку"
+          />
+        </li>
+      ) : null}
+      {filteredOptions.length === 0 && !showCreateFromSearch ? (
+        <li className="site-dropdown__empty" role="presentation">
+          Ничего не найдено
+        </li>
+      ) : null}
+      {filteredOptions.map((opt) => {
+        const isSelected = String(opt.value) === String(value);
+        return (
+          <li key={`${String(opt.value)}-${opt.label}`} role="presentation">
+            <button
+              type="button"
+              role="option"
+              aria-selected={isSelected}
+              className={`site-dropdown__option${isSelected ? " site-dropdown__option--active" : ""}`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => {
+                onChange(opt.value);
+                setOpen(false);
+              }}
+            >
+              <span className="site-dropdown__check" aria-hidden>
+                {isSelected ? "✓" : ""}
+              </span>
+              <span className="site-dropdown__option-text">{opt.label}</span>
+            </button>
+          </li>
+        );
+      })}
+      {showCreateFromSearch ? (
+        <li className="site-dropdown__create-row" role="presentation">
+          <button
+            type="button"
+            className="site-dropdown__option site-dropdown__option--create"
+            disabled={busy}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void (async () => {
+                try {
+                  await onCreateFromSearch(searchTrim);
+                  setSearchQuery("");
+                  setOpen(false);
+                } catch {
+                  /* ошибки обрабатывает родитель */
+                }
+              })();
+            }}
+          >
+            <span className="site-dropdown__option-text">
+              {createActionLabel} «{searchTrim}»
+            </span>
+          </button>
+        </li>
+      ) : null}
+    </ul>
+  ) : null;
 
   return (
     <div className={rootCls} ref={rootRef}>
@@ -171,88 +315,7 @@ export default function SiteSelectDropdown({
           </>
         )}
       </button>
-      {open ? (
-        <ul
-          className={menuCls}
-          role="listbox"
-          aria-label={ariaLabel ?? label ?? "Варианты"}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {searchable ? (
-            <li className="site-dropdown__search-row" role="presentation">
-              <input
-                ref={searchInputRef}
-                type="search"
-                className="site-dropdown__search-input"
-                placeholder="Поиск…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                aria-label="Поиск по списку"
-              />
-            </li>
-          ) : null}
-          {filteredOptions.length === 0 && !showCreateFromSearch ? (
-            <li className="site-dropdown__empty" role="presentation">
-              Ничего не найдено
-            </li>
-          ) : null}
-          {filteredOptions.map((opt) => {
-            const isSelected = String(opt.value) === String(value);
-            return (
-              <li key={`${String(opt.value)}-${opt.label}`} role="presentation">
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  className={`site-dropdown__option${isSelected ? " site-dropdown__option--active" : ""}`}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => {
-                    onChange(opt.value);
-                    setOpen(false);
-                  }}
-                >
-                  <span className="site-dropdown__check" aria-hidden>
-                    {isSelected ? "✓" : ""}
-                  </span>
-                  <span className="site-dropdown__option-text">{opt.label}</span>
-                </button>
-              </li>
-            );
-          })}
-          {showCreateFromSearch ? (
-            <li className="site-dropdown__create-row" role="presentation">
-              <button
-                type="button"
-                className="site-dropdown__option site-dropdown__option--create"
-                disabled={busy}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  void (async () => {
-                    try {
-                      await onCreateFromSearch(searchTrim);
-                      setSearchQuery("");
-                      setOpen(false);
-                    } catch {
-                      /* ошибки обрабатывает родитель */
-                    }
-                  })();
-                }}
-              >
-                <span className="site-dropdown__option-text">
-                  {createActionLabel} «{searchTrim}»
-                </span>
-              </button>
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
+      {portal && typeof document !== "undefined" ? createPortal(menu, document.body) : menu}
     </div>
   );
 }

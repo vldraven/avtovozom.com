@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 
 import AdminParserPanel from "../components/AdminParserPanel";
+import AdminRequestsWidget from "../components/AdminRequestsWidget";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import {
@@ -333,17 +334,7 @@ export default function ProfilePage() {
                 </div>
               </section>
 
-              {isStaffRole(me.role) && (
-                <section className="panel">
-                  <h2 className="section-title panel-heading-sm">Заявки на расчёт</h2>
-                  <p className="muted section-title--flush-top">
-                    Все заявки клиентов и ответы дилеров — в отдельном разделе.
-                  </p>
-                  <Link href="/staff/admin-requests" className="btn btn-primary btn-inline">
-                    Открыть раздел «Заявки»
-                  </Link>
-                </section>
-              )}
+              {isStaffRole(me.role) && <AdminRequestsWidget token={token} />}
 
               {isAdminRole(me.role) && (
                 <section className="panel" id="admin-settings">
@@ -363,6 +354,9 @@ export default function ProfilePage() {
                     </Link>
                     <Link href="/staff/admin-faq" className="btn btn-secondary btn-inline">
                       Редактировать FAQ
+                    </Link>
+                    <Link href="/staff/import-plan" className="btn btn-secondary btn-inline">
+                      План импорта
                     </Link>
                   </div>
                 </section>
@@ -558,7 +552,24 @@ export default function ProfilePage() {
                 </section>
               )}
 
-              {(me.role === "dealer" || me.role === "admin") && (
+              {me.role === "admin" && (
+                <section className="panel">
+                  <h2 className="section-title panel-heading-sm">Открытые заявки — расчёт</h2>
+                  <p className="muted section-title--flush-top">
+                    Подготовка ответа клиенту (сумма, срок, условия) — на отдельной рабочей странице.
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                    <Link href="/staff/open-requests" className="btn btn-primary btn-inline">
+                      Открыть рабочие заявки
+                    </Link>
+                    <Link href="/staff/admin-requests" className="btn btn-secondary btn-inline">
+                      Все заявки
+                    </Link>
+                  </div>
+                </section>
+              )}
+
+              {me.role === "dealer" && (
                 <DealerOpenRequests
                   token={token}
                   onOpenChat={(chatId) =>

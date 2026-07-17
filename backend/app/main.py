@@ -76,7 +76,7 @@ from .avito_publish import (
     verify_feed_secret,
 )
 from .listing_compose import build_listing_marketing_compose
-from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru, russian_listing_title
+from .listing_copy_ru import basic_neutral_description_ru, pick_listing_title, russian_listing_title
 from .model_resolver import resolve_model_id_for_listing
 from .parser_cancellation import request_cancel
 from .parser_logic import run_parser_job
@@ -804,6 +804,12 @@ def startup() -> None:
         conn.execute(
             text(
                 "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS import_detail_url VARCHAR(2048)"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS import_generation_id "
+                "INTEGER REFERENCES car_generations(id)"
             )
         )
         conn.execute(
@@ -3339,13 +3345,13 @@ def admin_batch_refresh_from_che168(
         if parsed.body_color_slug:
             car.body_color_slug = parsed.body_color_slug
 
-        title_tr = translate_to_ru(parsed.title) or parsed.title
-        car.title = pick_title_ru(
+        # Title: Brand Model Trim на латинице — без перевода на русский
+        car.title = pick_listing_title(
             car.brand.name,
             mn,
             car.year,
             parsed.title,
-            title_tr,
+            series_raw=parsed.series_raw,
         )
         car.description = basic_neutral_description_ru(
             car.brand.name,
@@ -5567,11 +5573,22 @@ def import_che168_listing(
     exists = db.execute(select(CarModel).where(CarModel.id == payload.model_id)).scalar_one_or_none()
     if not exists:
         raise HTTPException(status_code=404, detail="Модель не найдена.")
+    generation_id = payload.generation_id
+    if generation_id is not None:
+        gen = db.execute(
+            select(CarGeneration).where(CarGeneration.id == generation_id)
+        ).scalar_one_or_none()
+        if not gen or gen.model_id != payload.model_id:
+            raise HTTPException(
+                status_code=400,
+                detail="generation_id не принадлежит выбранной модели.",
+            )
     job = ParseJob(
         type="import_one",
         status="queued",
         import_model_id=payload.model_id,
         import_detail_url=normalized[:2048],
+        import_generation_id=generation_id,
     )
     db.add(job)
     db.commit()

@@ -147,7 +147,7 @@ class Che168ParserCompletenessTests(unittest.TestCase):
 
 class ListingCopyRuTests(unittest.TestCase):
     def test_global_seo_title_rejected(self):
-        from app.listing_copy_ru import pick_title_ru, title_looks_like_global_seo_english
+        from app.listing_copy_ru import pick_listing_title, title_looks_like_global_seo_english
 
         seo = (
             "Used Mercedes-Benz Mercedes-Benz A-Class 2022 A 180 L Sport Sedan - "
@@ -155,8 +155,17 @@ class ListingCopyRuTests(unittest.TestCase):
         )
         self.assertTrue(title_looks_like_global_seo_english(seo))
         self.assertEqual(
-            pick_title_ru("Mercedes-Benz", "A", 2022, seo, seo),
-            "Mercedes-Benz A, 2022 г.в.",
+            pick_listing_title("Mercedes-Benz", "A", 2022, seo),
+            "Mercedes-Benz A 2022",
+        )
+
+    def test_keeps_english_title_without_russian_translation(self):
+        from app.listing_copy_ru import pick_listing_title
+
+        raw = "BMW X5 xDrive40i M Sport"
+        self.assertEqual(
+            pick_listing_title("BMW", "X5", 2021, raw, translated="БМВ Х5 хДрайв40и М Спорт"),
+            raw,
         )
 
 

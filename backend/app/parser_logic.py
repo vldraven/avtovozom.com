@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from .che168_parser import (
     ParsedCar,
     car_source_for_marketplace,
+    fetch_autohome_spec_id_from_detail_url,
     filter_vehicle_photo_urls,
     incomplete_listing_parse_message,
     marketplace_from_detail_url,
@@ -16,16 +17,16 @@ from .che168_parser import (
     parse_che168_listing_links,
     source_listing_id_from_url,
 )
-from .listing_copy_ru import basic_neutral_description_ru, pick_title_ru
+from .listing_copy_ru import basic_neutral_description_ru, pick_listing_title
 from .indexnow import submit_car as _indexnow_submit_car
 from .body_colors import label_for_slug
 from .media_storage import delete_car_photo_files, download_car_photos
-from .models import Car, CarPhoto, CarModel, ModelWhitelist, ParseJob
+from .models import Car, CarGeneration, CarPhoto, CarModel, ModelWhitelist, ParseJob
 from .model_resolver import resolve_model_id_for_listing
 from .parser_cancellation import clear_cancel, is_cancel_requested
 from .parser_timeout import ParserJobCancelled, call_with_cancel_poll, call_with_timeout
 from .translator_ru import translate_to_ru
-from .trim_catalog import resolve_trim_for_listing
+from .trim_catalog import pick_generation_id_for_car, resolve_trim_for_listing
 
 
 def _finalize_job_cancelled(
@@ -85,13 +86,37 @@ def _stop_if_cancelled(
     return True
 
 
+def _resolve_preferred_generation_id(
+    db: Session,
+    *,
+    model_id: int,
+    year: int | None,
+    preferred_generation_id: int | None,
+) -> int | None:
+    if preferred_generation_id is not None:
+        gen = db.get(CarGeneration, preferred_generation_id)
+        if gen is not None and gen.model_id == model_id:
+            return gen.id
+    return pick_generation_id_for_car(db, model_id, year)
+
+
 def _apply_trim_from_parsed(
     db: Session,
     car: Car,
     *,
     model_id: int,
     parsed: ParsedCar,
+    preferred_generation_id: int | None = None,
 ) -> None:
+    generation_id = _resolve_preferred_generation_id(
+        db,
+        model_id=model_id,
+        year=parsed.year,
+        preferred_generation_id=preferred_generation_id,
+    )
+    if generation_id is not None:
+        car.generation_id = generation_id
+
     if not parsed.autohome_spec_id:
         return
     trim_id = resolve_trim_for_listing(
@@ -99,9 +124,19 @@ def _apply_trim_from_parsed(
         model_id=model_id,
         year=parsed.year,
         autohome_spec_id=parsed.autohome_spec_id,
+        preferred_generation_id=generation_id,
     )
     if trim_id:
         car.trim_id = trim_id
+
+
+def _ensure_autohome_spec_id(parsed: ParsedCar, detail_url: str, marketplace: str) -> None:
+    """Если разбор не дал specId — добрать лёгким HTTP (как backfill-trims)."""
+    if parsed.autohome_spec_id or marketplace == "dongchedi":
+        return
+    sid = fetch_autohome_spec_id_from_detail_url(detail_url)
+    if sid:
+        parsed.autohome_spec_id = sid
 
 
 def _insert_car_from_parsed(
@@ -111,6 +146,7 @@ def _insert_car_from_parsed(
     download_timeout: float,
     progress_cb: Callable[[str], None] | None = None,
     car_source: str = "che168",
+    preferred_generation_id: int | None = None,
 ) -> tuple[Car | None, str | None]:
     resolved_model_id = resolve_model_id_for_listing(
         db,
@@ -128,13 +164,13 @@ def _insert_car_from_parsed(
     trans_ru = translate_to_ru(parsed.transmission) if parsed.transmission else None
     city_ru = translate_to_ru(parsed.location_city) if parsed.location_city else None
 
-    title_tr = translate_to_ru(parsed.title) or parsed.title
-    title_ru = pick_title_ru(
+    # Title: Brand Model Trim на латинице — без перевода на русский
+    title_en = pick_listing_title(
         model.brand.name,
         display_model_name,
         parsed.year or 2020,
         parsed.title,
-        title_tr,
+        series_raw=parsed.series_raw,
     )
     desc_ru = basic_neutral_description_ru(
         model.brand.name,
@@ -154,7 +190,7 @@ def _insert_car_from_parsed(
         source_listing_id=parsed.source_listing_id,
         brand_id=model.brand_id,
         model_id=resolved_model_id,
-        title=title_ru,
+        title=title_en,
         description=desc_ru,
         year=parsed.year or 2020,
         engine_volume_cc=parsed.engine_volume_cc or 0,
@@ -168,7 +204,13 @@ def _insert_car_from_parsed(
         registration_date=parsed.registration_date,
         production_date=parsed.production_date,
     )
-    _apply_trim_from_parsed(db, car, model_id=resolved_model_id, parsed=parsed)
+    _apply_trim_from_parsed(
+        db,
+        car,
+        model_id=resolved_model_id,
+        parsed=parsed,
+        preferred_generation_id=preferred_generation_id,
+    )
     db.add(car)
     db.flush()
     if progress_cb:
@@ -207,6 +249,7 @@ def _revive_inactive_car_from_parsed(
     download_timeout: float,
     progress_cb: Callable[[str], None] | None = None,
     car_source: str = "che168",
+    preferred_generation_id: int | None = None,
 ) -> tuple[Car | None, str | None]:
     """
     То же содержание карточки, что при новом импорте: обновляет поля, меняет фото,
@@ -228,13 +271,12 @@ def _revive_inactive_car_from_parsed(
     trans_ru = translate_to_ru(parsed.transmission) if parsed.transmission else None
     city_ru = translate_to_ru(parsed.location_city) if parsed.location_city else None
 
-    title_tr = translate_to_ru(parsed.title) or parsed.title
-    title_ru = pick_title_ru(
+    title_en = pick_listing_title(
         model.brand.name,
         display_model_name,
         parsed.year or 2020,
         parsed.title,
-        title_tr,
+        series_raw=parsed.series_raw,
     )
     desc_ru = basic_neutral_description_ru(
         model.brand.name,
@@ -252,7 +294,7 @@ def _revive_inactive_car_from_parsed(
     car.source = (car_source or "che168")[:32]
     car.brand_id = model.brand_id
     car.model_id = resolved_model_id
-    car.title = title_ru
+    car.title = title_en
     car.description = desc_ru
     car.year = parsed.year or 2020
     car.engine_volume_cc = parsed.engine_volume_cc or 0
@@ -266,7 +308,13 @@ def _revive_inactive_car_from_parsed(
     car.registration_date = parsed.registration_date
     car.production_date = parsed.production_date
     car.is_active = True
-    _apply_trim_from_parsed(db, car, model_id=resolved_model_id, parsed=parsed)
+    _apply_trim_from_parsed(
+        db,
+        car,
+        model_id=resolved_model_id,
+        parsed=parsed,
+        preferred_generation_id=preferred_generation_id,
+    )
 
     old_urls = list(
         db.execute(select(CarPhoto.storage_url).where(CarPhoto.car_id == car.id)).scalars().all()
@@ -344,6 +392,7 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
 
     mid = job.import_model_id
     raw_url = (job.import_detail_url or "").strip()
+    preferred_generation_id = getattr(job, "import_generation_id", None)
     if mid is None or not raw_url:
         job.status = "failed"
         job.finished_at = datetime.utcnow()
@@ -410,14 +459,47 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             return job
 
         if sid in existing_ids:
+            existing_car = db.execute(
+                select(Car).where(
+                    Car.source_listing_id == sid,
+                    Car.is_active.is_(True),
+                )
+            ).scalar_one_or_none()
             total_processed = 1
+            # Если объявление уже есть, но без комплектации — дозагружаем trim/поколение.
+            if existing_car and (existing_car.trim_id is None or existing_car.generation_id is None):
+                flush_progress("Дозагрузка комплектации для существующего объявления…")
+                try:
+                    parsed_exist = call_with_timeout(
+                        lambda: parse_che168_detail(detail_url),
+                        timeout_sec=float(os.getenv("CHE168_DETAIL_PARSE_TIMEOUT_SEC", "180")),
+                    )
+                    _ensure_autohome_spec_id(parsed_exist, detail_url, mp)
+                    _apply_trim_from_parsed(
+                        db,
+                        existing_car,
+                        model_id=existing_car.model_id or mid,
+                        parsed=parsed_exist,
+                        preferred_generation_id=preferred_generation_id,
+                    )
+                    db.commit()
+                    db.refresh(existing_car)
+                except Exception:
+                    pass
+                if existing_car.trim_id:
+                    job.message = (
+                        f"Объявление #{existing_car.id} уже было в каталоге; комплектация обновлена."
+                    )[:512]
+                else:
+                    job.message = "Это объявление уже есть в каталоге."
+            else:
+                job.message = "Это объявление уже есть в каталоге."
             job.finished_at = datetime.utcnow()
             job.total_processed = total_processed
             job.total_created = 0
             job.total_updated = total_updated
             job.total_errors = total_errors
             job.status = "success"
-            job.message = "Это объявление уже есть в каталоге."
             db.commit()
             db.refresh(job)
             return job
@@ -471,6 +553,7 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             db.refresh(job)
             return job
 
+        _ensure_autohome_spec_id(parsed, detail_url, mp)
         total_processed = 1
         flush_progress("2/3 Сохранение объявления в каталог…")
 
@@ -478,13 +561,27 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             select(Car).where(Car.source_listing_id == parsed.source_listing_id)
         ).scalar_one_or_none()
         if car and car.is_active:
+            _apply_trim_from_parsed(
+                db,
+                car,
+                model_id=car.model_id or mid,
+                parsed=parsed,
+                preferred_generation_id=preferred_generation_id,
+            )
+            db.commit()
+            db.refresh(car)
             job.finished_at = datetime.utcnow()
             job.total_processed = total_processed
             job.total_created = 0
             job.total_updated = total_updated
             job.total_errors = total_errors
             job.status = "success"
-            job.message = "Это объявление уже есть в каталоге."
+            if car.trim_id:
+                job.message = (
+                    f"Объявление #{car.id} уже было в каталоге; комплектация обновлена."
+                )[:512]
+            else:
+                job.message = "Это объявление уже есть в каталоге."
             db.commit()
             db.refresh(job)
             return job
@@ -498,6 +595,7 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
                 download_timeout,
                 progress_cb=lambda m: flush_progress(m),
                 car_source=car_src,
+                preferred_generation_id=preferred_generation_id,
             )
             if err:
                 total_errors = 1
@@ -519,8 +617,9 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             job.total_updated = total_updated
             job.total_errors = total_errors
             job.status = "success"
+            trim_note = " с комплектацией" if car_new and car_new.trim_id else ""
             job.message = (
-                f"Объявление восстановлено #{car_new.id}: {model.brand.name} {model.name}."
+                f"Объявление восстановлено #{car_new.id}: {model.brand.name} {model.name}.{trim_note}"
             )[:512]
             db.commit()
             db.refresh(job)
@@ -533,6 +632,7 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             download_timeout,
             progress_cb=lambda m: flush_progress(m),
             car_source=car_src,
+            preferred_generation_id=preferred_generation_id,
         )
         if err:
             total_errors = 1
@@ -554,8 +654,9 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
         job.total_updated = total_updated
         job.total_errors = total_errors
         job.status = "success"
+        trim_note = " Комплектация подтянута." if car_new and car_new.trim_id else ""
         job.message = (
-            f"Добавлено объявление #{car_new.id}: {model.brand.name} {model.name}."
+            f"Добавлено объявление #{car_new.id}: {model.brand.name} {model.name}.{trim_note}"
         )[:512]
         db.commit()
         db.refresh(job)
@@ -755,6 +856,11 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
                     flush_progress(f"Ошибка страницы объявления ({model.name}): {e}")
                     continue
 
+                _ensure_autohome_spec_id(
+                    parsed,
+                    detail_url,
+                    marketplace_from_detail_url(detail_url),
+                )
                 total_processed += 1
 
                 car = db.execute(
