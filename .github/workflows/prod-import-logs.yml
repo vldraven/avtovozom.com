@@ -22,15 +22,23 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           SSH=(ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}")
-          "${SSH[@]}" "cd '${DEPLOY_PATH}' && set -a && [ -f .env ] && . ./.env && set +a && (
+          "${SSH[@]}" "cd '${DEPLOY_PATH}' && (
             echo '=== compose ps ==='
             docker compose -f docker-compose.prod.yml ps
+            echo '=== import_plans ==='
+            docker compose -f docker-compose.prod.yml exec -T postgres \
+              psql -U avtovozom -d avtovozom -c \
+              \"SELECT id, status, stop_requested, left(coalesce(banner,''),120) AS banner, left(coalesce(error,''),120) AS err, updated_at FROM import_plans;\"
+            echo '=== import_plan_items ==='
+            docker compose -f docker-compose.prod.yml exec -T postgres \
+              psql -U avtovozom -d avtovozom -c \
+              \"SELECT id, sort_order, status, attempts, parse_job_id, model_id, left(coalesce(message,''),100) AS msg, left(url,60) AS url FROM import_plan_items ORDER BY sort_order, id LIMIT 30;\"
             echo '=== recent parse_jobs ==='
             docker compose -f docker-compose.prod.yml exec -T postgres \
-              psql -U \"\${POSTGRES_USER:-avtovozom}\" -d \"\${POSTGRES_DB:-avtovozom}\" -c \
+              psql -U avtovozom -d avtovozom -c \
               \"SELECT id, type, status, total_errors, left(coalesce(message,''), 240) AS msg, started_at, finished_at FROM parse_jobs ORDER BY id DESC LIMIT 20;\"
             echo '=== parser logs (tail) ==='
             docker compose -f docker-compose.prod.yml logs --tail=250 parser 2>&1 | tail -200
-            echo '=== backend logs (import/parse) ==='
-            docker compose -f docker-compose.prod.yml logs --tail=400 backend 2>&1 | grep -iE 'import|parse_job|import_one|error|traceback|exception|failed|che168|captcha|неполн' | tail -120
+            echo '=== backend import plan errors ==='
+            docker compose -f docker-compose.prod.yml logs --tail=400 backend 2>&1 | grep -iE 'import.plan|import_plan|parse_job|import_one|error|traceback|exception|failed' | tail -80
           )"
