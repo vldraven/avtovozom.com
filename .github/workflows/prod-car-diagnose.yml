@@ -26,44 +26,36 @@ jobs:
           printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" "cd '${DEPLOY_PATH}' && CAR_ID='${CAR_ID}' docker compose -f docker-compose.prod.yml exec -T -e CAR_ID postgres \
-            psql -U avtovozom -d avtovozom -v ON_ERROR_STOP=1 -c \"
-          SELECT id, title, year, mileage_km, engine_volume_cc, horsepower, fuel_type, transmission,
-                 body_color_slug, registration_date, price_cny, model_id, generation_id, trim_id,
-                 source_listing_id, left(coalesce(description,''),160) AS descr, created_at
-          FROM cars WHERE id = ${CAR_ID};
-          \" && docker compose -f docker-compose.prod.yml exec -T postgres \
-            psql -U avtovozom -d avtovozom -c \"
-          SELECT c.id AS car_id, t.id AS trim_id, t.name, t.name_ru, t.source, t.autohome_spec_id,
-                 length(coalesce(t.spec_json,'')) AS spec_len
-          FROM cars c LEFT JOIN car_trims t ON t.id = c.trim_id WHERE c.id = ${CAR_ID};
-          \" && docker compose -f docker-compose.prod.yml exec -T postgres \
-            psql -U avtovozom -d avtovozom -c \"
-          SELECT count(*) AS photos FROM car_photos WHERE car_id = ${CAR_ID};
-          \" && docker compose -f docker-compose.prod.yml exec -T postgres \
-            psql -U avtovozom -d avtovozom -c \"
-          SELECT id, source_listing_id FROM cars WHERE id = ${CAR_ID};
-          \" && SID=\$(docker compose -f docker-compose.prod.yml exec -T postgres \
-            psql -U avtovozom -d avtovozom -Atc \"SELECT source_listing_id FROM cars WHERE id = ${CAR_ID};\") && \
-          echo SOURCE_LISTING_ID=\$SID && \
+          SSH=(ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}")
+          "${SSH[@]}" bash -s <<REMOTE
+          set -euo pipefail
+          cd '${DEPLOY_PATH}'
+          CID=${CAR_ID}
+          echo '=== car ==='
           docker compose -f docker-compose.prod.yml exec -T postgres \
-            psql -U avtovozom -d avtovozom -c \"
-          SELECT id, type, status, total_errors, left(coalesce(message,''),240) AS msg,
-                 import_model_id, left(coalesce(import_detail_url,''),90) AS url,
-                 started_at, finished_at
-          FROM parse_jobs
-          WHERE message ILIKE '%#${CAR_ID}%'
-             OR import_detail_url ILIKE '%' || split_part('\${SID}', '-', 2) || '%'
-             OR import_detail_url ILIKE '%' || regexp_replace('\${SID}', '[^0-9]', '', 'g') || '%'
-          ORDER BY id DESC LIMIT 20;
-          \" && docker compose -f docker-compose.prod.yml exec -T postgres \
-            psql -U avtovozom -d avtovozom -c \"
-          SELECT id, status, attempts, parse_job_id, model_id, generation_id,
-                 left(coalesce(message,''),180) AS msg, left(url,80) AS url
-          FROM import_plan_items
-          WHERE message ILIKE '%#${CAR_ID}%'
-             OR url ILIKE '%' || regexp_replace('\${SID}', '[^0-9]', '', 'g') || '%'
-          ORDER BY id DESC LIMIT 10;
-          \" && echo '=== recent parser log lines ===' && \
-          docker compose -f docker-compose.prod.yml logs --tail=3000 parser 2>&1 | grep -iE \"#${CAR_ID}|Monjaro|\${SID}|autohome|trim|spec_id|incomplete|horsepower|fuel_type\" | tail -80"
+            psql -U avtovozom -d avtovozom -c "SELECT id, title, year, mileage_km, engine_volume_cc, horsepower, fuel_type, transmission, body_color_slug, registration_date, price_cny, model_id, generation_id, trim_id, source_listing_id, left(coalesce(description,''),160) AS descr, created_at FROM cars WHERE id = \${CID};"
+          echo '=== trim join ==='
+          docker compose -f docker-compose.prod.yml exec -T postgres \
+            psql -U avtovozom -d avtovozom -c "SELECT c.id AS car_id, c.trim_id, t.id AS trim_row, t.name_ru, t.source, t.autohome_spec_id, length(coalesce(t.spec_json,'')) AS spec_len FROM cars c LEFT JOIN car_trims t ON t.id = c.trim_id WHERE c.id = \${CID};"
+          echo '=== photos ==='
+          docker compose -f docker-compose.prod.yml exec -T postgres \
+            psql -U avtovozom -d avtovozom -Atc "SELECT count(*) FROM car_photos WHERE car_id = \${CID};"
+          SID=\$(docker compose -f docker-compose.prod.yml exec -T postgres psql -U avtovozom -d avtovozom -Atc "SELECT source_listing_id FROM cars WHERE id = \${CID};")
+          echo "SOURCE=\${SID}"
+          INFOID=\$(echo "\$SID" | grep -oE '[0-9]+' | tail -1)
+          echo "INFOID=\${INFOID}"
+          echo '=== parse_jobs ==='
+          docker compose -f docker-compose.prod.yml exec -T postgres \
+            psql -U avtovozom -d avtovozom -c "SELECT id, type, status, total_errors, left(coalesce(message,''),240) AS msg, import_model_id, left(coalesce(import_detail_url,''),90) AS url, started_at, finished_at FROM parse_jobs WHERE message ILIKE '%#\${CID}%' OR import_detail_url ILIKE '%' || '\${INFOID}' || '%' ORDER BY id DESC LIMIT 20;"
+          echo '=== import_plan_items ==='
+          docker compose -f docker-compose.prod.yml exec -T postgres \
+            psql -U avtovozom -d avtovozom -c "SELECT id, status, attempts, parse_job_id, model_id, generation_id, left(coalesce(message,''),180) AS msg, left(url,90) AS url FROM import_plan_items WHERE message ILIKE '%#\${CID}%' OR url ILIKE '%' || '\${INFOID}' || '%' ORDER BY id DESC LIMIT 10;"
+          echo '=== generation ==='
+          docker compose -f docker-compose.prod.yml exec -T postgres \
+            psql -U avtovozom -d avtovozom -c "SELECT g.id, g.name, g.year_from, g.year_to FROM car_generations g JOIN cars c ON c.generation_id = g.id WHERE c.id = \${CID};"
+          echo '=== trims for model ==='
+          docker compose -f docker-compose.prod.yml exec -T postgres \
+            psql -U avtovozom -d avtovozom -c "SELECT t.id, t.name_ru, t.source, t.autohome_spec_id, length(coalesce(t.spec_json,'')) AS spec_len FROM car_trims t JOIN cars c ON c.model_id = t.model_id WHERE c.id = \${CID} ORDER BY t.id DESC LIMIT 15;"
+          echo '=== parser grep ==='
+          docker compose -f docker-compose.prod.yml logs --tail=4000 parser 2>&1 | grep -iE "#\${CID}|\${INFOID}|Monjaro|autohome|trim|spec" | tail -50 || true
+          REMOTE
