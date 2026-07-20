@@ -10,6 +10,60 @@ from .models import ParseJob
 from .parser_logic import run_parser_job
 
 
+def ensure_import_plan_tables() -> None:
+    """Parser не запускает FastAPI startup — создаём таблицы плана при необходимости."""
+    from sqlalchemy import text
+
+    from .db import engine
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS import_plans (
+                    id SERIAL PRIMARY KEY,
+                    status VARCHAR(32) NOT NULL DEFAULT 'idle',
+                    stop_requested BOOLEAN NOT NULL DEFAULT FALSE,
+                    banner VARCHAR(512) NOT NULL DEFAULT '',
+                    error VARCHAR(512) NOT NULL DEFAULT '',
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS import_plan_items (
+                    id SERIAL PRIMARY KEY,
+                    plan_id INTEGER NOT NULL REFERENCES import_plans(id) ON DELETE CASCADE,
+                    client_key VARCHAR(64) NOT NULL DEFAULT '',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    marketplace VARCHAR(32) NOT NULL DEFAULT 'che168',
+                    brand_id INTEGER NULL,
+                    brand_name VARCHAR(128) NOT NULL DEFAULT '',
+                    model_id INTEGER NULL,
+                    model_name VARCHAR(128) NOT NULL DEFAULT '',
+                    generation_id INTEGER NULL,
+                    generation_name VARCHAR(128) NOT NULL DEFAULT '',
+                    url VARCHAR(2048) NOT NULL DEFAULT '',
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    message VARCHAR(512) NOT NULL DEFAULT '',
+                    parse_job_id INTEGER NULL REFERENCES parse_jobs(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO import_plans (id, status, stop_requested, banner, error) "
+                "SELECT 1, 'idle', FALSE, '', '' "
+                "WHERE NOT EXISTS (SELECT 1 FROM import_plans WHERE id = 1)"
+            )
+        )
+
+
 def process_pending_jobs() -> None:
     db = SessionLocal()
     try:
@@ -58,6 +112,12 @@ def enqueue_daily_job_if_needed() -> None:
 if __name__ == "__main__":
     # Интервал между циклами (опрос очереди и daily-cron) — секунды, не часы.
     poll_seconds = int(os.getenv("PARSER_POLL_SECONDS", "10"))
+    try:
+        ensure_import_plan_tables()
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception("ensure_import_plan_tables failed")
     while True:
         enqueue_daily_job_if_needed()
         process_import_plan_queue()

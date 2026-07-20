@@ -10,6 +10,7 @@ from playwright.sync_api import sync_playwright
 from .autohome_config import extract_autohome_spec_id
 
 from .body_colors import guess_body_color_slug_from_vehicle_text
+from .engine_volume_util import normalize_passenger_engine_volume_cc
 
 
 # Старый формат карточки; на витрине серии чаще встречаются дилерские URL.

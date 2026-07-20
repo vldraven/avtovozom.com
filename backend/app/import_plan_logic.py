@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import os
+import time
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -189,6 +191,12 @@ def _apply_job_result(item: ImportPlanItem, job: ParseJob) -> str:
         item.message = (job.message or "Остановлено")[:512]
         return "cancelled"
     msg = (job.message or "Ошибка импорта")[:500]
+    # Captcha / пустая цена / баг кода — не жечь все 3 долгих попытки подряд.
+    if _is_non_retryable_import_error(msg):
+        item.attempts = max(int(item.attempts or 0), IMPORT_PLAN_MAX_RETRIES)
+        item.status = "failed"
+        item.message = msg[:512]
+        return "failed"
     if item.attempts >= IMPORT_PLAN_MAX_RETRIES:
         item.status = "failed"
         item.message = msg[:512]
@@ -196,6 +204,85 @@ def _apply_job_result(item: ImportPlanItem, job: ParseJob) -> str:
     item.status = "pending"
     item.message = f"{msg} · повтор {item.attempts + 1}/{IMPORT_PLAN_MAX_RETRIES}…"[:512]
     return "retry"
+
+
+def _is_non_retryable_import_error(message: str) -> bool:
+    m = (message or "").lower()
+    if "captcha" in m or "антибот" in m or "безопасн" in m:
+        return True
+    if "не найдена цена" in m or "неполн" in m:
+        return True
+    if "is not defined" in m or "nameerror" in m:
+        return True
+    if "модель не найдена" in m or "некорректн" in m:
+        return True
+    if "не соответствует выбранной площадке" in m:
+        return True
+    return False
+
+
+def recover_stale_import_jobs(db: Session) -> None:
+    """Сбрасывает зависшие running job'ы и строки плана (после рестарта/зависания Playwright)."""
+    stale_sec = float(os.getenv("IMPORT_PLAN_STALE_JOB_SEC", "420"))
+    cutoff = datetime.utcnow() - timedelta(seconds=stale_sec)
+    stuck_jobs = (
+        db.execute(
+            select(ParseJob).where(
+                ParseJob.status == "running",
+                ParseJob.type == "import_one",
+                ParseJob.started_at.isnot(None),
+                ParseJob.started_at < cutoff,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for job in stuck_jobs:
+        job.status = "failed"
+        job.finished_at = datetime.utcnow()
+        job.message = (
+            f"Прервано: задача зависла в running дольше {int(stale_sec)} с "
+            "(рестарт parser или таймаут Playwright)."
+        )[:500]
+        job.total_errors = max(int(job.total_errors or 0), 1)
+        logger.warning("stale parse_job #%s marked failed", job.id)
+
+    plan = db.execute(
+        select(ImportPlan)
+        .options(joinedload(ImportPlan.items))
+        .where(ImportPlan.id == SHARED_PLAN_ID)
+    ).unique().scalar_one_or_none()
+    if plan:
+        for item in plan.items:
+            if item.status not in ("running", "queued"):
+                continue
+            job = None
+            if item.parse_job_id:
+                job = db.execute(
+                    select(ParseJob).where(ParseJob.id == item.parse_job_id)
+                ).scalar_one_or_none()
+            if job and job.status in ("queued", "running"):
+                # Ещё живой и не stale — ждём
+                if job.status == "running" and job.started_at and job.started_at >= cutoff:
+                    continue
+                if job.status == "queued":
+                    continue
+            if job and job.status not in ("queued", "running"):
+                _apply_job_result(item, job)
+                continue
+            item.status = "pending"
+            item.message = (item.message or "Сброшено после зависания · будет повтор")[:512]
+            item.parse_job_id = None
+            _touch(plan)
+
+    db.commit()
+
+
+def _retry_backoff_sec(message: str) -> float:
+    m = (message or "").lower()
+    if "timeout" in m or "таймаут" in m or "page.goto" in m:
+        return float(os.getenv("IMPORT_PLAN_TIMEOUT_RETRY_SLEEP_SEC", "20"))
+    return float(os.getenv("IMPORT_PLAN_RETRY_SLEEP_SEC", "5"))
 
 
 def _validate_and_normalize_item(db: Session, item: ImportPlanItem) -> str | None:
@@ -278,10 +365,14 @@ def _start_attempt(db: Session, plan: ImportPlan, item: ImportPlanItem) -> None:
 
     if plan.stop_requested or outcome == "cancelled":
         _finalize_stop(db, ensure_import_plan(db))
+        return
+    if outcome == "retry" and not plan.stop_requested:
+        time.sleep(_retry_backoff_sec(job.message or item.message or ""))
 
 
 def process_import_plan(db: Session) -> None:
     """Продвигает серверный план: пока running — обрабатывает строки по одной."""
+    recover_stale_import_jobs(db)
     while True:
         plan = ensure_import_plan(db)
 

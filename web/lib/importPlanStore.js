@@ -229,7 +229,8 @@ export function stopImportPlanPolling() {
 export async function refreshImportPlan() {
   if (!token && !getStoredToken()) return getImportPlanState();
   if (pollInFlight) return getImportPlanState();
-  if (dirty) return getImportPlanState();
+  // Во время обхода всегда тянем сервер — иначе dirty блокирует прогресс в UI.
+  if (dirty && !state.running) return getImportPlanState();
   pollInFlight = true;
   try {
     const data = await apiGetPlan();

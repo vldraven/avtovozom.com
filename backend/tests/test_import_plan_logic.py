@@ -54,6 +54,18 @@ class ImportPlanLogicTests(unittest.TestCase):
         self.assertEqual(items[2].status, "pending")
         self.assertIsNone(items[2].parse_job_id)
 
+    def test_non_retryable_captcha_and_nameerror(self):
+        from app.import_plan_logic import _is_non_retryable_import_error
+
+        self.assertTrue(_is_non_retryable_import_error("che168 captcha"))
+        self.assertTrue(
+            _is_non_retryable_import_error(
+                "name 'normalize_passenger_engine_volume_cc' is not defined"
+            )
+        )
+        self.assertTrue(_is_non_retryable_import_error("не найдена цена в юанях"))
+        self.assertFalse(_is_non_retryable_import_error("Page.goto: Timeout 120000ms exceeded"))
+
 
 if __name__ == "__main__":
     unittest.main()
