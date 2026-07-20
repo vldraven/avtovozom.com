@@ -1865,6 +1865,9 @@ export default function Home({ initialData = null }) {
                           <Link href={`/staff/publish-telegram/${car.id}`} className="btn btn-secondary btn-sm">
                             В Telegram
                           </Link>
+                          <Link href={`/staff/publish-vk/${car.id}`} className="btn btn-secondary btn-sm">
+                            В VK
+                          </Link>
                           <Link href={`/staff/publish-avito/${car.id}`} className="btn btn-secondary btn-sm">
                             На Avito
                           </Link>

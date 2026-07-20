@@ -1,0 +1,36 @@
+# One-shot: dump recent import/parse logs from prod via deploy SSH.
+# Actions → Prod import logs → Run workflow
+name: Prod import logs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch parser import logs
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH=(ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}")
+          "${SSH[@]}" "cd '${DEPLOY_PATH}' && set -a && [ -f .env ] && . ./.env && set +a && (
+            echo '=== compose ps ==='
+            docker compose -f docker-compose.prod.yml ps
+            echo '=== recent parse_jobs ==='
+            docker compose -f docker-compose.prod.yml exec -T postgres \
+              psql -U \"\${POSTGRES_USER:-avtovozom}\" -d \"\${POSTGRES_DB:-avtovozom}\" -c \
+              \"SELECT id, type, status, total_errors, left(coalesce(message,''), 240) AS msg, started_at, finished_at FROM parse_jobs ORDER BY id DESC LIMIT 20;\"
+            echo '=== parser logs (tail) ==='
+            docker compose -f docker-compose.prod.yml logs --tail=250 parser 2>&1 | tail -200
+            echo '=== backend logs (import/parse) ==='
+            docker compose -f docker-compose.prod.yml logs --tail=400 backend 2>&1 | grep -iE 'import|parse_job|import_one|error|traceback|exception|failed|che168|captcha|неполн' | tail -120
+          )"

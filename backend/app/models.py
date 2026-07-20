@@ -369,7 +369,11 @@ class FaqItem(Base):
 
 
 class CarExternalPublication(Base):
-    """Связь объявления avtovozom с внешней площадкой (Avito Autoload)."""
+    """Связь объявления avtovozom с внешней площадкой (Avito Autoload / VK wall).
+
+    Для channel=avito: avito_item_id / avito_url — идентификаторы Avito.
+    Для channel=vk: avito_item_id = post_id стены, avito_url = https://vk.com/wall-…_….
+    """
 
     __tablename__ = "car_external_publications"
     __table_args__ = (UniqueConstraint("car_id", "channel", name="uq_car_external_publication_car_channel"),)
@@ -405,3 +409,53 @@ class AvitoFieldMapping(Base):
     """brand | model | fuel | transmission | color"""
     local_value: Mapped[str] = mapped_column(String(256), nullable=False)
     avito_value: Mapped[str] = mapped_column(String(256), nullable=False)
+
+
+class ImportPlan(Base):
+    """Общий план импорта для staff (admin/moderator) — один активный список на всех."""
+
+    __tablename__ = "import_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="idle")
+    """idle | running | stopping"""
+    stop_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    banner: Mapped[str] = mapped_column(String(512), default="")
+    error: Mapped[str] = mapped_column(String(512), default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    items = relationship(
+        "ImportPlanItem",
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        order_by="ImportPlanItem.sort_order",
+    )
+
+
+class ImportPlanItem(Base):
+    __tablename__ = "import_plan_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("import_plans.id"), nullable=False, index=True)
+    client_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    """Стабильный id строки для React-ключей (UUID с клиента)."""
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    marketplace: Mapped[str] = mapped_column(String(32), default="che168")
+    brand_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    brand_name: Mapped[str] = mapped_column(String(128), default="")
+    model_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    model_name: Mapped[str] = mapped_column(String(128), default="")
+    generation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    generation_name: Mapped[str] = mapped_column(String(128), default="")
+    url: Mapped[str] = mapped_column(String(2048), default="")
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    """pending | queued | running | success | failed | cancelled"""
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    message: Mapped[str] = mapped_column(String(512), default="")
+    parse_job_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("parse_jobs.id"), nullable=True
+    )
+
+    plan = relationship("ImportPlan", back_populates="items")

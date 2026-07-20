@@ -1,4 +1,4 @@
-"""Общие данные для публикации объявления (Telegram, Avito)."""
+"""Общие данные для публикации объявления (Telegram, Avito, VK)."""
 
 from __future__ import annotations
 

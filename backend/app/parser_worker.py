@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import select
 
 from .db import SessionLocal
+from .import_plan_logic import process_import_plan
 from .models import ParseJob
 from .parser_logic import run_parser_job
 
@@ -30,6 +31,19 @@ def process_pending_jobs() -> None:
         db.close()
 
 
+def process_import_plan_queue() -> None:
+    db = SessionLocal()
+    try:
+        process_import_plan(db)
+    except Exception:
+        # Не роняем воркер из‑за сбоя плана — следующий тик повторит.
+        import logging
+
+        logging.getLogger(__name__).exception("import plan tick failed")
+    finally:
+        db.close()
+
+
 def enqueue_daily_job_if_needed() -> None:
     db = SessionLocal()
     try:
@@ -46,5 +60,6 @@ if __name__ == "__main__":
     poll_seconds = int(os.getenv("PARSER_POLL_SECONDS", "10"))
     while True:
         enqueue_daily_job_if_needed()
+        process_import_plan_queue()
         process_pending_jobs()
         time.sleep(poll_seconds)

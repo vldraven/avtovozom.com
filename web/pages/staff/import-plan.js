@@ -16,6 +16,7 @@ import {
   setImportPlanToken,
   startImportPlan,
   stopImportPlan,
+  stopImportPlanPolling,
   subscribeImportPlan,
 } from "../../lib/importPlanStore";
 import { isAdminRole, isStaffRole } from "../../lib/roles";
@@ -77,6 +78,10 @@ export default function StaffImportPlanPage() {
   const error = plan.error;
 
   useEffect(() => subscribeImportPlan(setPlan), []);
+
+  useEffect(() => {
+    return () => stopImportPlanPolling();
+  }, []);
 
   useEffect(() => {
     const t = getStoredToken();
@@ -369,7 +374,8 @@ export default function StaffImportPlanPage() {
           <h1 className="section-title">План импорта объявлений</h1>
           <p className="muted" style={{ marginTop: "-0.35rem", marginBottom: "1rem" }}>
             Составьте список ссылок, затем запустите обход. При ошибке — до {IMPORT_PLAN_MAX_RETRIES} попыток на
-            строку, затем следующая. План и прогресс сохраняются в браузере — можно уйти со страницы и вернуться.
+            строку, затем следующая. План и прогресс хранятся на сервере — можно закрыть сайт; с другого
+            устройства под admin/moderator виден тот же статус.
             {isAdminRole(me?.role)
               ? " Нет нужной марки/модели/поколения — введите название в поиске выпадающего списка и нажмите «Добавить»."
               : ""}

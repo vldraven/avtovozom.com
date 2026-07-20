@@ -560,6 +560,56 @@ class ParseJobOut(BaseModel):
         from_attributes = True
 
 
+class ImportPlanItemIn(BaseModel):
+    id: str | None = None
+    """client_key строки (UUID)."""
+    marketplace: Literal["che168", "global_che168", "dongchedi"] = "che168"
+    brand_id: int | None = None
+    brand_name: str = ""
+    model_id: int | None = None
+    model_name: str = ""
+    generation_id: int | None = None
+    generation_name: str = ""
+    url: str = ""
+    status: str | None = None
+    attempts: int | None = None
+    message: str | None = None
+    job_id: int | None = None
+
+
+class ImportPlanItemOut(BaseModel):
+    id: str
+    marketplace: str
+    brand_id: str
+    brand_name: str
+    model_id: str
+    model_name: str
+    generation_id: str
+    generation_name: str
+    url: str
+    status: str
+    attempts: int
+    message: str
+    job_id: int | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ImportPlanOut(BaseModel):
+    status: str
+    running: bool
+    banner: str
+    error: str
+    max_retries: int
+    updated_at: datetime | None = None
+    rows: list[ImportPlanItemOut]
+
+
+class ImportPlanPutIn(BaseModel):
+    rows: list[ImportPlanItemIn] = Field(default_factory=list)
+
+
 class TelegramComposePhotoOut(BaseModel):
     id: int
     storage_url: str
@@ -690,6 +740,68 @@ class AvitoPublishOut(BaseModel):
     ok: bool
     detail: str | None = None
     feed_ad_id: str | None = None
+    publication_status: str | None = None
+
+
+class VkComposePhotoOut(BaseModel):
+    id: int
+    storage_url: str
+    sort_order: int
+    absolute_url: str
+
+
+class VkPublicationOut(BaseModel):
+    status: str
+    vk_post_id: int | None = None
+    vk_url: str | None = None
+    last_error: str | None = None
+    published_at: str | None = None
+    last_text_preview: str | None = None
+
+
+class VkComposeOut(BaseModel):
+    car_id: int
+    title: str
+    brand: str
+    model: str
+    generation: str | None = None
+    year: int
+    mileage_km: int | None = None
+    engine_volume_cc: int
+    horsepower: int
+    fuel_type: str | None = None
+    transmission: str | None = None
+    location_city: str | None = None
+    price_cny: float
+    description: str
+    rub_china: float | None = None
+    estimated_total_rub: float | None = None
+    canonical_path: str
+    canonical_web_url: str
+    photos: list[VkComposePhotoOut]
+    default_text: str = ""
+    max_photos: int = 10
+    vk_configured: bool = False
+    publication: VkPublicationOut | None = None
+
+
+class VkPublishIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=12000)
+    photo_ids: list[int] = Field(default_factory=list)
+    attach_listing_link: bool = True
+
+    @model_validator(mode="after")
+    def _cap_photo_ids(self) -> VkPublishIn:
+        if len(self.photo_ids) > 10:
+            raise ValueError("photo_ids: не более 10 для одного поста в VK")
+        return self
+
+
+class VkPublishOut(BaseModel):
+    ok: bool
+    detail: str | None = None
+    vk_post_id: int | None = None
+    vk_url: str | None = None
     publication_status: str | None = None
 
 

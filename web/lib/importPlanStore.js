@@ -1,6 +1,6 @@
 /**
- * Глобальный store плана импорта: живёт между переходами по сайту,
- * сохраняется в localStorage и умеет продолжить обход после возврата / F5.
+ * План импорта: UI-состояние + sync с сервером.
+ * Оркестратор обхода живёт на backend (parser worker); здесь только CRUD/poll.
  */
 
 import { getStoredToken } from "./auth";
@@ -8,7 +8,9 @@ import { getStoredToken } from "./auth";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export const IMPORT_PLAN_STORAGE_KEY = "avtovozom.importPlan.v2";
 export const IMPORT_PLAN_MAX_RETRIES = 3;
-const POLL_MS = 1500;
+const POLL_MS_RUNNING = 1500;
+const POLL_MS_IDLE = 5000;
+const SAVE_DEBOUNCE_MS = 600;
 
 function newRowId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -38,40 +40,67 @@ function normalizeRow(r) {
     ...emptyImportPlanRow(),
     ...r,
     id: r?.id || newRowId(),
+    brandId: r?.brandId != null ? String(r.brandId) : "",
+    modelId: r?.modelId != null ? String(r.modelId) : "",
+    generationId: r?.generationId != null ? String(r.generationId) : "",
     status: r?.status || "pending",
     attempts: Number(r?.attempts) || 0,
-    jobId: r?.jobId ?? null,
+    jobId: r?.jobId ?? r?.job_id ?? null,
     message: r?.message || "",
   };
 }
 
-function loadPersisted() {
-  if (typeof window === "undefined") {
-    return { rows: [emptyImportPlanRow()], running: false, banner: "", error: "" };
-  }
-  try {
-    const raw = localStorage.getItem(IMPORT_PLAN_STORAGE_KEY);
-    if (!raw) return { rows: [emptyImportPlanRow()], running: false, banner: "", error: "" };
-    const parsed = JSON.parse(raw);
-    // v1 was a bare array
-    if (Array.isArray(parsed)) {
-      return {
-        rows: parsed.length ? parsed.map(normalizeRow) : [emptyImportPlanRow()],
-        running: false,
-        banner: "",
-        error: "",
-      };
-    }
-    const rows = Array.isArray(parsed.rows) ? parsed.rows.map(normalizeRow) : [emptyImportPlanRow()];
-    return {
-      rows: rows.length ? rows : [emptyImportPlanRow()],
-      running: Boolean(parsed.running),
-      banner: typeof parsed.banner === "string" ? parsed.banner : "",
-      error: typeof parsed.error === "string" ? parsed.error : "",
-    };
-  } catch {
-    return { rows: [emptyImportPlanRow()], running: false, banner: "", error: "" };
-  }
+function rowFromApi(r) {
+  return normalizeRow({
+    id: r.id,
+    marketplace: r.marketplace,
+    brandId: r.brand_id,
+    brandName: r.brand_name,
+    modelId: r.model_id,
+    modelName: r.model_name,
+    generationId: r.generation_id,
+    generationName: r.generation_name,
+    url: r.url,
+    status: r.status,
+    attempts: r.attempts,
+    message: r.message,
+    jobId: r.job_id,
+  });
+}
+
+function rowToApi(r) {
+  const brandId = r.brandId ? Number(r.brandId) : null;
+  const modelId = r.modelId ? Number(r.modelId) : null;
+  const generationId = r.generationId ? Number(r.generationId) : null;
+  return {
+    id: r.id,
+    marketplace: r.marketplace || "che168",
+    brand_id: Number.isFinite(brandId) ? brandId : null,
+    brand_name: r.brandName || "",
+    model_id: Number.isFinite(modelId) ? modelId : null,
+    model_name: r.modelName || "",
+    generation_id: Number.isFinite(generationId) ? generationId : null,
+    generation_name: r.generationName || "",
+    url: String(r.url || "").trim(),
+    status: r.status || "pending",
+    attempts: Number(r.attempts) || 0,
+    message: r.message || "",
+    job_id: r.jobId ?? null,
+  };
+}
+
+function applyApiPlan(data) {
+  const rows = Array.isArray(data.rows) ? data.rows.map(rowFromApi) : [emptyImportPlanRow()];
+  state = {
+    ...state,
+    rows: rows.length ? rows : [emptyImportPlanRow()],
+    running: Boolean(data.running),
+    banner: typeof data.banner === "string" ? data.banner : "",
+    error: typeof data.error === "string" ? data.error : "",
+    hydrated: true,
+    status: data.status || (data.running ? "running" : "idle"),
+  };
+  emit(false);
 }
 
 const listeners = new Set();
@@ -81,32 +110,19 @@ let state = {
   banner: "",
   error: "",
   hydrated: false,
+  status: "idle",
 };
 let token = "";
-let stopRequested = false;
-let activeJobId = null;
-let loopPromise = null;
+let pollTimer = null;
+let saveTimer = null;
+let savePromise = null;
+let dirty = false;
+let pollInFlight = false;
 
-function persist() {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(
-      IMPORT_PLAN_STORAGE_KEY,
-      JSON.stringify({
-        rows: state.rows,
-        running: state.running,
-        banner: state.banner,
-        error: state.error,
-        savedAt: Date.now(),
-      })
-    );
-  } catch {
-    /* quota */
+function emit(persistLocal = false) {
+  if (persistLocal) {
+    /* no-op: source of truth is server */
   }
-}
-
-function emit() {
-  persist();
   const snap = getImportPlanState();
   listeners.forEach((fn) => {
     try {
@@ -129,7 +145,8 @@ export function getImportPlanState() {
     banner: state.banner,
     error: state.error,
     hydrated: state.hydrated,
-    activeJobId,
+    status: state.status,
+    activeJobId: null,
   };
 }
 
@@ -142,24 +159,110 @@ export function setImportPlanToken(nextToken) {
   token = nextToken || "";
 }
 
-function patchRow(id, patch) {
-  state = {
-    ...state,
-    rows: state.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-  };
-  emit();
+function authHeaders(json = false) {
+  const stored = getStoredToken();
+  if (stored) token = stored;
+  const headers = { Authorization: `Bearer ${token}` };
+  if (json) headers["Content-Type"] = "application/json";
+  return headers;
 }
 
-function patchRowByJob(jobId, patch) {
-  state = {
-    ...state,
-    rows: state.rows.map((r) =>
-      r.jobId === jobId || (activeJobId === jobId && (r.status === "running" || r.status === "queued"))
-        ? { ...r, ...patch }
-        : r
-    ),
-  };
-  emit();
+async function apiGetPlan() {
+  const res = await fetch(`${API_URL}/admin/import-plan`, { headers: authHeaders() });
+  if (res.status === 401) {
+    setState({ error: "Сессия истекла — войдите снова", running: false });
+    return null;
+  }
+  if (!res.ok) {
+    setState({ error: "Не удалось загрузить план импорта" });
+    return null;
+  }
+  return res.json();
+}
+
+async function apiPutPlan(rows) {
+  const res = await fetch(`${API_URL}/admin/import-plan`, {
+    method: "PUT",
+    headers: authHeaders(true),
+    body: JSON.stringify({ rows: rows.map(rowToApi) }),
+  });
+  if (res.status === 401) {
+    setState({ error: "Сессия истекла — войдите снова" });
+    return null;
+  }
+  if (res.status === 409) {
+    const data = await apiGetPlan();
+    if (data) applyApiPlan(data);
+    setState({ error: "План сейчас выполняется — правки заблокированы" });
+    return null;
+  }
+  if (!res.ok) {
+    let detail = "Не удалось сохранить план";
+    try {
+      const err = await res.json();
+      if (err.detail) detail = typeof err.detail === "string" ? err.detail : detail;
+    } catch {
+      /* ignore */
+    }
+    setState({ error: detail });
+    return null;
+  }
+  return res.json();
+}
+
+function schedulePoll() {
+  if (typeof window === "undefined") return;
+  if (pollTimer) clearTimeout(pollTimer);
+  const ms = state.running ? POLL_MS_RUNNING : POLL_MS_IDLE;
+  pollTimer = setTimeout(() => {
+    refreshImportPlan().finally(() => schedulePoll());
+  }, ms);
+}
+
+export function stopImportPlanPolling() {
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
+
+export async function refreshImportPlan() {
+  if (!token && !getStoredToken()) return getImportPlanState();
+  if (pollInFlight) return getImportPlanState();
+  if (dirty) return getImportPlanState();
+  pollInFlight = true;
+  try {
+    const data = await apiGetPlan();
+    if (data) applyApiPlan(data);
+  } finally {
+    pollInFlight = false;
+  }
+  return getImportPlanState();
+}
+
+async function flushSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (!dirty || state.running) return;
+  dirty = false;
+  const rows = state.rows;
+  savePromise = apiPutPlan(rows).then((data) => {
+    if (data) applyApiPlan(data);
+    return data;
+  });
+  await savePromise;
+  savePromise = null;
+}
+
+function scheduleSave() {
+  dirty = true;
+  if (state.running) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    flushSave().catch(() => null);
+  }, SAVE_DEBOUNCE_MS);
 }
 
 export function setImportPlanRows(updater) {
@@ -167,419 +270,39 @@ export function setImportPlanRows(updater) {
   const next = typeof updater === "function" ? updater(state.rows) : updater;
   const rows = (Array.isArray(next) && next.length ? next : [emptyImportPlanRow()]).map(normalizeRow);
   setState({ rows, error: "" });
+  scheduleSave();
 }
 
 export function patchImportPlanRow(id, patch) {
   if (state.running) return;
-  patchRow(id, patch);
+  setState({
+    rows: state.rows.map((r) => (r.id === id ? normalizeRow({ ...r, ...patch }) : r)),
+    error: "",
+  });
+  scheduleSave();
 }
 
 export function addImportPlanRow() {
   if (state.running) return;
-  setState({ rows: [...state.rows, emptyImportPlanRow()] });
+  setState({ rows: [...state.rows, emptyImportPlanRow()], error: "" });
+  scheduleSave();
 }
 
 export function removeImportPlanRow(id) {
   if (state.running) return;
   const next = state.rows.filter((r) => r.id !== id);
-  setState({ rows: next.length ? next : [emptyImportPlanRow()] });
+  setState({ rows: next.length ? next : [emptyImportPlanRow()], error: "" });
+  scheduleSave();
 }
 
 export function clearFinishedImportPlanRows() {
   if (state.running) return;
   const next = state.rows.filter((r) => r.status !== "success");
-  setState({ rows: next.length ? next : [emptyImportPlanRow()] });
+  setState({ rows: next.length ? next : [emptyImportPlanRow()], error: "" });
+  scheduleSave();
 }
 
-async function sleep(ms) {
-  const step = 200;
-  let left = ms;
-  while (left > 0) {
-    if (stopRequested) return;
-    await new Promise((r) => setTimeout(r, Math.min(step, left)));
-    left -= step;
-  }
-}
-
-async function fetchJob(jobId) {
-  const stored = getStoredToken();
-  if (stored) token = stored;
-  const res = await fetch(`${API_URL}/admin/parser/jobs/${jobId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status === 401) {
-    return {
-      status: "failed",
-      message: "Сессия истекла — войдите снова и перезапустите обход",
-      id: jobId,
-      authError: true,
-    };
-  }
-  if (!res.ok) return { status: "failed", message: "Не удалось получить статус задачи", id: jobId };
-  return res.json();
-}
-
-/** Строка исчерпала попытки в этом обходе — переходим к следующей ссылке. */
-function markRowFailedExhausted(rowId, attempts, message, jobId = null) {
-  patchRow(rowId, {
-    status: "failed",
-    attempts: Math.max(attempts, IMPORT_PLAN_MAX_RETRIES),
-    message: message || "Ошибка импорта",
-    jobId,
-  });
-}
-
-async function pollJob(jobId) {
-  while (!stopRequested) {
-    const job = await fetchJob(jobId);
-    if (job.status === "queued" || job.status === "running") {
-      patchRowByJob(jobId, { status: job.status, message: job.message || "" });
-      await sleep(POLL_MS);
-      continue;
-    }
-    return job;
-  }
-  return { status: "cancelled", message: "Остановлено", id: jobId };
-}
-
-function formatImportApiError(detail) {
-  const raw = String(detail || "").trim();
-  if (!raw) return "Не удалось запустить импорт";
-  const lower = raw.toLowerCase();
-  if (lower.includes("invalid or expired token") || lower.includes("not authenticated")) {
-    return "Сессия истекла — войдите снова и перезапустите обход";
-  }
-  return raw;
-}
-
-async function importOneRow(row) {
-  const stored = getStoredToken();
-  if (stored) token = stored;
-  const res = await fetch(`${API_URL}/admin/parser/import-listing`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      model_id: Number(row.modelId),
-      che168_url: String(row.url || "").trim(),
-      marketplace: row.marketplace,
-      generation_id: row.generationId ? Number(row.generationId) : null,
-    }),
-  });
-  if (!res.ok) {
-    let detail = "Не удалось запустить импорт";
-    try {
-      const err = await res.json();
-      if (err.detail) {
-        detail = Array.isArray(err.detail)
-          ? err.detail.map((x) => x.msg || x).join(" ")
-          : String(err.detail);
-      }
-    } catch {
-      /* ignore */
-    }
-    const message = formatImportApiError(detail);
-    // 401 — нет смысла жечь все 3 попытки подряд
-    return {
-      status: "failed",
-      message,
-      id: null,
-      authError: res.status === 401,
-    };
-  }
-  return res.json();
-}
-
-async function cancelActiveJob() {
-  if (!activeJobId || !token) return;
-  try {
-    await fetch(`${API_URL}/admin/parser/jobs/${activeJobId}/cancel`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-  } catch {
-    /* ignore */
-  }
-}
-
-function queueRows(rows) {
-  return rows.filter((r) => {
-    if (!r.modelId || !String(r.url || "").trim()) return false;
-    if (r.status === "success") return false;
-    if (r.status === "failed" && r.attempts >= IMPORT_PLAN_MAX_RETRIES) return false;
-    return true;
-  });
-}
-
-/** Новый ручной старт: сбросить исчерпанные failed/cancelled, чтобы можно было повторить. */
-function prepareRowsForFreshStart(rows) {
-  return rows.map((r) => {
-    if (r.status === "success") return r;
-    if (r.status === "failed" || r.status === "cancelled") {
-      return {
-        ...r,
-        status: "pending",
-        attempts: 0,
-        jobId: null,
-        message: r.message
-          ? `Повтор: ${String(r.message).replace(/^Повтор:\s*/, "")}`
-          : "",
-      };
-    }
-    // running/queued leftover without active loop — treat as pending
-    if (r.status === "running" || r.status === "queued") {
-      return { ...r, status: "pending", jobId: null, message: r.message || "" };
-    }
-    return r;
-  });
-}
-
-async function finishActiveJobsIfAny() {
-  const active = state.rows.filter(
-    (r) => r.jobId && (r.status === "running" || r.status === "queued")
-  );
-  for (const row of active) {
-    if (stopRequested) break;
-    activeJobId = row.jobId;
-    setState({
-      banner: `Продолжаем задачу #${row.jobId}…`,
-      running: true,
-      error: "",
-    });
-    const finished = await pollJob(row.jobId);
-    activeJobId = null;
-    if (finished.status === "success") {
-      patchRow(row.id, {
-        status: "success",
-        message: finished.message || "Готово",
-        jobId: row.jobId,
-      });
-    } else if (finished.status === "cancelled" || stopRequested) {
-      patchRow(row.id, {
-        status: "cancelled",
-        message: finished.message || "Остановлено",
-        jobId: row.jobId,
-      });
-    } else {
-      const attempts = row.attempts || 1;
-      if (attempts >= IMPORT_PLAN_MAX_RETRIES) {
-        patchRow(row.id, {
-          status: "failed",
-          attempts,
-          message: finished.message || "Ошибка импорта",
-          jobId: row.jobId,
-        });
-      } else {
-        patchRow(row.id, {
-          status: "pending",
-          attempts,
-          message: `${finished.message || "Ошибка"} · будет повтор`,
-          jobId: row.jobId,
-        });
-      }
-    }
-  }
-}
-
-async function processRow(seed) {
-  let attempts = Number(seed.attempts) || 0;
-
-  while (attempts < IMPORT_PLAN_MAX_RETRIES && !stopRequested) {
-    attempts += 1;
-    const current = state.rows.find((r) => r.id === seed.id) || seed;
-    patchRow(seed.id, {
-      status: "running",
-      attempts,
-      message: `Попытка ${attempts}/${IMPORT_PLAN_MAX_RETRIES}…`,
-      jobId: null,
-    });
-
-    let job;
-    try {
-      job = await importOneRow(current);
-    } catch {
-      job = { status: "failed", message: "Сбой связи с API", id: null };
-    }
-
-    if (stopRequested) {
-      patchRow(seed.id, {
-        status: "cancelled",
-        attempts,
-        message: "Остановлено",
-        jobId: job.id || null,
-      });
-      return;
-    }
-
-    if (!job.id || job.status === "failed") {
-      const msg = job.message || "Ошибка запуска";
-      if (job.authError) {
-        markRowFailedExhausted(seed.id, attempts, msg, null);
-        return;
-      }
-      if (attempts >= IMPORT_PLAN_MAX_RETRIES) {
-        markRowFailedExhausted(seed.id, attempts, msg, null);
-        return;
-      }
-      patchRow(seed.id, {
-        status: "pending",
-        attempts,
-        message: `${msg} · повтор ${attempts + 1}/${IMPORT_PLAN_MAX_RETRIES}…`,
-      });
-      await sleep(800);
-      continue;
-    }
-
-    activeJobId = job.id;
-    patchRow(seed.id, {
-      jobId: job.id,
-      status: "running",
-      attempts,
-      message: job.message || "",
-    });
-    const finished = await pollJob(job.id);
-    activeJobId = null;
-
-    if (stopRequested || finished.status === "cancelled") {
-      patchRow(seed.id, {
-        status: "cancelled",
-        attempts,
-        message: finished.message || "Остановлено",
-        jobId: job.id,
-      });
-      return;
-    }
-
-    if (finished.status === "success") {
-      patchRow(seed.id, {
-        status: "success",
-        attempts,
-        message: finished.message || "Готово",
-        jobId: job.id,
-      });
-      return;
-    }
-
-    const msg = finished.message || "Ошибка импорта";
-    if (finished.authError) {
-      markRowFailedExhausted(seed.id, attempts, msg, job.id);
-      return;
-    }
-    if (attempts >= IMPORT_PLAN_MAX_RETRIES) {
-      markRowFailedExhausted(seed.id, attempts, msg, job.id);
-      return;
-    }
-    patchRow(seed.id, {
-      status: "pending",
-      attempts,
-      message: `${msg} · повтор ${attempts + 1}/${IMPORT_PLAN_MAX_RETRIES}…`,
-      jobId: job.id,
-    });
-    await sleep(800);
-  }
-}
-
-async function runLoop({ resume }) {
-  if (!token) {
-    setState({ running: false, error: "Нет токена авторизации — выполните вход" });
-    return;
-  }
-
-  stopRequested = false;
-  setState({ running: true, error: "", banner: resume ? "Возобновляем обход…" : state.banner });
-
-  try {
-    if (resume) {
-      await finishActiveJobsIfAny();
-      if (stopRequested) {
-        setState({ running: false, banner: "Обход остановлен." });
-        return;
-      }
-    } else {
-      // Ручной «Запустить обход»: снова берём failed/cancelled строки
-      const prepared = prepareRowsForFreshStart(state.rows);
-      state = { ...state, rows: prepared };
-      emit();
-    }
-
-    const queue = queueRows(state.rows);
-    if (!queue.length) {
-      const hasFailedExhausted = state.rows.some(
-        (r) => r.status === "failed" && r.attempts >= IMPORT_PLAN_MAX_RETRIES
-      );
-      setState({
-        running: false,
-        banner: resume ? "Активных задач нет — обход завершён." : state.banner,
-        error: resume
-          ? ""
-          : hasFailedExhausted
-            ? "Нет строк для обхода. Нажмите «Запустить обход» ещё раз после входа, если сессия истекла."
-            : "Добавьте строки с моделью и ссылкой (ещё не импортированные).",
-      });
-      return;
-    }
-
-    if (!resume) {
-      setState({
-        banner: `Старт: ${queue.length} объявлений в очереди (до ${IMPORT_PLAN_MAX_RETRIES} попыток на ссылку).`,
-      });
-    } else {
-      setState({
-        banner: `Продолжаем: осталось ${queue.length} (до ${IMPORT_PLAN_MAX_RETRIES} попыток на ссылку).`,
-      });
-    }
-
-    for (const seed of queue) {
-      if (stopRequested) break;
-      const latest = state.rows.find((r) => r.id === seed.id);
-      if (!latest || latest.status === "success") continue;
-      if (latest.status === "failed" && latest.attempts >= IMPORT_PLAN_MAX_RETRIES) continue;
-      await processRow(latest);
-    }
-  } finally {
-    activeJobId = null;
-    const stopped = stopRequested;
-    stopRequested = false;
-    const ok = state.rows.filter((r) => r.status === "success").length;
-    const failed = state.rows.filter(
-      (r) => r.status === "failed" && r.attempts >= IMPORT_PLAN_MAX_RETRIES
-    ).length;
-    const pendingLeft = queueRows(state.rows).length;
-    let banner = stopped ? "Обход остановлен." : "Обход завершён.";
-    if (!stopped && (ok > 0 || failed > 0)) {
-      const parts = [];
-      if (ok) parts.push(`успешно: ${ok}`);
-      if (failed) parts.push(`с ошибкой: ${failed}`);
-      banner = `Обход завершён (${parts.join(", ")}).`;
-      if (failed > 0) {
-        banner += " Неудачные можно повторить кнопкой «Запустить обход».";
-      }
-    }
-    setState({
-      running: false,
-      banner,
-      error: pendingLeft === 0 && failed > 0 && !stopped ? "" : state.error,
-    });
-    loopPromise = null;
-  }
-}
-
-function ensureLoop(opts) {
-  if (loopPromise) return loopPromise;
-  loopPromise = runLoop(opts).catch((e) => {
-    loopPromise = null;
-    setState({
-      running: false,
-      error: e instanceof Error ? e.message : "Сбой обхода",
-      banner: "",
-    });
-  });
-  return loopPromise;
-}
-
-export function startImportPlan(nextToken) {
+export async function startImportPlan(nextToken) {
   if (nextToken) token = nextToken;
   const stored = getStoredToken();
   if (stored) token = stored;
@@ -587,55 +310,102 @@ export function startImportPlan(nextToken) {
     setState({ error: "Сначала выполните вход" });
     return;
   }
-  if (state.running || loopPromise) return;
-  ensureLoop({ resume: false });
+  if (state.running) return;
+  await flushSave();
+  const res = await fetch(`${API_URL}/admin/import-plan/start`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (res.status === 401) {
+    setState({ error: "Сессия истекла — войдите снова" });
+    return;
+  }
+  if (!res.ok) {
+    setState({ error: "Не удалось запустить обход" });
+    return;
+  }
+  const data = await res.json();
+  applyApiPlan(data);
+  schedulePoll();
 }
 
 export async function stopImportPlan() {
-  if (!state.running && !loopPromise) return;
-  stopRequested = true;
+  if (!state.running) return;
   setState({ banner: "Остановка…" });
-  await cancelActiveJob();
+  const res = await fetch(`${API_URL}/admin/import-plan/stop`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (res.ok) {
+    applyApiPlan(await res.json());
+  }
+  schedulePoll();
+}
+
+function readLegacyLocalStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(IMPORT_PLAN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.length ? parsed.map(normalizeRow) : null;
+    }
+    if (parsed && Array.isArray(parsed.rows) && parsed.rows.length) {
+      return parsed.rows.map(normalizeRow);
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function clearLegacyLocalStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(IMPORT_PLAN_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
- * Подтянуть состояние из localStorage и при необходимости продолжить обход.
- * Безопасно вызывать при каждом заходе на страницу / из _app.
+ * Загрузить план с сервера; один раз мигрировать из localStorage, если сервер пуст.
+ * Запускает polling.
  */
 export async function bootstrapImportPlan(nextToken) {
   if (typeof window === "undefined") return getImportPlanState();
   if (nextToken) token = nextToken;
+  const stored = getStoredToken();
+  if (stored) token = stored;
+  if (!token) return getImportPlanState();
 
-  if (!state.hydrated) {
-    const loaded = loadPersisted();
-    state = {
-      ...state,
-      rows: loaded.rows,
-      running: Boolean(loopPromise),
-      banner: loaded.banner,
-      error: loaded.error,
-      hydrated: true,
-    };
-    emit();
-  } else if (nextToken) {
-    token = nextToken;
-  }
-
-  // Уже крутится цикл в этой вкладке
-  if (loopPromise) {
-    setState({ running: true });
+  const data = await apiGetPlan();
+  if (!data) {
+    schedulePoll();
     return getImportPlanState();
   }
 
-  const persisted = loadPersisted();
-  const hasActiveJobs = state.rows.some(
-    (r) => r.jobId && (r.status === "running" || r.status === "queued")
-  );
-  const wasRunning = Boolean(persisted.running) || hasActiveJobs;
+  const apiRows = Array.isArray(data.rows) ? data.rows : [];
+  const serverEmpty =
+    apiRows.length === 0 ||
+    (apiRows.length === 1 &&
+      !apiRows[0].model_id &&
+      !String(apiRows[0].url || "").trim() &&
+      (apiRows[0].status === "pending" || !apiRows[0].status));
 
-  if (token && wasRunning) {
-    ensureLoop({ resume: true });
+  const legacy = readLegacyLocalStorage();
+  if (serverEmpty && legacy && legacy.some((r) => r.modelId || String(r.url || "").trim())) {
+    applyApiPlan({ ...data, rows: [], running: false, banner: "", error: "" });
+    setState({ rows: legacy.map(normalizeRow), running: false, error: "" });
+    dirty = true;
+    await flushSave();
+    clearLegacyLocalStorage();
+  } else {
+    applyApiPlan(data);
+    if (legacy) clearLegacyLocalStorage();
   }
 
+  schedulePoll();
   return getImportPlanState();
 }

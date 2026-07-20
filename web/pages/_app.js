@@ -8,8 +8,7 @@ import PwaInstallPrompt from "../components/PwaInstallPrompt";
 import PwaServiceWorker from "../components/PwaServiceWorker";
 import SiteFooter from "../components/SiteFooter";
 import YandexMetrika from "../components/YandexMetrika";
-import { ensureFreshAccessToken, getStoredToken } from "../lib/auth";
-import { bootstrapImportPlan, setImportPlanToken } from "../lib/importPlanStore";
+import { ensureFreshAccessToken } from "../lib/auth";
 import { manrope } from "../lib/fonts";
 import "../styles/globals.css";
 
@@ -36,12 +35,6 @@ export default function App({ Component, pageProps }) {
     const onFocus = () => tick();
     window.addEventListener("focus", onFocus);
     const id = setInterval(tick, 4 * 60 * 1000);
-
-    const t = getStoredToken();
-    if (t) {
-      setImportPlanToken(t);
-      bootstrapImportPlan(t).catch(() => null);
-    }
 
     return () => {
       window.removeEventListener("focus", onFocus);

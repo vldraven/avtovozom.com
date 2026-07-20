@@ -48,6 +48,8 @@ from .models import (
     ChatMessage,
     DealerOffer,
     FaqItem,
+    ImportPlan,
+    ImportPlanItem,
     ModelWhitelist,
     CustomsCalcSettings,
     ParseJob,
@@ -75,9 +77,20 @@ from .avito_publish import (
     refresh_avito_status,
     verify_feed_secret,
 )
+from .vk_publish import (
+    build_vk_compose_response,
+    get_vk_publication,
+    publish_car_to_vk,
+)
 from .listing_compose import build_listing_marketing_compose
 from .listing_copy_ru import basic_neutral_description_ru, pick_listing_title, russian_listing_title
 from .model_resolver import resolve_model_id_for_listing
+from .import_plan_logic import (
+    IMPORT_PLAN_MAX_RETRIES,
+    ensure_import_plan,
+    request_stop_import_plan,
+    start_import_plan,
+)
 from .parser_cancellation import request_cancel
 from .parser_logic import run_parser_job
 from .indexnow import submit_urls as _indexnow_submit_urls
@@ -165,6 +178,9 @@ from .schemas import (
     MeOut,
     CarModelCatalogIn,
     ModelWhitelistItem,
+    ImportPlanItemIn,
+    ImportPlanOut,
+    ImportPlanPutIn,
     ParseJobOut,
     ParserImportListingIn,
     PasswordChangeIn,
@@ -178,6 +194,9 @@ from .schemas import (
     TelegramComposePhotoOut,
     TelegramPublishIn,
     TelegramPublishOut,
+    VkComposeOut,
+    VkPublishIn,
+    VkPublishOut,
     PasswordResetConfirmIn,
     PasswordResetStartIn,
     ProfileUpdateIn,
@@ -816,6 +835,57 @@ def startup() -> None:
         conn.execute(
             text(
                 "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN DEFAULT FALSE"
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS import_plans (
+                    id SERIAL PRIMARY KEY,
+                    status VARCHAR(32) NOT NULL DEFAULT 'idle',
+                    stop_requested BOOLEAN NOT NULL DEFAULT FALSE,
+                    banner VARCHAR(512) NOT NULL DEFAULT '',
+                    error VARCHAR(512) NOT NULL DEFAULT '',
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS import_plan_items (
+                    id SERIAL PRIMARY KEY,
+                    plan_id INTEGER NOT NULL REFERENCES import_plans(id) ON DELETE CASCADE,
+                    client_key VARCHAR(64) NOT NULL DEFAULT '',
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    marketplace VARCHAR(32) NOT NULL DEFAULT 'che168',
+                    brand_id INTEGER NULL,
+                    brand_name VARCHAR(128) NOT NULL DEFAULT '',
+                    model_id INTEGER NULL,
+                    model_name VARCHAR(128) NOT NULL DEFAULT '',
+                    generation_id INTEGER NULL,
+                    generation_name VARCHAR(128) NOT NULL DEFAULT '',
+                    url VARCHAR(2048) NOT NULL DEFAULT '',
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    message VARCHAR(512) NOT NULL DEFAULT '',
+                    parse_job_id INTEGER NULL REFERENCES parse_jobs(id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_import_plan_items_plan_id "
+                "ON import_plan_items (plan_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO import_plans (id, status, stop_requested, banner, error) "
+                "SELECT 1, 'idle', FALSE, '', '' "
+                "WHERE NOT EXISTS (SELECT 1 FROM import_plans WHERE id = 1)"
             )
         )
         conn.execute(
@@ -3858,6 +3928,61 @@ def admin_car_avito_status(
     return AvitoStatusOut(**data)
 
 
+@app.get("/admin/cars/{car_id}/vk-compose", response_model=VkComposeOut)
+def admin_car_vk_compose(
+    car_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+    compose = _admin_build_listing_compose(car, db)
+    publication = get_vk_publication(db, car.id)
+    data = build_vk_compose_response(compose, publication=publication)
+    return VkComposeOut(**data)
+
+
+@app.post("/admin/cars/{car_id}/vk/publish", response_model=VkPublishOut)
+def admin_car_vk_publish(
+    car_id: int,
+    payload: VkPublishIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+    compose = _admin_build_listing_compose(car, db)
+
+    by_photo = {p[0]: p for p in compose.photos}
+    photo_urls: list[str] = []
+    seen: set[int] = set()
+    for pid in payload.photo_ids:
+        if pid in seen:
+            continue
+        seen.add(pid)
+        row = by_photo.get(pid)
+        if not row:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Фото id={pid} не принадлежит объявлению",
+            )
+        photo_urls.append(row[3])
+
+    listing_url = compose.canonical_web_url if payload.attach_listing_link else ""
+    ok, detail, meta = publish_car_to_vk(
+        db,
+        car_id=car.id,
+        text=payload.text.strip(),
+        photo_urls=photo_urls,
+        listing_web_url=listing_url,
+    )
+    return VkPublishOut(
+        ok=ok,
+        detail=detail,
+        vk_post_id=meta.get("vk_post_id"),
+        vk_url=meta.get("vk_url"),
+        publication_status=meta.get("publication_status"),
+    )
+
+
 @app.get("/integrations/avito/feed.xml")
 def public_avito_feed_xml(
     secret: str | None = Query(default=None),
@@ -5596,6 +5721,135 @@ def import_che168_listing(
     db.refresh(job)
     background_tasks.add_task(_run_parser_job_background, job.id)
     return job
+
+
+def _import_plan_item_out(item: ImportPlanItem) -> dict:
+    return {
+        "id": item.client_key or str(item.id),
+        "marketplace": item.marketplace or "che168",
+        "brand_id": str(item.brand_id) if item.brand_id is not None else "",
+        "brand_name": item.brand_name or "",
+        "model_id": str(item.model_id) if item.model_id is not None else "",
+        "model_name": item.model_name or "",
+        "generation_id": str(item.generation_id) if item.generation_id is not None else "",
+        "generation_name": item.generation_name or "",
+        "url": item.url or "",
+        "status": item.status or "pending",
+        "attempts": int(item.attempts or 0),
+        "message": item.message or "",
+        "job_id": item.parse_job_id,
+    }
+
+
+def _import_plan_out(plan: ImportPlan) -> ImportPlanOut:
+    rows = [
+        _import_plan_item_out(i)
+        for i in sorted(plan.items, key=lambda x: (x.sort_order, x.id))
+    ]
+    if not rows:
+        rows = [
+            {
+                "id": str(uuid.uuid4()),
+                "marketplace": "che168",
+                "brand_id": "",
+                "brand_name": "",
+                "model_id": "",
+                "model_name": "",
+                "generation_id": "",
+                "generation_name": "",
+                "url": "",
+                "status": "pending",
+                "attempts": 0,
+                "message": "",
+                "job_id": None,
+            }
+        ]
+    running = plan.status in ("running", "stopping")
+    return ImportPlanOut(
+        status=plan.status,
+        running=running,
+        banner=plan.banner or "",
+        error=plan.error or "",
+        max_retries=IMPORT_PLAN_MAX_RETRIES,
+        updated_at=plan.updated_at,
+        rows=rows,
+    )
+
+
+@app.get("/admin/import-plan", response_model=ImportPlanOut)
+def get_import_plan(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    return _import_plan_out(ensure_import_plan(db))
+
+
+@app.put("/admin/import-plan", response_model=ImportPlanOut)
+def put_import_plan(
+    payload: ImportPlanPutIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    plan = ensure_import_plan(db)
+    if plan.status in ("running", "stopping"):
+        raise HTTPException(
+            status_code=409,
+            detail="Нельзя менять план во время обхода. Сначала остановите.",
+        )
+    db.execute(delete(ImportPlanItem).where(ImportPlanItem.plan_id == plan.id))
+    rows_in = payload.rows or []
+    if not rows_in:
+        rows_in = [ImportPlanItemIn()]
+    for idx, row in enumerate(rows_in):
+        client_key = (row.id or "").strip() or str(uuid.uuid4())
+        st = (row.status or "pending").strip() or "pending"
+        if st in ("running", "queued"):
+            st = "pending"
+        db.add(
+            ImportPlanItem(
+                plan_id=plan.id,
+                client_key=client_key[:64],
+                sort_order=idx,
+                marketplace=row.marketplace or "che168",
+                brand_id=row.brand_id,
+                brand_name=(row.brand_name or "")[:128],
+                model_id=row.model_id,
+                model_name=(row.model_name or "")[:128],
+                generation_id=row.generation_id,
+                generation_name=(row.generation_name or "")[:128],
+                url=(row.url or "").strip()[:2048],
+                status=st[:32],
+                attempts=max(0, int(row.attempts or 0)),
+                message=(row.message or "")[:512],
+                parse_job_id=row.job_id,
+            )
+        )
+    plan.error = ""
+    if not plan.banner or plan.status == "idle":
+        # Не затираем итог прошлого обхода без нужды — только если пусто
+        pass
+    plan.updated_at = datetime.utcnow()
+    db.commit()
+    return _import_plan_out(ensure_import_plan(db))
+
+
+@app.post("/admin/import-plan/start", response_model=ImportPlanOut)
+def start_import_plan_endpoint(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    plan = ensure_import_plan(db)
+    if plan.status in ("running", "stopping"):
+        return _import_plan_out(plan)
+    return _import_plan_out(start_import_plan(db))
+
+
+@app.post("/admin/import-plan/stop", response_model=ImportPlanOut)
+def stop_import_plan_endpoint(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    return _import_plan_out(request_stop_import_plan(db))
 
 
 @app.get("/admin/parser/jobs", response_model=list[ParseJobOut])

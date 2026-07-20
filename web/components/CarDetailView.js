@@ -746,6 +746,9 @@ export default function CarDetailView({
                     <Link href={`/staff/publish-telegram/${carId}`} className="btn btn-secondary">
                       Пост в Telegram
                     </Link>
+                    <Link href={`/staff/publish-vk/${carId}`} className="btn btn-secondary">
+                      В VK
+                    </Link>
                     <Link href={`/staff/publish-avito/${carId}`} className="btn btn-secondary">
                       На Avito
                     </Link>
