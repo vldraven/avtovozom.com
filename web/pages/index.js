@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -1154,13 +1154,14 @@ export default function Home({ initialData = null }) {
     });
   }, [router.isReady, router.asPath, cars.length]);
 
-  useEffect(() => {
+  // useLayoutEffect — позиция до paint, без заметного автоскролла.
+  useLayoutEffect(() => {
     scrollRestorePathRef.current = "";
     return tryRestoreHomeScroll();
   }, [tryRestoreHomeScroll]);
 
   // Next.js после client transition часто скроллит наверх уже после mount —
-  // повторяем restore на routeChangeComplete.
+  // повторяем restore на routeChangeComplete (мгновенно, без анимации).
   useEffect(() => {
     if (!router.isReady) return undefined;
     let cleanup = () => {};

@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 
@@ -427,10 +427,28 @@ export default function CatalogTreePage({ initialPayload = null }) {
     });
   }, [router.isReady, router.asPath, segments, isCatalogListRoute, cars.length]);
 
-  useEffect(() => {
+  // useLayoutEffect — позиция до paint, без заметного автоскролла.
+  useLayoutEffect(() => {
     scrollRestorePathRef.current = "";
     return tryRestoreCatalogScroll();
   }, [tryRestoreCatalogScroll]);
+
+  // Next.js после client transition часто скроллит наверх уже после mount —
+  // повторяем restore на routeChangeComplete (мгновенно, без анимации).
+  useEffect(() => {
+    if (!router.isReady) return undefined;
+    let cleanup = () => {};
+    const handler = () => {
+      cleanup();
+      scrollRestorePathRef.current = "";
+      cleanup = tryRestoreCatalogScroll() || (() => {});
+    };
+    router.events.on("routeChangeComplete", handler);
+    return () => {
+      router.events.off("routeChangeComplete", handler);
+      cleanup();
+    };
+  }, [router.events, router.isReady, tryRestoreCatalogScroll]);
 
   const breadcrumbItems = useMemo(
     () => catalogBreadcrumbItems({ brand, model, generation }),

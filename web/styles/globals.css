@@ -29,9 +29,9 @@
   box-sizing: border-box;
 }
 
-html {
-  scroll-behavior: smooth;
-}
+/* Не задаём scroll-behavior: smooth на html — иначе window.scrollTo({behavior:"auto"})
+   и восстановление позиции списка после «назад» из карточки анимируются и портят UX.
+   Явный smooth оставляем точечно (например scrollIntoView в сообщениях). */
 
 body {
   margin: 0;
