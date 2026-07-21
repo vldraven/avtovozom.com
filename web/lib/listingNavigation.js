@@ -44,6 +44,13 @@ export function pathsMatchForScrollRestore(a, b) {
   return normalizePath(a) === normalizePath(b);
 }
 
+/** Возврат на список после клика по карточке — не перезагружаем ленту. */
+export function isListingBackNavigation(path) {
+  if (typeof window === "undefined" || !path) return false;
+  const target = peekScrollRestoreTarget();
+  return Boolean(target && pathsMatchForScrollRestore(target, path));
+}
+
 export function peekListingReturnPath() {
   if (typeof window === "undefined") return null;
   return sessionStorage.getItem(RETURN_PATH_KEY);

@@ -18,18 +18,37 @@ import {
 } from "../lib/auth";
 import { listingCarHref } from "../lib/carRoutes";
 import { scheduleListScrollRestore } from "../lib/listScrollRestore";
-import { saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
+import {
+  clearListingPageCache,
+  getListingPageCache,
+  setListingPageCache,
+} from "../lib/listingPageCache";
+import { isListingBackNavigation, saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const FAVORITES_SCROLL_STORAGE_PREFIX = "avt_favorites_scroll:";
+const FAVORITES_LIST_CACHE_NS = "favorites";
+const FAVORITES_CACHE_KEY = "default";
+
+function readFavoritesCacheSeed() {
+  if (typeof window === "undefined") return null;
+  if (!isListingBackNavigation("/favorites") && !isListingBackNavigation(window.location.pathname)) {
+    return null;
+  }
+  const cached = getListingPageCache(FAVORITES_LIST_CACHE_NS, FAVORITES_CACHE_KEY);
+  if (!cached?.cars) return null;
+  return cached;
+}
 
 export default function FavoritesPage() {
   const router = useRouter();
-  const [token, setToken] = useState("");
-  const [me, setMe] = useState(null);
-  const [cars, setCars] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const cacheSeed = readFavoritesCacheSeed();
+  const skipFavoritesFetchOnceRef = useRef(Boolean(cacheSeed));
+  const [token, setToken] = useState(cacheSeed?.token ?? "");
+  const [me, setMe] = useState(cacheSeed?.me ?? null);
+  const [cars, setCars] = useState(cacheSeed?.cars ?? []);
+  const [total, setTotal] = useState(cacheSeed?.total ?? 0);
+  const [loading, setLoading] = useState(!cacheSeed);
   const [error, setError] = useState("");
 
   const saveFavoritesScrollPosition = useCallback(
@@ -49,6 +68,12 @@ export default function FavoritesPage() {
       const rect = card?.getBoundingClientRect?.();
       saveListingReturnPath(router.asPath);
       markScrollRestoreTarget(router.asPath);
+      setListingPageCache(FAVORITES_LIST_CACHE_NS, FAVORITES_CACHE_KEY, {
+        cars,
+        total,
+        token,
+        me,
+      });
       const storageKey = `${FAVORITES_SCROLL_STORAGE_PREFIX}${router.asPath}`;
       sessionStorage.setItem(
         storageKey,
@@ -60,7 +85,7 @@ export default function FavoritesPage() {
         })
       );
     },
-    [router.asPath]
+    [router.asPath, cars, total, token, me]
   );
 
   const scrollRestorePathRef = useRef("");
@@ -115,16 +140,30 @@ export default function FavoritesPage() {
       setCars([]);
       setTotal(0);
       setLoading(false);
+      clearListingPageCache(FAVORITES_LIST_CACHE_NS, FAVORITES_CACHE_KEY);
       return;
     }
     const data = await res.json();
-    setCars(Array.isArray(data.items) ? data.items : []);
-    setTotal(Number(data.total) || 0);
+    const nextCars = Array.isArray(data.items) ? data.items : [];
+    const nextTotal = Number(data.total) || 0;
+    setCars(nextCars);
+    setTotal(nextTotal);
     setLoading(false);
+    setListingPageCache(FAVORITES_LIST_CACHE_NS, FAVORITES_CACHE_KEY, {
+      cars: nextCars,
+      total: nextTotal,
+      token: accessToken,
+    });
   }, []);
 
   const bootstrap = useCallback(async () => {
-    setLoading(true);
+    const reuseCachedList = skipFavoritesFetchOnceRef.current;
+    if (reuseCachedList) {
+      skipFavoritesFetchOnceRef.current = false;
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     await ensureFreshAccessToken().catch(() => null);
     let access = getStoredToken();
@@ -163,6 +202,14 @@ export default function FavoritesPage() {
     const profile = await res.json();
     setMe(profile);
     setToken(access);
+    setListingPageCache(FAVORITES_LIST_CACHE_NS, FAVORITES_CACHE_KEY, {
+      me: profile,
+      token: access,
+    });
+    if (reuseCachedList) {
+      setLoading(false);
+      return;
+    }
     await loadFavorites(access);
   }, [router, loadFavorites]);
 
@@ -181,7 +228,10 @@ export default function FavoritesPage() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !token) return undefined;
-    const reload = () => loadFavorites(token);
+    const reload = () => {
+      clearListingPageCache(FAVORITES_LIST_CACHE_NS, FAVORITES_CACHE_KEY);
+      loadFavorites(token);
+    };
     window.addEventListener("avt-favorites-changed", reload);
     return () => window.removeEventListener("avt-favorites-changed", reload);
   }, [token, loadFavorites]);

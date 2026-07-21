@@ -16,7 +16,7 @@ import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLin
 import RequestConfirmModal from "../../components/RequestConfirmModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../../lib/auth";
 import { listingCarHref, publicCarHref } from "../../lib/carRoutes";
-import { saveListingReturnPath, markScrollRestoreTarget } from "../../lib/listingNavigation";
+import { saveListingReturnPath, markScrollRestoreTarget, isListingBackNavigation } from "../../lib/listingNavigation";
 import { canCreateListings } from "../../lib/roles";
 import {
   buildCatalogCarsQuery,
@@ -39,6 +39,7 @@ import {
 } from "../../lib/catalogSeo";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../../lib/schema";
 import { scheduleListScrollRestore } from "../../lib/listScrollRestore";
+import { getListingPageCache, setListingPageCache } from "../../lib/listingPageCache";
 import { absoluteUrl } from "../../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -47,6 +48,7 @@ const CATALOG_BRANDS_COLLAPSED_LIMIT = 12;
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
 const CATALOG_SCROLL_STORAGE_PREFIX = "avt_catalog_scroll:";
+const CATALOG_LIST_CACHE_NS = "catalog";
 
 export default function CatalogTreePage({ initialPayload = null }) {
   const router = useRouter();
@@ -101,6 +103,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
     initialPayload?.mode === "detail" ||
     (segments != null && isCarDetailSegments(segments));
   const isCatalogListRoute = segments != null && !isCarDetailRoute && !unknownSlug;
+  const wasCatalogDetailRef = useRef(false);
+  const keepCatalogListRef = useRef(false);
 
   const appliedFilters = useMemo(
     () =>
@@ -145,12 +149,31 @@ export default function CatalogTreePage({ initialPayload = null }) {
   useEffect(() => {
     if (!initialPayload) return;
     if (initialPayload.mode === "list") {
+      // Возврат из карточки на том же page-компоненте: не затираем ленту SSR.
+      if (wasCatalogDetailRef.current && cars.length > 0) {
+        wasCatalogDetailRef.current = false;
+        keepCatalogListRef.current = true;
+        if (!tree.length && initialPayload.tree?.length) {
+          setTree(initialPayload.tree);
+          skipTreeLoadRef.current = true;
+        }
+        return;
+      }
       setTree(initialPayload.tree ?? []);
       setCars(initialPayload.cars ?? []);
       setTotal(initialPayload.total ?? 0);
       setListSort(initialPayload.listSort ?? "date_desc");
       skipCarsFetchKeyRef.current = initialPayload.fetchKey ?? null;
       skipTreeLoadRef.current = Boolean(initialPayload.tree?.length);
+      if (router.asPath && (initialPayload.cars?.length || initialPayload.tree?.length)) {
+        setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
+          cars: initialPayload.cars ?? [],
+          total: initialPayload.total ?? 0,
+          tree: initialPayload.tree ?? [],
+          listSort: initialPayload.listSort ?? "date_desc",
+          fetchKey: initialPayload.fetchKey ?? null,
+        });
+      }
     }
   }, [initialPayload]);
 
@@ -165,14 +188,18 @@ export default function CatalogTreePage({ initialPayload = null }) {
         setTree([]);
         return;
       }
-      setTree(await res.json());
+      const nextTree = await res.json();
+      setTree(nextTree);
+      if (router.asPath) {
+        setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, { tree: nextTree });
+      }
     } catch {
       setTreeError(
         `Нет связи с API (${API_URL}). Запустите backend (docker compose / uvicorn) и проверьте адрес в NEXT_PUBLIC_API_URL.`
       );
       setTree([]);
     }
-  }, []);
+  }, [router.asPath]);
 
   useEffect(() => {
     if (skipTreeLoadRef.current) {
@@ -250,10 +277,16 @@ export default function CatalogTreePage({ initialPayload = null }) {
       const rect = card?.getBoundingClientRect?.();
       saveListingReturnPath(router.asPath);
       markScrollRestoreTarget(router.asPath);
+      setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
+        cars,
+        total,
+        tree,
+        listSort,
+      });
       writeCatalogScrollPosition(router.asPath, carId, rect ? rect.top : null);
       lastExplicitScrollSaveRef.current = { path: router.asPath, at: Date.now() };
     },
-    [isCatalogListRoute, router.asPath, writeCatalogScrollPosition]
+    [isCatalogListRoute, router.asPath, writeCatalogScrollPosition, cars, total, tree, listSort]
   );
 
   useEffect(() => {
@@ -332,7 +365,29 @@ export default function CatalogTreePage({ initialPayload = null }) {
   }, [router.isReady, router.query, isCatalogListRoute, brand?.id, model?.id]);
 
   useEffect(() => {
+    if (isCarDetailRoute) {
+      wasCatalogDetailRef.current = true;
+      // Снимок ленты перед уходом в карточку (на случай remount).
+      if (router.asPath && cars.length > 0) {
+        const returnPath = typeof sessionStorage !== "undefined"
+          ? sessionStorage.getItem("avt_listing_return_path")
+          : null;
+        if (returnPath) {
+          setListingPageCache(CATALOG_LIST_CACHE_NS, returnPath, {
+            cars,
+            total,
+            tree,
+            listSort,
+          });
+        }
+      }
+    }
+  }, [isCarDetailRoute, router.asPath, cars, total, tree, listSort]);
+
+  useEffect(() => {
     if (!ssrReady || segments == null) return;
+    // На карточке авто не трогаем ленту — иначе list→detail перезатирает cars.
+    if (!isCatalogListRoute) return;
     if (unknownSlug) {
       setCars([]);
       setTotal(0);
@@ -340,6 +395,30 @@ export default function CatalogTreePage({ initialPayload = null }) {
     }
     const filterKey = catalogFilterKeyFromQuery(router.query);
     const fetchKey = catalogFetchKey(segments, listSort, filterKey);
+    if (keepCatalogListRef.current) {
+      keepCatalogListRef.current = false;
+      if (cars.length > 0) {
+        setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
+          cars,
+          total,
+          tree,
+          listSort,
+          fetchKey,
+        });
+        return;
+      }
+    }
+    if (wasCatalogDetailRef.current && cars.length > 0) {
+      wasCatalogDetailRef.current = false;
+      setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
+        cars,
+        total,
+        tree,
+        listSort,
+        fetchKey,
+      });
+      return;
+    }
     if (skipCarsFetchKeyRef.current === fetchKey) {
       skipCarsFetchKeyRef.current = null;
       const initialCars = listInitial?.cars?.length ?? 0;
@@ -347,6 +426,17 @@ export default function CatalogTreePage({ initialPayload = null }) {
       if (initialTotal > 0 && initialCars >= initialTotal) {
         return;
       }
+    }
+    const cached = getListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath);
+    if (
+      isListingBackNavigation(router.asPath) &&
+      cached?.cars?.length &&
+      (cached.fetchKey == null || cached.fetchKey === fetchKey)
+    ) {
+      setCars(cached.cars);
+      setTotal(cached.total ?? 0);
+      if (cached.tree?.length && !tree.length) setTree(cached.tree);
+      return;
     }
     const resolved = resolveCatalogTree(segments, tree);
     const filterQuery = parseFiltersFromQuery(router.query, {
@@ -370,8 +460,17 @@ export default function CatalogTreePage({ initialPayload = null }) {
         }
         const data = await res.json();
         if (!cancelled) {
-          setCars(data.items || []);
-          setTotal(data.total || 0);
+          const nextCars = data.items || [];
+          const nextTotal = data.total || 0;
+          setCars(nextCars);
+          setTotal(nextTotal);
+          setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
+            cars: nextCars,
+            total: nextTotal,
+            tree,
+            listSort,
+            fetchKey,
+          });
         }
       } catch {
         if (!cancelled) {
@@ -391,8 +490,10 @@ export default function CatalogTreePage({ initialPayload = null }) {
     unknownSlug,
     listSort,
     router.query,
+    router.asPath,
     listInitial?.cars?.length,
     listInitial?.total,
+    isCatalogListRoute,
   ]);
 
   useEffect(() => {
