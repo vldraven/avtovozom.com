@@ -88,17 +88,23 @@ export default function MobileBottomNav() {
     const root = document.documentElement;
     const vv = window.visualViewport;
 
-    // Пересчитываем смещение только при изменении размера окна (открытие/закрытие клавиатуры),
-    // но НЕ при скролле visualViewport — иначе навигация прыгает при обычной прокрутке страницы.
+    // Клавиатуру детектим только при фокусе в поле ввода.
+    // Не используем visualViewport.scroll / offsetTop при обычном скролле —
+    // иначе dock прыгает, а transform на fixed ломает iOS.
     const updateViewportOffset = () => {
       const visual = window.visualViewport;
-      if (!visual) {
+      const ae = document.activeElement;
+      const editing =
+        ae &&
+        (ae.tagName === "INPUT" ||
+          ae.tagName === "TEXTAREA" ||
+          ae.tagName === "SELECT" ||
+          ae.isContentEditable);
+      if (!visual || !editing) {
         root.style.setProperty("--mobile-viewport-offset", "0px");
         return;
       }
-      // offsetTop > 0 означает, что клавиатура подняла вьюпорт.
-      // В этом случае сдвигаем навигацию вверх на высоту клавиатуры.
-      const keyboardHeight = Math.max(0, Math.round(visual.offsetTop));
+      const keyboardHeight = Math.max(0, Math.round(window.innerHeight - visual.height));
       root.style.setProperty("--mobile-viewport-offset", `${keyboardHeight}px`);
     };
 
@@ -106,12 +112,15 @@ export default function MobileBottomNav() {
     window.addEventListener("resize", updateViewportOffset);
     window.addEventListener("orientationchange", updateViewportOffset);
     vv?.addEventListener("resize", updateViewportOffset);
-    // Не подписываемся на vv "scroll" — это вызывало прыжки навигации при скролле страницы
+    document.addEventListener("focusin", updateViewportOffset);
+    document.addEventListener("focusout", updateViewportOffset);
 
     return () => {
       window.removeEventListener("resize", updateViewportOffset);
       window.removeEventListener("orientationchange", updateViewportOffset);
       vv?.removeEventListener("resize", updateViewportOffset);
+      document.removeEventListener("focusin", updateViewportOffset);
+      document.removeEventListener("focusout", updateViewportOffset);
       root.style.removeProperty("--mobile-viewport-offset");
     };
   }, []);

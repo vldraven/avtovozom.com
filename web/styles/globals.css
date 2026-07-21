@@ -5495,6 +5495,35 @@ html.page-messages body {
     padding-bottom: calc(3.55rem + env(safe-area-inset-bottom, 0px) + var(--mobile-viewport-offset, 0px));
   }
 
+  .layout,
+  .site-main,
+  .container {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .layout {
+    overflow-x: clip;
+  }
+
+  .panel {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  .profile-field-grid {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .profile-field-grid .input,
+  .panel .muted {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .site-main {
     padding: 1rem 0 1.25rem;
   }
@@ -5504,18 +5533,18 @@ html.page-messages body {
     position: fixed;
     left: 0;
     right: 0;
-    /* Жёстко прибита к низу экрана. Клавиатура на iOS поднимает
-       visualViewport.offsetTop — JS обновляет --mobile-viewport-offset
-       только при resize (не scroll), поэтому навигация не прыгает. */
-    bottom: 0;
-    transform: translateY(calc(-1 * var(--mobile-viewport-offset, 0px)));
+    width: 100%;
+    max-width: 100%;
+    /* Без transform: на iOS transform на position:fixed ломает прилипание к низу. */
+    bottom: var(--mobile-viewport-offset, 0px);
     z-index: 1200;
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -6px 28px rgba(15, 23, 42, 0.1);
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
-    will-change: transform;
-    -webkit-transform: translateY(calc(-1 * var(--mobile-viewport-offset, 0px)));
+    overflow-x: hidden;
+    box-sizing: border-box;
+    /* Создаём слой без transform, чтобы не ломать fixed */
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
   }
@@ -5725,10 +5754,13 @@ html.page-messages body {
     display: grid;
     grid-template-columns: repeat(var(--mobile-dock-cols, 4), minmax(0, 1fr));
     align-items: stretch;
-    max-width: var(--max-width);
+    width: 100%;
+    max-width: 100%;
     margin: 0 auto;
-    padding: 6px max(0.35rem, env(safe-area-inset-left, 0px)) 8px max(0.35rem, env(safe-area-inset-right, 0px));
+    padding: 6px max(0.2rem, env(safe-area-inset-left, 0px)) 8px max(0.2rem, env(safe-area-inset-right, 0px));
     gap: 0;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .mobile-dock__item {
@@ -5775,15 +5807,18 @@ html.page-messages body {
   }
 
   .mobile-dock__label {
-    font-size: 0.62rem;
+    font-size: 0.58rem;
     font-weight: 600;
     line-height: 1.15;
     text-align: center;
+    width: 100%;
     max-width: 100%;
+    padding: 0 1px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
+    box-sizing: border-box;
   }
 
   .mobile-dock__badge--dot {
@@ -5998,32 +6033,46 @@ html.page-messages body {
     align-items: stretch;
   }
 
-  .profile-request-card__header {
-    flex-wrap: wrap;
+  .profile-request-card {
+    max-width: 100%;
+    min-width: 0;
   }
 
+  .profile-request-card__header {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+
+  /* width:100% + flex-shrink:0 в ряду раздували страницу по горизонтали */
   .profile-request-card__thumb-img {
+    display: block;
     width: 100%;
     max-width: 100%;
     height: auto;
     aspect-ratio: 4 / 3;
     object-fit: cover;
+    flex: 0 0 auto;
   }
 
   .profile-request-card__thumb-ph {
     width: 100%;
+    max-width: 100%;
     aspect-ratio: 4 / 3;
     height: auto;
     min-height: 120px;
+    flex: 0 0 auto;
   }
 
   .profile-request-card__body {
-    flex: 1 1 100%;
+    flex: 1 1 auto;
     min-width: 0;
+    max-width: 100%;
   }
 
   .profile-request-card__toggle {
     width: 100%;
+    max-width: 100%;
     text-align: center;
   }
 

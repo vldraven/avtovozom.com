@@ -29,9 +29,10 @@ export default function HeaderFavoritesLink({ token, variant = "header" }) {
         href="/favorites"
         className={`mobile-dock__item${active ? " mobile-dock__item--active" : ""}`}
         aria-current={active ? "page" : undefined}
+        aria-label="Избранное"
       >
         <span className="mobile-dock__icon">{heartIcon}</span>
-        <span className="mobile-dock__label">Избранное</span>
+        <span className="mobile-dock__label">Избр.</span>
       </Link>
     );
   }
