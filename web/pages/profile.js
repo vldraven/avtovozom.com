@@ -260,7 +260,7 @@ export default function ProfilePage() {
   }
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 

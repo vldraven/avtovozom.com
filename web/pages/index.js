@@ -15,7 +15,7 @@ import HeaderFavoritesLink from "../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../components/TelegramChannelHeaderLink";
 import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
-import { clearToken, fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
+import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
 import { saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";

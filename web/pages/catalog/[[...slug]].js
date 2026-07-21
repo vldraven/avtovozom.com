@@ -281,11 +281,20 @@ export default function CatalogTreePage({ initialPayload = null }) {
           comment,
         }),
       });
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         const carRef = requestModalCar;
-        clearToken();
+        const kind = await resolveAuthSessionFailure();
         setToken("");
         setMe(null);
+        setRequestModalCar(null);
+        if (kind === "pin-lock") return;
+        router.push(
+          `/request-quote?car_id=${carRef.id}&next=${encodeURIComponent(publicCarHref(carRef))}`
+        );
+        return;
+      }
+      if (res.status === 403) {
+        const carRef = requestModalCar;
         setRequestModalCar(null);
         router.push(
           `/request-quote?car_id=${carRef.id}&next=${encodeURIComponent(publicCarHref(carRef))}`

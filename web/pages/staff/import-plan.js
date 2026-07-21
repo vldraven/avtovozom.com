@@ -333,7 +333,7 @@ export default function StaffImportPlanPage() {
   const canCreateCatalog = isAdminRole(me?.role) && !running;
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 

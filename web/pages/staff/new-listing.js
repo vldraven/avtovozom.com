@@ -269,7 +269,7 @@ export default function StaffNewListingPage() {
   }
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 

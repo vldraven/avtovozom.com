@@ -36,7 +36,7 @@ export default function PublishAvitoPage() {
   const [error, setError] = useState("");
 
   const logout = () => {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   };
 

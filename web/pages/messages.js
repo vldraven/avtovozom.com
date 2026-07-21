@@ -234,7 +234,7 @@ export default function MessagesPage() {
   }, [threadOpenOnMobile]);
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     setToken("");
     setMe(null);
     router.push("/");

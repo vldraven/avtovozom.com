@@ -5,8 +5,8 @@ import {
   APP_LOCK_TIMEOUT_MS,
   canUseWebAuthn,
   clearToken,
-  getStoredToken,
   hasPinLock,
+  hasValidAccessToken,
   isAppUnlocked,
   loginWithPasskey,
   lockApp,
@@ -17,13 +17,19 @@ import {
 } from "../lib/auth";
 import PinPad from "./PinPad";
 
-function isProtectedPath(pathname) {
-  return /^(?:\/profile|\/messages)(?:\/|$)/.test(pathname || "") || pathname?.startsWith("/staff/");
+/** Пути, где без разблокировки по ПИН нельзя продолжить. */
+function isPinGatePath(pathname) {
+  const path = pathname || "";
+  return (
+    path === "/auth" ||
+    /^(?:\/profile|\/messages|\/favorites)(?:\/|$)/.test(path) ||
+    path.startsWith("/staff/")
+  );
 }
 
 export default function AppLockGate({ children }) {
   const router = useRouter();
-  const protectedPath = useMemo(() => isProtectedPath(router.pathname), [router.pathname]);
+  const gatePath = useMemo(() => isPinGatePath(router.pathname), [router.pathname]);
   const [ready, setReady] = useState(false);
   const [locked, setLocked] = useState(false);
   const [pin, setPin] = useState("");
@@ -36,25 +42,30 @@ export default function AppLockGate({ children }) {
       const hasLock = await hasPinLock().catch(() => false);
       if (cancelled) return;
       const needsTimeoutLock = shouldLockAfterHidden();
-      const hasActiveToken = Boolean(getStoredToken());
+      const sessionOk = hasValidAccessToken();
       const unlocked = isAppUnlocked();
 
-      // If the access token is still present and there was no inactivity timeout,
-      // keep session unlocked even when sessionStorage marker was dropped by browser.
-      if (hasLock && hasActiveToken && !needsTimeoutLock && !unlocked) {
+      // Валидный access + нет таймаута скрытия → считаем разблокированным
+      // (даже если sessionStorage-маркер пропал при восстановлении вкладки).
+      if (hasLock && sessionOk && !needsTimeoutLock && !unlocked) {
         markAppUnlocked();
       }
 
-      if (hasLock && (needsTimeoutLock || (!hasActiveToken && !unlocked))) {
+      // Истёкший/отсутствующий access при наличии ПИН → блокировка.
+      // Раньше смотрели только на наличие строки JWT, и протухший токен
+      // «разблокировал» приложение без ПИН.
+      if (hasLock && (needsTimeoutLock || !sessionOk)) {
         lockApp();
       }
-      setLocked(Boolean(protectedPath && hasLock && !isAppUnlocked() && !hasActiveToken));
+
+      const nowUnlocked = isAppUnlocked();
+      setLocked(Boolean(gatePath && hasLock && !nowUnlocked && !hasValidAccessToken()));
       setReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [protectedPath, router.asPath]);
+  }, [gatePath, router.asPath]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -67,19 +78,24 @@ export default function AppLockGate({ children }) {
       }
       if ((hiddenAt && Date.now() - hiddenAt > APP_LOCK_TIMEOUT_MS) || shouldLockAfterHidden()) {
         lockApp();
-        if (protectedPath) setLocked(true);
+        if (gatePath) setLocked(true);
       }
     };
     const onLock = () => {
-      if (protectedPath) setLocked(true);
+      if (gatePath) setLocked(true);
+    };
+    const onToken = () => {
+      if (hasValidAccessToken() && isAppUnlocked()) setLocked(false);
     };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("avt-app-lock-changed", onLock);
+    window.addEventListener("avt-token-changed", onToken);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("avt-app-lock-changed", onLock);
+      window.removeEventListener("avt-token-changed", onToken);
     };
-  }, [protectedPath]);
+  }, [gatePath]);
 
   if (!ready || !locked) return children;
 
@@ -92,8 +108,12 @@ export default function AppLockGate({ children }) {
       markAppUnlocked();
       setLocked(false);
       setPin("");
+      if (router.pathname === "/auth") {
+        const next = typeof router.query.next === "string" ? router.query.next : "/";
+        router.replace(next);
+      }
     } catch {
-      setError("ПИН-код не подошел или сессия устарела. Войдите по паролю заново.");
+      setError("ПИН-код не подошел или серверная сессия истекла. Войдите по паролю заново.");
     } finally {
       setBusy(false);
     }
@@ -107,6 +127,10 @@ export default function AppLockGate({ children }) {
       markAppUnlocked();
       setLocked(false);
       setPin("");
+      if (router.pathname === "/auth") {
+        const next = typeof router.query.next === "string" ? router.query.next : "/";
+        router.replace(next);
+      }
     } catch (err) {
       setError(err?.message || "Биометрический вход не сработал");
     } finally {
@@ -115,8 +139,12 @@ export default function AppLockGate({ children }) {
   }
 
   function passwordLogin() {
-    clearToken();
-    router.replace(`/auth?next=${encodeURIComponent(router.asPath || "/")}`);
+    // Явный отказ от ПИН на этом устройстве
+    clearToken({ logout: true });
+    setLocked(false);
+    if (router.pathname !== "/auth") {
+      router.replace(`/auth?next=${encodeURIComponent(router.asPath || "/")}`);
+    }
   }
 
   return (

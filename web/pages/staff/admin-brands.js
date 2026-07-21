@@ -67,7 +67,7 @@ export default function AdminBrandsPage() {
   }, [router, loadBrands]);
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 

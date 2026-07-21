@@ -40,7 +40,7 @@ export default function StaffOpenRequestsPage() {
   }, [router]);
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 

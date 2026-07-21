@@ -382,7 +382,7 @@ export default function StaffEditListingPage() {
   }
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 

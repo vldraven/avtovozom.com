@@ -10,9 +10,30 @@ const PIN_RECORD = "pin-session";
 const PIN_ITERATIONS = 250000;
 export const APP_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length < 2) return null;
+    const json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 export function getStoredToken() {
   if (typeof window === "undefined") return "";
   return localStorage.getItem(TOKEN_KEY) || "";
+}
+
+/** Access JWT есть и не истёк (с запасом 30 сек). */
+export function hasValidAccessToken() {
+  if (typeof window === "undefined") return false;
+  const token = getStoredToken();
+  if (!token) return false;
+  const payload = decodeJwtPayload(token);
+  if (!payload?.exp) return Boolean(token);
+  return payload.exp * 1000 > Date.now() + 30_000;
 }
 
 export function saveToken(token, refreshToken = "") {
@@ -24,23 +45,35 @@ export function saveToken(token, refreshToken = "") {
 }
 
 /**
- * @param {{ keepPinLock?: boolean }} options
- * keepPinLock: сбросить access-токен, но сохранить ПИН и серверную refresh-сессию (для 401 / истёкшего JWT).
+ * Сброс access-сессии.
+ *
+ * По умолчанию ПИН и серверный refresh НЕ трогаем — это «блокировка»
+ * для ежедневного входа по ПИН после истечения JWT.
+ *
+ * @param {{ logout?: boolean, keepPinLock?: boolean }} options
+ * - logout: true — явный «Выйти»: отзыв refresh + удаление ПИН
+ * - keepPinLock: true — то же, что поведение по умолчанию (совместимость)
  */
 export function clearToken(options = {}) {
   if (typeof window === "undefined") return;
-  const keepPinLock = Boolean(options.keepPinLock);
+  const explicitLogout = options.logout === true;
+  // keepPinLock: true или отсутствие logout → сохраняем ПИН
+  const keepPin =
+    !explicitLogout && (options.keepPinLock === true || options.keepPinLock === undefined);
+
   const refreshToken = sessionStorage.getItem(PENDING_REFRESH_KEY);
-  if (!keepPinLock && refreshToken) {
+  if (explicitLogout && refreshToken) {
     fetch(`${API_URL}/auth/logout-session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
     }).catch(() => null);
   }
+
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(PENDING_REFRESH_KEY);
-  if (keepPinLock) {
+
+  if (keepPin) {
     lockApp();
   } else {
     sessionStorage.removeItem(UNLOCKED_KEY);
@@ -221,17 +254,6 @@ export async function refreshWithToken(refreshToken) {
   return data.access_token;
 }
 
-function decodeJwtPayload(token) {
-  try {
-    const parts = String(token || "").split(".");
-    if (parts.length < 2) return null;
-    const json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
-
 export async function tryRefreshAccessToken() {
   if (typeof window === "undefined") return false;
   const refresh = sessionStorage.getItem(PENDING_REFRESH_KEY);
@@ -250,16 +272,32 @@ export async function ensureFreshAccessToken() {
   const refresh = sessionStorage.getItem(PENDING_REFRESH_KEY);
   const payload = decodeJwtPayload(token);
   const expMs = payload?.exp ? payload.exp * 1000 : 0;
-  const accessFresh = expMs && expMs > Date.now() + 120_000;
+  const accessFresh = expMs ? expMs > Date.now() + 120_000 : false;
 
   if (refresh) {
     if (accessFresh) return true;
-    return tryRefreshAccessToken();
+    const ok = await tryRefreshAccessToken();
+    if (ok) return true;
+    // refresh в вкладке протух/отозван — если есть ПИН, блокируем, а не «тихо логиним»
+    if (await hasPinLock()) {
+      await resolveAuthSessionFailure();
+      return false;
+    }
+    clearToken({ logout: true });
+    return false;
   }
 
   if (accessFresh) return true;
-  if (token && expMs && expMs <= Date.now() + 120_000 && (await hasPinLock())) {
-    await resolveAuthSessionFailure();
+
+  // JWT истёк или отсутствует, refresh только в IndexedDB под ПИН
+  if (await hasPinLock()) {
+    if (token) await resolveAuthSessionFailure();
+    else lockApp();
+    return false;
+  }
+
+  if (token && expMs && expMs <= Date.now()) {
+    clearToken({ logout: true });
     return false;
   }
   return Boolean(token);
@@ -272,14 +310,14 @@ export async function resolveAuthSessionFailure() {
     window.dispatchEvent(new Event("avt-app-lock-changed"));
     return "pin-lock";
   }
-  clearToken();
+  clearToken({ logout: true });
   return "logout";
 }
 
-/** При загрузке страницы: есть access-токен или нужен экран ПИН. */
+/** При загрузке страницы: валидный access или нужен экран ПИН. */
 export async function bootstrapClientAuth() {
   await ensureFreshAccessToken().catch(() => null);
-  if (getStoredToken()) return { state: "token" };
+  if (hasValidAccessToken()) return { state: "token" };
   if (await hasPinLock()) {
     lockApp();
     window.dispatchEvent(new Event("avt-app-lock-changed"));
@@ -289,14 +327,18 @@ export async function bootstrapClientAuth() {
 }
 
 /**
- * GET /auth/me с продлением access-токена и корректной обработкой 401 (ПИН не сбрасывается).
+ * GET /auth/me с продлением access и корректной обработкой 401 (ПИН не сбрасывается).
  * @returns {Promise<{ ok: true, user: object, accessToken: string } | { ok: false, status: number, kind: string }>}
  */
 export async function fetchAuthMe() {
   await ensureFreshAccessToken().catch(() => null);
   let access = getStoredToken();
-  if (!access) {
-    if (await hasPinLock()) return { ok: false, status: 401, kind: "pin-lock" };
+  if (!access || !hasValidAccessToken()) {
+    if (await hasPinLock()) {
+      lockApp();
+      window.dispatchEvent(new Event("avt-app-lock-changed"));
+      return { ok: false, status: 401, kind: "pin-lock" };
+    }
     return { ok: false, status: 401, kind: "no-token" };
   }
 

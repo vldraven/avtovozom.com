@@ -73,7 +73,7 @@ export default function AdminRequestDetailPage() {
   }, [router.isReady, requestId, token]);
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 

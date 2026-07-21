@@ -58,7 +58,7 @@ export default function PublishTelegramPage() {
   const [error, setError] = useState("");
 
   const logout = () => {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   };
 

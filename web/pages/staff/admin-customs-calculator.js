@@ -173,7 +173,7 @@ export default function AdminCustomsCalculatorPage() {
   }
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 

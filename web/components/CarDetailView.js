@@ -190,15 +190,22 @@ export default function CarDetailView({
         }),
       });
       if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          clearToken();
-          setToken("");
-          setMe(null);
-          setRequestModalOpen(false);
-          const next = car ? publicCarHref(car) : `/cars/${carId}`;
-          router.push(`/request-quote?car_id=${carId}&next=${encodeURIComponent(next)}`);
-          return;
-        }
+      if (res.status === 401) {
+        const kind = await resolveAuthSessionFailure();
+        setToken("");
+        setMe(null);
+        setRequestModalOpen(false);
+        if (kind === "pin-lock") return;
+        const next = car ? publicCarHref(car) : `/cars/${carId}`;
+        router.push(`/request-quote?car_id=${carId}&next=${encodeURIComponent(next)}`);
+        return;
+      }
+      if (res.status === 403) {
+        setRequestModalOpen(false);
+        const next = car ? publicCarHref(car) : `/cars/${carId}`;
+        router.push(`/request-quote?car_id=${carId}&next=${encodeURIComponent(next)}`);
+        return;
+      }
         setAuthError("Не удалось отправить заявку. Попробуйте еще раз.");
         return;
       }

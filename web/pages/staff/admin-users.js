@@ -153,7 +153,7 @@ export default function AdminUsersPage() {
   }
 
   function logout() {
-    clearToken();
+    clearToken({ logout: true });
     router.push("/");
   }
 
