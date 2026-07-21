@@ -88,28 +88,30 @@ export default function MobileBottomNav() {
     const root = document.documentElement;
     const vv = window.visualViewport;
 
+    // Пересчитываем смещение только при изменении размера окна (открытие/закрытие клавиатуры),
+    // но НЕ при скролле visualViewport — иначе навигация прыгает при обычной прокрутке страницы.
     const updateViewportOffset = () => {
       const visual = window.visualViewport;
       if (!visual) {
         root.style.setProperty("--mobile-viewport-offset", "0px");
         return;
       }
-      const layoutHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-      const offset = Math.max(0, layoutHeight - visual.height - visual.offsetTop);
-      root.style.setProperty("--mobile-viewport-offset", `${Math.round(offset)}px`);
+      // offsetTop > 0 означает, что клавиатура подняла вьюпорт.
+      // В этом случае сдвигаем навигацию вверх на высоту клавиатуры.
+      const keyboardHeight = Math.max(0, Math.round(visual.offsetTop));
+      root.style.setProperty("--mobile-viewport-offset", `${keyboardHeight}px`);
     };
 
     updateViewportOffset();
     window.addEventListener("resize", updateViewportOffset);
     window.addEventListener("orientationchange", updateViewportOffset);
     vv?.addEventListener("resize", updateViewportOffset);
-    vv?.addEventListener("scroll", updateViewportOffset);
+    // Не подписываемся на vv "scroll" — это вызывало прыжки навигации при скролле страницы
 
     return () => {
       window.removeEventListener("resize", updateViewportOffset);
       window.removeEventListener("orientationchange", updateViewportOffset);
       vv?.removeEventListener("resize", updateViewportOffset);
-      vv?.removeEventListener("scroll", updateViewportOffset);
       root.style.removeProperty("--mobile-viewport-offset");
     };
   }, []);
@@ -125,8 +127,7 @@ export default function MobileBottomNav() {
     String(Array.isArray(rawChat) ? rawChat[0] : rawChat).trim() !== "";
   if (messagesThreadOpen) return null;
 
-  const isCatalogNav =
-    router.pathname === "/catalog" || router.pathname.startsWith("/catalog/");
+  const isHomeNav = router.pathname === "/";
   const showAdd = Boolean(token && canCreateListings(me?.role));
   const colCount = !token ? 2 : 4 + (showAdd ? 1 : 0);
   const staffListingActive =
@@ -139,9 +140,9 @@ export default function MobileBottomNav() {
         style={{ "--mobile-dock-cols": String(colCount) }}
       >
         <Link
-          href="/catalog"
-          className={`mobile-dock__item${isCatalogNav ? " mobile-dock__item--active" : ""}`}
-          aria-current={isCatalogNav ? "page" : undefined}
+          href="/"
+          className={`mobile-dock__item${isHomeNav ? " mobile-dock__item--active" : ""}`}
+          aria-current={isHomeNav ? "page" : undefined}
         >
           <span className="mobile-dock__icon">
             <CatalogIcon />

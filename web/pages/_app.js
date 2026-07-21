@@ -26,7 +26,12 @@ export default function App({ Component, pageProps }) {
   const router = useRouter();
   const noindex = useSeoNoIndex();
   const path = router.pathname || "";
-  const showFooter = !path.startsWith("/staff/") && path !== "/auth" && path !== "/reset-password";
+  const showFooter =
+    !path.startsWith("/staff/") &&
+    path !== "/auth" &&
+    path !== "/reset-password" &&
+    path !== "/messages";
+  const showMobileBottomNav = path !== "/messages";
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -71,7 +76,7 @@ export default function App({ Component, pageProps }) {
           <Component {...pageProps} />
         </AppLockGate>
         {showFooter ? <SiteFooter /> : null}
-        <MobileBottomNav />
+        {showMobileBottomNav ? <MobileBottomNav /> : null}
         <PwaInstallPrompt />
         <PwaServiceWorker />
         <YandexMetrika />

@@ -3575,12 +3575,41 @@ code {
   pointer-events: none;
 }
 
-/* Страница мессенджера */
+/* Страница мессенджера: экран без прокрутки страницы (скролл только в списке и в ленте) */
+html.page-messages,
+html.page-messages body {
+  height: 100%;
+  overflow: hidden;
+}
+
+.app-chrome:has(.layout--messages) {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.layout.layout--messages {
+  min-height: 0;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.layout.layout--messages .site-header {
+  flex-shrink: 0;
+}
+
 .site-main--messenger {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding-top: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.5rem 0 0.5rem;
+}
+
+.layout.layout--messages.layout--no-mobile-dock {
+  padding-bottom: 0;
 }
 
 .messenger {
@@ -3591,7 +3620,8 @@ code {
   width: 100%;
   max-width: var(--max-width);
   margin: 0 auto;
-  min-height: min(720px, calc(100vh - 140px));
+  min-height: 0;
+  height: 100%;
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow-md);
@@ -3602,6 +3632,9 @@ code {
   box-shadow: none;
   border-radius: 0;
   margin: 0;
+  padding: 0;
+  border: none;
+  min-height: 0;
 }
 
 .messenger__sidebar {
@@ -3992,37 +4025,20 @@ code {
 @media (max-width: 768px) {
   .messenger {
     grid-template-columns: 1fr;
-    min-height: calc(100dvh - 120px);
     border-radius: 0;
     margin: 0;
     max-width: none;
-  }
-
-  .site-main--messenger {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  /* Открытый диалог: без нижнего dock, поле ввода у клавиатуры */
-  body.messages-thread-open .mobile-bottom-nav {
-    display: none !important;
-  }
-
-  body.messages-thread-open .layout.layout--messages {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  body.messages-thread-open .site-main--messenger {
-    padding-bottom: 0;
-  }
-
-  body.messages-thread-open .messenger {
-    min-height: calc(100dvh - 56px);
     box-shadow: none;
   }
 
-  body.messages-thread-open .messenger__thread {
-    min-height: calc(100dvh - 56px);
+  .site-main--messenger {
+    padding: 0;
+  }
+
+  .layout.layout--messages .messenger__sidebar,
+  .layout.layout--messages .messenger__thread {
+    height: 100%;
+    max-height: 100%;
   }
 
   body.messages-thread-open .messenger__composer {
@@ -5488,15 +5504,18 @@ code {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: var(--mobile-viewport-offset, 0px);
+    /* Жёстко прибита к низу экрана. Клавиатура на iOS поднимает
+       visualViewport.offsetTop — JS обновляет --mobile-viewport-offset
+       только при resize (не scroll), поэтому навигация не прыгает. */
+    bottom: 0;
+    transform: translateY(calc(-1 * var(--mobile-viewport-offset, 0px)));
     z-index: 1200;
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -6px 28px rgba(15, 23, 42, 0.1);
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
-    transform: translateZ(0);
     will-change: transform;
-    -webkit-transform: translateZ(0);
+    -webkit-transform: translateY(calc(-1 * var(--mobile-viewport-offset, 0px)));
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
   }

@@ -225,8 +225,12 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
+    document.documentElement.classList.add("page-messages");
     document.body.classList.toggle("messages-thread-open", threadOpenOnMobile);
-    return () => document.body.classList.remove("messages-thread-open");
+    return () => {
+      document.documentElement.classList.remove("page-messages");
+      document.body.classList.remove("messages-thread-open");
+    };
   }, [threadOpenOnMobile]);
 
   function logout() {
@@ -278,7 +282,7 @@ export default function MessagesPage() {
   const showThread = !narrow || !listVisible;
 
   return (
-    <div className={`layout layout--messages${threadOpenOnMobile ? " layout--no-mobile-dock" : ""}`}>
+    <div className="layout layout--messages layout--no-mobile-dock">
       <header className="site-header">
         <div className="container site-header__inner">
           <div className="site-header__brand">

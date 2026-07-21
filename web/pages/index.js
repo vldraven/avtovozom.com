@@ -15,7 +15,7 @@ import HeaderFavoritesLink from "../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../components/TelegramChannelHeaderLink";
 import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
-import { clearToken, getStoredToken } from "../lib/auth";
+import { clearToken, fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
 import { saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
@@ -515,11 +515,15 @@ export default function Home({ initialData = null }) {
           comment,
         }),
       });
-      if (res.status === 401 || res.status === 403) {
-        const cid = requestModalCar.id;
-        clearToken();
-        setToken("");
+      if (res.status === 401) {
+        const kind = await resolveAuthSessionFailure();
+        setToken(getStoredToken());
         setMe(null);
+        if (kind === "pin-lock") return;
+        return;
+      }
+      if (res.status === 403) {
+        const cid = requestModalCar.id;
         setRequestModalCar(null);
         router.push(
           `/request-quote?car_id=${cid}&next=${encodeURIComponent(publicCarHref(requestModalCar))}`
@@ -550,22 +554,26 @@ export default function Home({ initialData = null }) {
     const currentToken = accessToken || token;
     if (!currentToken) return;
     try {
-      const res = await fetch(`${API_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${currentToken}` },
-      });
-      if (res.status === 401) {
-        clearToken();
-        setToken("");
-        setMe(null);
+      const meRes = await fetchAuthMe();
+      if (!meRes.ok) {
+        if (meRes.kind === "pin-lock") {
+          setToken("");
+          setMe(null);
+          return;
+        }
+        if (meRes.kind === "logout" || meRes.kind === "no-token") {
+          setToken("");
+          setMe(null);
+        }
         return;
       }
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = meRes.user;
       setMe(data);
+      const activeToken = meRes.accessToken || currentToken;
 
       if (isStaffRole(data.role)) {
-        await loadLatestParserJob(currentToken);
-        await loadWhitelistCatalog(currentToken);
+        await loadLatestParserJob(activeToken);
+        await loadWhitelistCatalog(activeToken);
       } else {
         setLatestParserJob(null);
         setWhitelistCatalog([]);

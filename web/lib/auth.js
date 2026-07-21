@@ -23,10 +23,15 @@ export function saveToken(token, refreshToken = "") {
   window.dispatchEvent(new Event("avt-token-changed"));
 }
 
-export function clearToken() {
+/**
+ * @param {{ keepPinLock?: boolean }} options
+ * keepPinLock: сбросить access-токен, но сохранить ПИН и серверную refresh-сессию (для 401 / истёкшего JWT).
+ */
+export function clearToken(options = {}) {
   if (typeof window === "undefined") return;
+  const keepPinLock = Boolean(options.keepPinLock);
   const refreshToken = sessionStorage.getItem(PENDING_REFRESH_KEY);
-  if (refreshToken) {
+  if (!keepPinLock && refreshToken) {
     fetch(`${API_URL}/auth/logout-session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -35,8 +40,13 @@ export function clearToken() {
   }
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(PENDING_REFRESH_KEY);
-  sessionStorage.removeItem(UNLOCKED_KEY);
-  if (window.indexedDB) idbDelete(PIN_RECORD).catch(() => null);
+  if (keepPinLock) {
+    lockApp();
+  } else {
+    sessionStorage.removeItem(UNLOCKED_KEY);
+    sessionStorage.removeItem(HIDDEN_AT_KEY);
+    if (window.indexedDB) idbDelete(PIN_RECORD).catch(() => null);
+  }
   window.dispatchEvent(new Event("avt-token-changed"));
 }
 
@@ -238,25 +248,75 @@ export async function ensureFreshAccessToken() {
   if (typeof window === "undefined") return false;
   const token = getStoredToken();
   const refresh = sessionStorage.getItem(PENDING_REFRESH_KEY);
-  if (!refresh) return Boolean(token);
   const payload = decodeJwtPayload(token);
   const expMs = payload?.exp ? payload.exp * 1000 : 0;
-  if (expMs && expMs > Date.now() + 120_000) return true;
-  return tryRefreshAccessToken();
+  const accessFresh = expMs && expMs > Date.now() + 120_000;
+
+  if (refresh) {
+    if (accessFresh) return true;
+    return tryRefreshAccessToken();
+  }
+
+  if (accessFresh) return true;
+  if (token && expMs && expMs <= Date.now() + 120_000 && (await hasPinLock())) {
+    await resolveAuthSessionFailure();
+    return false;
+  }
+  return Boolean(token);
 }
 
 export async function resolveAuthSessionFailure() {
   if (typeof window === "undefined") return "logout";
   if (await hasPinLock()) {
-    localStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(PENDING_REFRESH_KEY);
-    lockApp();
+    clearToken({ keepPinLock: true });
     window.dispatchEvent(new Event("avt-app-lock-changed"));
-    window.dispatchEvent(new Event("avt-token-changed"));
     return "pin-lock";
   }
   clearToken();
   return "logout";
+}
+
+/** При загрузке страницы: есть access-токен или нужен экран ПИН. */
+export async function bootstrapClientAuth() {
+  await ensureFreshAccessToken().catch(() => null);
+  if (getStoredToken()) return { state: "token" };
+  if (await hasPinLock()) {
+    lockApp();
+    window.dispatchEvent(new Event("avt-app-lock-changed"));
+    return { state: "pin-lock" };
+  }
+  return { state: "anonymous" };
+}
+
+/**
+ * GET /auth/me с продлением access-токена и корректной обработкой 401 (ПИН не сбрасывается).
+ * @returns {Promise<{ ok: true, user: object, accessToken: string } | { ok: false, status: number, kind: string }>}
+ */
+export async function fetchAuthMe() {
+  await ensureFreshAccessToken().catch(() => null);
+  let access = getStoredToken();
+  if (!access) {
+    if (await hasPinLock()) return { ok: false, status: 401, kind: "pin-lock" };
+    return { ok: false, status: 401, kind: "no-token" };
+  }
+
+  const load = () =>
+    fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${access}` },
+    });
+
+  let res = await load();
+  if (res.status === 401 && (await tryRefreshAccessToken())) {
+    access = getStoredToken();
+    if (access) res = await load();
+  }
+  if (res.status === 401) {
+    const kind = await resolveAuthSessionFailure();
+    return { ok: false, status: 401, kind };
+  }
+  if (!res.ok) return { ok: false, status: res.status, kind: "error" };
+  const user = await res.json();
+  return { ok: true, user, accessToken: getStoredToken() || access };
 }
 
 export async function rotatePinnedSession(pin) {

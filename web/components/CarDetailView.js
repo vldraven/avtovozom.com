@@ -14,7 +14,7 @@ import ListingFavoriteButton from "./ListingFavoriteButton";
 import ListingShareActions from "./ListingShareActions";
 import RequestConfirmModal from "./RequestConfirmModal";
 import TrimConfigModal from "./TrimConfigModal";
-import { clearToken, getStoredToken } from "../lib/auth";
+import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
 import { consumeListingReturnPath, handleListingDetailRouteChangeStart } from "../lib/listingNavigation";
 import { mediaSrc } from "../lib/media";
