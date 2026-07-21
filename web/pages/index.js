@@ -17,10 +17,11 @@ import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
-import { saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
+import { peekScrollRestoreTarget, isListingBackNavigation, saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { organizationAndWebSiteJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { scheduleListScrollRestore } from "../lib/listScrollRestore";
+import { getListingPageCache, setListingPageCache } from "../lib/listingPageCache";
 import { absoluteUrl } from "../lib/siteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
 import {
@@ -39,7 +40,16 @@ const STAFF_GET_INIT = { cache: "no-store" };
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
 const HOME_SCROLL_STORAGE_PREFIX = "avt_home_scroll:";
+const HOME_LIST_CACHE_NS = "home";
 
+function readHomeListCacheSeed() {
+  if (typeof window === "undefined") return null;
+  const target = peekScrollRestoreTarget();
+  if (!target) return null;
+  const cached = getListingPageCache(HOME_LIST_CACHE_NS, target);
+  if (!cached?.cars?.length) return null;
+  return cached;
+}
 function parseImportStepMessage(msg) {
   const m = /^(\d)\/(\d)\s/.exec(msg || "");
   if (!m) return null;
@@ -84,14 +94,23 @@ function formatApiErrorDetail(body) {
 export default function Home({ initialData = null }) {
   const router = useRouter();
   const lastExplicitHomeScrollSaveRef = useRef({ path: "", at: 0 });
+  const cacheSeed = readHomeListCacheSeed();
+  const skipHomeListFetchOnceRef = useRef(
+    Boolean(cacheSeed) ||
+      (typeof window !== "undefined" &&
+        isListingBackNavigation(`${window.location.pathname}${window.location.search}`))
+  );
   const [mobileHeaderMenuOpen, setMobileHeaderMenuOpen] = useState(false);
-  const [cars, setCars] = useState(initialData?.cars ?? []);
-  const [total, setTotal] = useState(initialData?.total ?? 0);
-  const [catalogCbr, setCatalogCbr] = useState(initialData?.cbr ?? null);
-  const [catalogCbrError, setCatalogCbrError] = useState(initialData?.cbrError ?? null);
+  const [cars, setCars] = useState(cacheSeed?.cars ?? initialData?.cars ?? []);
+  const [total, setTotal] = useState(cacheSeed?.total ?? initialData?.total ?? 0);
+  const [catalogCbr, setCatalogCbr] = useState(cacheSeed?.cbr ?? initialData?.cbr ?? null);
+  const [catalogCbrError, setCatalogCbrError] = useState(
+    cacheSeed?.cbrError ?? initialData?.cbrError ?? null
+  );
   const [q, setQ] = useState("");
-  const [catalogBrands, setCatalogBrands] = useState(initialData?.brands ?? []);
-  const [brandsExpanded, setBrandsExpanded] = useState(false);
+  const [catalogBrands, setCatalogBrands] = useState(
+    cacheSeed?.brands ?? initialData?.brands ?? []
+  );  const [brandsExpanded, setBrandsExpanded] = useState(false);
   const [catalogModels, setCatalogModels] = useState([]);
   const [selectedBrandId, setSelectedBrandId] = useState(null);
   const [selectedModelId, setSelectedModelId] = useState(null);
@@ -121,8 +140,9 @@ export default function Home({ initialData = null }) {
   const staffBrandsLoadGen = useRef(0);
   const staffModelsLoadGen = useRef(0);
   const staffGensLoadGen = useRef(0);
-  const [listSort, setListSort] = useState(initialData?.listSort ?? "date_desc");
-  const [profileReady, setProfileReady] = useState(false);
+  const [listSort, setListSort] = useState(
+    cacheSeed?.listSort ?? initialData?.listSort ?? "date_desc"
+  );  const [profileReady, setProfileReady] = useState(false);
   const [requestModalCar, setRequestModalCar] = useState(null);
   const [requestModalComment, setRequestModalComment] = useState("");
   const [requestModalBusy, setRequestModalBusy] = useState(false);
@@ -272,17 +292,28 @@ export default function Home({ initialData = null }) {
     try {
       const res = await fetch(`${API_URL}/cars?${params.toString()}`);
       const data = await res.json();
-      setCars(data.items || []);
-      setTotal(data.total || 0);
-      setCatalogCbr(data.cbr || null);
-      setCatalogCbrError(data.cbr_error || null);
+      const nextCars = data.items || [];
+      const nextTotal = data.total || 0;
+      const nextCbr = data.cbr || null;
+      const nextCbrError = data.cbr_error || null;
+      setCars(nextCars);
+      setTotal(nextTotal);
+      setCatalogCbr(nextCbr);
+      setCatalogCbrError(nextCbrError);
+      setListingPageCache(HOME_LIST_CACHE_NS, router.asPath, {
+        cars: nextCars,
+        total: nextTotal,
+        cbr: nextCbr,
+        cbrError: nextCbrError,
+        listSort,
+      });
     } catch {
       setCars([]);
       setTotal(0);
       setCatalogCbr(null);
       setCatalogCbrError("network");
     }
-  }, [router.isReady, router.query, listSort]);
+  }, [router.isReady, router.query, router.asPath, listSort]);
 
   function applyQuickFilters(filtersOverride) {
     const fd = filtersOverride || filterDraft;
@@ -484,10 +515,27 @@ export default function Home({ initialData = null }) {
       const rect = card?.getBoundingClientRect?.();
       saveListingReturnPath(router.asPath);
       markScrollRestoreTarget(router.asPath);
+      setListingPageCache(HOME_LIST_CACHE_NS, router.asPath, {
+        cars,
+        total,
+        cbr: catalogCbr,
+        cbrError: catalogCbrError,
+        brands: catalogBrands,
+        listSort,
+      });
       writeHomeScrollPosition(router.asPath, carId, rect ? rect.top : null);
       lastExplicitHomeScrollSaveRef.current = { path: router.asPath, at: Date.now() };
     },
-    [router.asPath, writeHomeScrollPosition]
+    [
+      router.asPath,
+      writeHomeScrollPosition,
+      cars,
+      total,
+      catalogCbr,
+      catalogCbrError,
+      catalogBrands,
+      listSort,
+    ]
   );
 
   useEffect(() => {
@@ -1008,11 +1056,17 @@ export default function Home({ initialData = null }) {
   const loadCatalogBrandsOnly = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/catalog/brands`, { cache: "no-store" });
-      if (res.ok) setCatalogBrands(await res.json());
+      if (res.ok) {
+        const brands = await res.json();
+        setCatalogBrands(brands);
+        if (router.isReady && router.asPath) {
+          setListingPageCache(HOME_LIST_CACHE_NS, router.asPath, { brands });
+        }
+      }
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [router.isReady, router.asPath]);
 
   useEffect(() => {
     if (!selectedBrandId) {
@@ -1134,8 +1188,30 @@ export default function Home({ initialData = null }) {
   }, [router.isReady, loadCatalogBrandsOnly, loadCars]);
 
   useEffect(() => {
+    if (!router.isReady) return;
+    // После «назад» из карточки не перезапрашиваем ленту (один раз на mount).
+    if (skipHomeListFetchOnceRef.current) {
+      skipHomeListFetchOnceRef.current = false;
+      if (router.asPath && cars.length > 0) {
+        setListingPageCache(HOME_LIST_CACHE_NS, router.asPath, {
+          cars,
+          total,
+          cbr: catalogCbr,
+          cbrError: catalogCbrError,
+          brands: catalogBrands,
+          listSort,
+        });
+      }
+      if (!catalogBrands.length) {
+        loadCatalogBrandsOnly();
+      }
+      return;
+    }
     loadHomeCatalogParallel();
-  }, [loadHomeCatalogParallel]);
+    // Намеренно только loadHomeCatalogParallel + isReady: skip срабатывает один раз
+    // после Back; смена фильтров меняет колбэк и снова грузит ленту.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadHomeCatalogParallel, router.isReady]);
 
   const scrollRestorePathRef = useRef("");
 
