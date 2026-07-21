@@ -315,7 +315,15 @@ export default function CarDetailView({
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    const html = document.documentElement;
+    const previous = html.style.scrollBehavior;
+    html.style.scrollBehavior = "auto";
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+    } catch {
+      window.scrollTo(0, 0);
+    }
+    html.style.scrollBehavior = previous;
   }, [carId]);
 
   useEffect(() => {

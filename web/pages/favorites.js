@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import CatalogCardMedia from "../components/CatalogCardMedia";
 import HeaderFavoritesLink from "../components/HeaderFavoritesLink";
@@ -80,10 +80,28 @@ export default function FavoritesPage() {
     });
   }, [router.isReady, router.asPath, cars.length]);
 
-  useEffect(() => {
+  // useLayoutEffect — позиция до paint, без заметного автоскролла.
+  useLayoutEffect(() => {
     scrollRestorePathRef.current = "";
     return tryRestoreFavoritesScroll();
   }, [tryRestoreFavoritesScroll]);
+
+  // Next.js после client transition часто скроллит наверх уже после mount —
+  // повторяем restore на routeChangeComplete (мгновенно, без анимации).
+  useEffect(() => {
+    if (!router.isReady) return undefined;
+    let cleanup = () => {};
+    const handler = () => {
+      cleanup();
+      scrollRestorePathRef.current = "";
+      cleanup = tryRestoreFavoritesScroll() || (() => {});
+    };
+    router.events.on("routeChangeComplete", handler);
+    return () => {
+      router.events.off("routeChangeComplete", handler);
+      cleanup();
+    };
+  }, [router.events, router.isReady, tryRestoreFavoritesScroll]);
 
   const loadFavorites = useCallback(async (accessToken) => {
     setLoading(true);
