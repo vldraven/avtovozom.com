@@ -1159,6 +1159,23 @@ export default function Home({ initialData = null }) {
     return tryRestoreHomeScroll();
   }, [tryRestoreHomeScroll]);
 
+  // Next.js после client transition часто скроллит наверх уже после mount —
+  // повторяем restore на routeChangeComplete.
+  useEffect(() => {
+    if (!router.isReady) return undefined;
+    let cleanup = () => {};
+    const handler = () => {
+      cleanup();
+      scrollRestorePathRef.current = "";
+      cleanup = tryRestoreHomeScroll() || (() => {});
+    };
+    router.events.on("routeChangeComplete", handler);
+    return () => {
+      router.events.off("routeChangeComplete", handler);
+      cleanup();
+    };
+  }, [router.events, router.isReady, tryRestoreHomeScroll]);
+
   useEffect(() => {
     setMobileHeaderMenuOpen(false);
   }, [router.asPath]);

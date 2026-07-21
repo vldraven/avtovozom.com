@@ -16,7 +16,11 @@ import RequestConfirmModal from "./RequestConfirmModal";
 import TrimConfigModal from "./TrimConfigModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
-import { consumeListingReturnPath, handleListingDetailRouteChangeStart } from "../lib/listingNavigation";
+import {
+  consumeListingReturnPath,
+  handleListingDetailRouteChangeStart,
+  peekListingReturnPath,
+} from "../lib/listingNavigation";
 import { mediaSrc } from "../lib/media";
 import MediaImage from "./MediaImage";
 import { absoluteUrl } from "../lib/siteUrl";
@@ -371,12 +375,16 @@ export default function CarDetailView({
   }, [car]);
 
   const handleBack = useCallback(() => {
-    const returnPath = consumeListingReturnPath();
+    // Не consume до навигации и не consume при history.back():
+    // иначе async popstate увидит пустой return path и раньше мог сбросить scroll-restore.
+    // Target скролла чистится после успешного restore на списке.
+    const returnPath = peekListingReturnPath();
     if (returnPath) {
       if (typeof window !== "undefined" && window.history.length > 1) {
         router.back();
       } else {
-        router.push(returnPath);
+        router.push(returnPath, undefined, { scroll: false });
+        consumeListingReturnPath();
       }
       return;
     }
@@ -384,7 +392,7 @@ export default function CarDetailView({
       router.back();
       return;
     }
-    router.push(catalogFallbackHref);
+    router.push(catalogFallbackHref, undefined, { scroll: false });
   }, [router, catalogFallbackHref]);
 
   const showGenerationInCopy = hasMeaningfulGeneration(car?.generation);

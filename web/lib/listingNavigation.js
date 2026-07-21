@@ -3,7 +3,7 @@ const RETURN_PATH_KEY = "avt_listing_return_path";
 const SCROLL_RESTORE_TARGET_KEY = "avt_listing_scroll_restore_target";
 
 function normalizePath(path) {
-  return String(path || "").split("?")[0];
+  return String(path || "").split("?")[0] || "/";
 }
 
 function isListingDetailPath(path) {
@@ -38,6 +38,12 @@ export function clearScrollRestoreTarget() {
   sessionStorage.removeItem(SCROLL_RESTORE_TARGET_KEY);
 }
 
+export function pathsMatchForScrollRestore(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return normalizePath(a) === normalizePath(b);
+}
+
 export function peekListingReturnPath() {
   if (typeof window === "undefined") return null;
   return sessionStorage.getItem(RETURN_PATH_KEY);
@@ -49,14 +55,18 @@ export function consumeListingReturnPath() {
   return path;
 }
 
-/** Сбросить restore-target при уходе с карточки не «назад» в тот же список. */
+/**
+ * Сбросить restore-target только если уходим НЕ на список, с которого открыли карточку.
+ * Важно: не чистить target при router.back() / «Назад» — иначе скролл не восстановится.
+ */
 export function handleListingDetailRouteChangeStart(url) {
-  const returnPath = peekListingReturnPath();
-  if (!returnPath) {
-    clearScrollRestoreTarget();
+  const restoreTarget = peekScrollRestoreTarget();
+  if (restoreTarget && pathsMatchForScrollRestore(url, restoreTarget)) {
     return;
   }
-  if (normalizePath(url) !== normalizePath(returnPath)) {
-    clearScrollRestoreTarget();
+  const returnPath = peekListingReturnPath();
+  if (returnPath && pathsMatchForScrollRestore(url, returnPath)) {
+    return;
   }
+  clearScrollRestoreTarget();
 }
