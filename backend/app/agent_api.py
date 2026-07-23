@@ -172,8 +172,8 @@ class ApplyIn(BaseModel):
     min_score: float | None = None
     limit: int | None = Field(default=None, ge=1, le=100)
     candidate_ids: list[int] | None = None
-    replace_plan: bool = False
-    """Если True — заменить весь import-plan; иначе дополнить pending-строками."""
+    replace_plan: bool = True
+    """По умолчанию заменить план сегодняшним отбором агента (не смешивать с ручными success)."""
 
 
 class ApplyOut(BaseModel):
@@ -864,10 +864,17 @@ def apply_to_import_plan(
 
 @router.get("/import-plan", response_model=ImportPlanAgentOut)
 def agent_get_import_plan(
+    pending_only: bool = Query(
+        default=False,
+        description="Если true — только строки не success (что ещё к обходу / апруву)",
+    ),
     db: Session = Depends(get_db),
     _: None = Depends(verify_agent_secret),
 ):
-    return _import_plan_agent_out(db)
+    out = _import_plan_agent_out(db)
+    if pending_only:
+        out.rows = [r for r in out.rows if r.status not in ("success",)]
+    return out
 
 
 @router.post("/import-plan/start", response_model=ImportPlanAgentOut)
