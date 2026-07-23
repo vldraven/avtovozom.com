@@ -358,6 +358,9 @@ export default function ProfilePage() {
                     <Link href="/staff/import-plan" className="btn btn-secondary btn-inline">
                       План импорта
                     </Link>
+                    <Link href="/staff/import-candidates" className="btn btn-secondary btn-inline">
+                      Кандидаты агента
+                    </Link>
                   </div>
                 </section>
               )}

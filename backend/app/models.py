@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
@@ -459,3 +460,94 @@ class ImportPlanItem(Base):
     )
 
     plan = relationship("ImportPlan", back_populates="items")
+
+
+class SearchProfile(Base):
+    """Критерии ежедневного отбора для sourcing-агента (данные, не промпт n8n)."""
+
+    __tablename__ = "search_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    criteria: Mapped[dict] = mapped_column(JSON, default=dict)
+    brief: Mapped[str] = mapped_column(Text, default="")
+    max_select: Mapped[int] = mapped_column(Integer, default=20)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    candidates = relationship("ImportCandidate", back_populates="profile")
+
+
+class ImportCandidate(Base):
+    """Staging объявлений: discover → filter → score → selected → import-plan."""
+
+    __tablename__ = "import_candidates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("search_profiles.id"), nullable=False, index=True
+    )
+    url: Mapped[str] = mapped_column(String(2048), default="")
+    listing_id: Mapped[str] = mapped_column(String(128), default="", index=True)
+    marketplace: Mapped[str] = mapped_column(String(32), default="che168")
+    brand_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    brand_name: Mapped[str] = mapped_column(String(128), default="")
+    model_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    model_name: Mapped[str] = mapped_column(String(128), default="")
+    generation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    generation_name: Mapped[str] = mapped_column(String(128), default="")
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    price_cny: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mileage_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    title: Mapped[str] = mapped_column(String(512), default="")
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reasons: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="new", index=True)
+    """new | filtered | scored | selected | rejected | imported"""
+    filter_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    selected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    profile = relationship("SearchProfile", back_populates="candidates")
+
+
+class AgentMemory(Base):
+    """Долгосрочная память агента (уроки из TG revise/cancel и т.п.)."""
+
+    __tablename__ = "agent_memories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    agent_key: Mapped[str] = mapped_column(String(64), default="sourcing", index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="lesson")
+    """lesson | preference | ban | market_note"""
+    content: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(32), default="manual")
+    """tg_revise | tg_cancel | manual | run"""
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SourcingApprovalSession(Base):
+    """Сессия апрува плана в TG — переживает рестарт n8n."""
+
+    __tablename__ = "sourcing_approval_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("search_profiles.id"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    """pending | approved | cancelled | expired"""
+    candidate_ids: Mapped[list] = mapped_column(JSON, default=list)
+    telegram_chat_id: Mapped[str] = mapped_column(String(64), default="")
+    telegram_message_id: Mapped[str] = mapped_column(String(64), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

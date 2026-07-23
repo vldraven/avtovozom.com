@@ -375,7 +375,8 @@ export default function StaffImportPlanPage() {
           <p className="muted" style={{ marginTop: "-0.35rem", marginBottom: "1rem" }}>
             Составьте список ссылок, затем запустите обход. При ошибке — до {IMPORT_PLAN_MAX_RETRIES} попыток на
             строку, затем следующая. План и прогресс хранятся на сервере — можно закрыть сайт; с другого
-            устройства под admin/moderator виден тот же статус.
+            устройства под admin/moderator виден тот же статус. Кандидаты агента со score:{" "}
+            <Link href="/staff/import-candidates">открыть</Link>.
             {isAdminRole(me?.role)
               ? " Нет нужной марки/модели/поколения — введите название в поиске выпадающего списка и нажмите «Добавить»."
               : ""}

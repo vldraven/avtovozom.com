@@ -1,0 +1,928 @@
+{
+  "name": "Avtovozom — Sourcing agent (che168)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Sourcing-агент\n\nКак консультант: Telegram → AI Agent + tools.\n\n**Настройки workflow:**\n- `agentApiSecret` = `AGENT_API_SECRET` в `/opt/avtovozom/.env`\n- `operatorTelegramUserId` — ваш TG user id\n- `operatorChatId` — куда писать с cron\n- Web-search: нода **Search in Tavily** (отдельный tool).\nCredentials: **новый** Telegram-бот + OpenAI\n\nCron 16/17 МСК шлёт тот же промпт «/run».",
+        "height": 280,
+        "width": 420
+      },
+      "id": "src-sticky-00",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        128,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 16,17 * * *"
+            }
+          ]
+        }
+      },
+      "id": "src-cron-01",
+      "name": "Cron 16+17 MSK",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "src-tg-trigger-01",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        320
+      ],
+      "webhookId": "avtovozom-sourcing-agent",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_SOURCING_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Sourcing Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "apiBaseUrl",
+              "value": "https://api.avtovozom.com",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "agentApiSecret",
+              "value": "ЗАМЕНИТЕ_на_AGENT_API_SECRET",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "operatorTelegramUserId",
+              "value": "ВАШ_TELEGRAM_USER_ID",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "operatorChatId",
+              "value": "ВАШ_TELEGRAM_CHAT_ID",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "defaultProfileId",
+              "value": "1",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "webOrigin",
+              "value": "https://avtovozom.com",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "llmModel",
+              "value": "gpt-5.5",
+              "type": "string"
+            },
+            {
+              "id": "c9",
+              "name": "systemPrompt",
+              "value": "Ты sourcing-сотрудник avtovozom.com: отбираешь ликвидные авто с che168 под заказ в РФ.\n\nИнтерфейс — этот Telegram-чат с оператором (владельцем). Отвечай по-русски, кратко и по делу.\n\nИнструменты Agent API (не выдумывай URL и факты вне инструментов):\n• get_quota — сколько ещё нужно добрать сегодня (needed)\n• get_profiles / get_memory — критерии и уроки\n• save_memory — сохрани урок после правок оператора\n• discover — собрать ссылки (долго)\n• filter_candidates — жёсткий отсев\n• list_candidates — посмотреть staging\n• score_candidates — записать твои оценки (score 0–100 + reasons)\n• Search in Tavily — спрос/ликвидность в сети\n• apply_to_plan — положить отобранное в import-plan на сайте\n• import_plan_status — статус плана / импорта\n• start_import — ТОЛЬКО после явного «да / запусти / ✅» от оператора\n• stop_import — остановить обход\n\nТиповой прогон (/run, «собери», cron):\n1) get_quota → если needed=0, скажи что квота закрыта\n2) get_memory + get_profiles\n3) discover → filter_candidates\n4) list_candidates (new) → Search in Tavily по сомнительным → score_candidates (топ по ликвидности)\n5) apply_to_plan (limit=needed)\n6) import_plan_status → краткая сводка оператору + ссылка на staff/import-plan\n7) Спроси подтверждение на старт. Без согласия start_import НЕ вызывай.\n\nКоманды:\n• /status или «статус» → import_plan_status\n• правки («убери BMW», «только до 3 млн») → save_memory + при необходимости filter/score/apply заново\n• ✅ / «запусти» → start_import\n• ❌ / «отмена» → save_memory (почему) , start не вызывать\n\nПравила: не выдумывай объявления; дневная цель ~20 (квота на сайте); score с краткими reasons на русском.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "src-set-config",
+      "name": "Настройки workflow",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        432,
+        400
+      ],
+      "notesInFlow": true,
+      "notes": "agentApiSecret = AGENT_API_SECRET; operator* — ваш TG"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst settings = $('Настройки workflow').first().json;\nconst webOrigin = String(settings.webOrigin || 'https://avtovozom.com').replace(/\\/$/, '');\nconst staffPlan = webOrigin + '/staff/import-plan';\nconst staffCand = webOrigin + '/staff/import-candidates';\nconst allowId = String(settings.operatorTelegramUserId || '').trim();\n\nconst msg = $('Telegram Trigger').first().json.message || {};\nconst chat = msg.chat || {};\nconst from = msg.from || {};\nconst chatId = String(chat.id || '');\nconst userId = String(from.id || '');\nconst isPrivate = chat.type === 'private';\nconst allowed = isPrivate && (!allowId || allowId.includes('ВАШ') || userId === allowId);\n\nreturn [{\n  json: {\n    chatId,\n    userId,\n    username: from.username || '',\n    firstName: from.first_name || '',\n    userText: String(msg.text || ''),\n    llmModel: settings.llmModel || 'gpt-5.5',\n    systemPrompt: String(settings.systemPrompt || '') + '\\n\\nСсылки: ' + staffPlan + ' | ' + staffCand,\n    allowed,\n    fromCron: false,\n  }\n}];\n"
+      },
+      "id": "src-ctx-code",
+      "name": "Контекст чата",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cc1",
+              "name": "chatId",
+              "value": "={{ $('Настройки workflow').first().json.operatorChatId }}",
+              "type": "string"
+            },
+            {
+              "id": "cc2",
+              "name": "userId",
+              "value": "={{ $('Настройки workflow').first().json.operatorTelegramUserId }}",
+              "type": "string"
+            },
+            {
+              "id": "cc3",
+              "name": "userText",
+              "value": "/run Автозапуск отбора (дневная квота). Сделай полный прогон и пришли сводку. Не вызывай start_import без подтверждения.",
+              "type": "string"
+            },
+            {
+              "id": "cc4",
+              "name": "llmModel",
+              "value": "={{ $('Настройки workflow').first().json.llmModel || 'gpt-5.5' }}",
+              "type": "string"
+            },
+            {
+              "id": "cc5",
+              "name": "systemPrompt",
+              "value": "={{ $('Настройки workflow').first().json.systemPrompt + '\\n\\nСсылки: ' + String($('Настройки workflow').first().json.webOrigin || 'https://avtovozom.com').replace(/\\/$/, '') + '/staff/import-plan' }}",
+              "type": "string"
+            },
+            {
+              "id": "cc6",
+              "name": "allowed",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "cc7",
+              "name": "fromCron",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "src-cron-ctx",
+      "name": "Контекст cron",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nlet source = 'telegram';\ntry {\n  $('Cron 16+17 MSK').first();\n  // If cron node produced this execution's first item path… unreliable.\n} catch (e) {}\ntry {\n  const tg = $('Telegram Trigger').first().json;\n  if (tg && tg.message) source = 'telegram';\n  else source = 'cron';\n} catch (e) {\n  source = 'cron';\n}\nconst settings = items[0].json;\nreturn [{ json: { ...settings, __source: source } }];\n"
+      },
+      "id": "src-router",
+      "name": "Источник запуска",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-tg",
+              "leftValue": "={{ $json.__source }}",
+              "rightValue": "telegram",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "src-if-source",
+      "name": "Из Telegram?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        752,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "allowed",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "src-if-allowed",
+      "name": "Только оператор",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "model": "={{ $json.llmModel || 'gpt-5.5' }}",
+        "options": {}
+      },
+      "id": "src-openai",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        736,
+        1056
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI"
+        }
+      },
+      "notes": "Модель из Контекст чата ← Настройки (llmModel)"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Контекст cron').isExecuted ? $('Контекст cron').item.json.chatId : $('Контекст чата').item.json.chatId }}"
+      },
+      "id": "src-memory",
+      "name": "Память диалога",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        992,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "get_quota",
+        "description": "Дневная квота отбора: already_today, needed, max_select (MSK). Вызывай перед discover/apply.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst pid = profileId();\nif (!pid) return JSON.stringify({ error: 'Нужен profile_id или defaultProfileId в настройках' });\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/quota?profile_id=' + pid);\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"profile_id\": {\"type\": \"number\", \"description\": \"ID профиля; иначе defaultProfileId\"}}}"
+      },
+      "id": "src-tool-quota",
+      "name": "get_quota",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2688,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "get_profiles",
+        "description": "Список search_profiles (criteria, brief, max_select). Обычно enabled_only=true.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst en = input.enabled_only === false ? 'false' : 'true';\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/profiles?enabled_only=' + en);\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"enabled_only\": {\"type\": \"boolean\", \"description\": \"Только enabled (по умолчанию true)\"}}}"
+      },
+      "id": "src-tool-profiles",
+      "name": "get_profiles",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1424,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "get_memory",
+        "description": "Долгосрочная память sourcing-агента (уроки из правок). Читай в начале прогона.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst limit = Math.min(200, Math.max(1, Number(input.limit || 40) || 40));\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/memory?agent_key=sourcing&limit=' + limit);\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"limit\": {\"type\": \"number\", \"description\": \"Сколько записей (по умолчанию 40)\"}}}"
+      },
+      "id": "src-tool-get-memory",
+      "name": "get_memory",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1312,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "save_memory",
+        "description": "Сохранить урок/предпочтение/запрет в память агента после правок оператора.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst content = String(input.content || '').trim();\nif (!content) return JSON.stringify({ error: 'Нужен content' });\nconst kind = String(input.kind || 'lesson');\nconst source = String(input.source || 'tg_revise');\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/memory', {\n  agent_key: 'sourcing', kind, content, source,\n});\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"content\": {\"type\": \"string\", \"description\": \"Текст урока\"}, \"kind\": {\"type\": \"string\", \"description\": \"lesson|preference|ban|market_note\"}, \"source\": {\"type\": \"string\", \"description\": \"tg_revise|tg_cancel|manual|run\"}}, \"required\": [\"content\"]}"
+      },
+      "id": "src-tool-save-memory",
+      "name": "save_memory",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1552,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "discover",
+        "description": "Собрать ссылки объявлений che168 (Playwright на сервере) в import_candidates. Долго: 1–5 мин.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst pid = profileId();\nif (!pid) return JSON.stringify({ error: 'Нужен profile_id' });\nconst body = {\n  profile_id: pid,\n  use_whitelist: input.use_whitelist !== false,\n  limit_per_series: Math.min(100, Math.max(1, Number(input.limit_per_series || 40) || 40)),\n  series_urls: Array.isArray(input.series_urls) ? input.series_urls : [],\n};\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/discover', body);\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"profile_id\": {\"type\": \"number\"}, \"use_whitelist\": {\"type\": \"boolean\", \"description\": \"Брать series URL из whitelist моделей (по умолчанию true)\"}, \"limit_per_series\": {\"type\": \"number\", \"description\": \"Макс ссылок на модель (по умолчанию 40)\"}, \"series_urls\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}, \"description\": \"Опционально явные series URL\"}}}"
+      },
+      "id": "src-tool-discover",
+      "name": "discover",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2576,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "filter_candidates",
+        "description": "Жёсткий отсев кандидатов: год/пробег/дубли каталога по criteria профиля.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst pid = profileId();\nif (!pid) return JSON.stringify({ error: 'Нужен profile_id' });\nconst body = { profile_id: pid };\nif (Array.isArray(input.candidate_ids)) body.candidate_ids = input.candidate_ids;\nif (input.overlay_criteria && typeof input.overlay_criteria === 'object') body.overlay_criteria = input.overlay_criteria;\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/filter', body);\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"profile_id\": {\"type\": \"number\"}, \"candidate_ids\": {\"type\": \"array\", \"items\": {\"type\": \"number\"}}, \"overlay_criteria\": {\"type\": \"object\", \"description\": \"Временные criteria поверх профиля\"}}}"
+      },
+      "id": "src-tool-filter",
+      "name": "filter_candidates",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1168,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "list_candidates",
+        "description": "Список кандидатов staging (score, reasons, status, url).",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst pid = profileId();\nif (!pid) return JSON.stringify({ error: 'Нужен profile_id' });\nconst limit = Math.min(500, Math.max(1, Number(input.limit || 50) || 50));\nlet path = '/agent/v1/candidates?profile_id=' + pid + '&limit=' + limit;\nif (input.status) path += '&status=' + encodeURIComponent(String(input.status));\nconst data = await agentRequest.call(this, 'GET', path);\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"profile_id\": {\"type\": \"number\"}, \"status\": {\"type\": \"string\", \"description\": \"new|filtered|scored|selected|…\"}, \"limit\": {\"type\": \"number\"}}}"
+      },
+      "id": "src-tool-list",
+      "name": "list_candidates",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1696,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "score_candidates",
+        "description": "Записать LLM-оценки: items[{id, score 0-100, reasons[], year?, mileage_km?, title?}].",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nif (!Array.isArray(input.items) || !input.items.length) {\n  return JSON.stringify({ error: 'Нужен items[]' });\n}\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/candidates/score', { items: input.items });\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"items\": {\"type\": \"array\", \"description\": \"Массив оценок\", \"items\": {\"type\": \"object\", \"properties\": {\"id\": {\"type\": \"number\"}, \"score\": {\"type\": \"number\"}, \"reasons\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}, \"year\": {\"type\": \"number\"}, \"mileage_km\": {\"type\": \"number\"}, \"title\": {\"type\": \"string\"}}, \"required\": [\"id\", \"score\"]}}}, \"required\": [\"items\"]}"
+      },
+      "id": "src-tool-score",
+      "name": "score_candidates",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1840,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "apply_to_plan",
+        "description": "Добор отобранных кандидатов в import-plan (учитывает дневную квоту needed).",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst pid = profileId();\nif (!pid) return JSON.stringify({ error: 'Нужен profile_id' });\nconst body = { profile_id: pid, replace_plan: !!input.replace_plan };\nif (input.limit != null) body.limit = Number(input.limit);\nif (input.min_score != null) body.min_score = Number(input.min_score);\nif (Array.isArray(input.candidate_ids)) body.candidate_ids = input.candidate_ids;\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/apply-to-import-plan', body);\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"profile_id\": {\"type\": \"number\"}, \"limit\": {\"type\": \"number\", \"description\": \"Сколько добрать; иначе весь needed\"}, \"min_score\": {\"type\": \"number\"}, \"candidate_ids\": {\"type\": \"array\", \"items\": {\"type\": \"number\"}}, \"replace_plan\": {\"type\": \"boolean\"}}}"
+      },
+      "id": "src-tool-apply",
+      "name": "apply_to_plan",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1984,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "import_plan_status",
+        "description": "Статус import-plan: running, строки URL, success/failed. Для /status и сводки перед апрувом.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/import-plan');\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {}}"
+      },
+      "id": "src-tool-plan",
+      "name": "import_plan_status",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2096,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "start_import",
+        "description": "Запустить импорт по текущему import-plan. Только после явного согласия оператора (✅ / «запусти»).",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/import-plan/start');\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {}}"
+      },
+      "id": "src-tool-start",
+      "name": "start_import",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2208,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "stop_import",
+        "description": "Остановить текущий обход import-plan.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nfunction profileId() {\n  const raw = input.profile_id != null && String(input.profile_id).trim() !== ''\n    ? input.profile_id\n    : settings.defaultProfileId;\n  const n = Number(raw);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-Agent-Secret': secret,\n    },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const body = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body };\n  }\n}\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/import-plan/stop');\nreturn JSON.stringify(data);\n",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {}}"
+      },
+      "id": "src-tool-stop",
+      "name": "stop_import",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2320,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.userText }}",
+        "options": {
+          "systemMessage": "={{ $json.systemPrompt }}"
+        }
+      },
+      "id": "src-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        2320,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst raw = String(items[0].json.output ?? '').trim();\nfunction dedupeReply(text) {\n  if (!text) return text;\n  const half = Math.floor(text.length / 2);\n  if (text.length > 30) {\n    const left = text.slice(0, half).trim();\n    const right = text.slice(half).trim();\n    if (left === right) return left;\n  }\n  const parts = text.split(/\\n+/).map((p) => p.trim()).filter(Boolean);\n  const unique = [];\n  for (const p of parts) {\n    if (unique[unique.length - 1] !== p) unique.push(p);\n  }\n  return unique.join('\\n');\n}\nreturn [{ json: { output: dedupeReply(raw) } }];\n"
+      },
+      "id": "src-dedupe",
+      "name": "Очистка ответа",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2608,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Контекст cron').isExecuted ? $('Контекст cron').item.json.chatId : $('Контекст чата').item.json.chatId }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "src-tg-reply",
+      "name": "Telegram: ответ",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2800,
+        336
+      ],
+      "webhookId": "44bee4e1-5662-4070-9009-aafa5b1224fb",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_SOURCING_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Sourcing Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Контекст чата').item.json.chatId }}",
+        "text": "Этот бот только для оператора avtovozom (sourcing).",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "src-tg-deny",
+      "name": "Telegram: отказ",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1360,
+        464
+      ],
+      "webhookId": "4df7cc6b-298c-410a-b996-942f3c3dc25e",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_SOURCING_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Sourcing Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "query": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Query', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "@tavily/n8n-nodes-tavily.tavilyTool",
+      "typeVersion": 1,
+      "position": [
+        2848,
+        704
+      ],
+      "id": "7e00ca1b-bb83-4bfb-a5d8-0214cc84f1a0",
+      "name": "Search in Tavily",
+      "credentials": {
+        "tavilyApi": {
+          "id": "REPLACE_TAVILY_CREDENTIAL",
+          "name": "Tavily account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 16+17 MSK": {
+      "main": [
+        [
+          {
+            "node": "Настройки workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Настройки workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Настройки workflow": {
+      "main": [
+        [
+          {
+            "node": "Источник запуска",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Источник запуска": {
+      "main": [
+        [
+          {
+            "node": "Из Telegram?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Из Telegram?": {
+      "main": [
+        [
+          {
+            "node": "Контекст чата",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Контекст cron",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Контекст чата": {
+      "main": [
+        [
+          {
+            "node": "Только оператор",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Контекст cron": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Только оператор": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: отказ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Память диалога": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Очистка ответа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Очистка ответа": {
+      "main": [
+        [
+          {
+            "node": "Telegram: ответ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_quota": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_profiles": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_memory": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "save_memory": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "discover": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "filter_candidates": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "list_candidates": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "score_candidates": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "apply_to_plan": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "import_plan_status": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "start_import": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "stop_import": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search in Tavily": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Europe/Moscow",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}

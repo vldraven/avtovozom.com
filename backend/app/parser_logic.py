@@ -738,6 +738,17 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
     max_new = int(os.getenv("CHE168_NEW_PER_RUN", "5"))
     download_timeout = float(os.getenv("CHE168_DOWNLOAD_PHOTOS_TIMEOUT_SEC", "90"))
 
+    if max_new <= 0:
+        job.status = "success"
+        job.finished_at = datetime.utcnow()
+        job.message = (
+            "CHE168_NEW_PER_RUN=0: auto-import в каталог отключён "
+            "(sourcing через Agent API / import-plan)."
+        )
+        db.commit()
+        db.refresh(job)
+        return job
+
     def flush_progress(msg: str | None = None) -> None:
         job.total_processed = total_processed
         job.total_created = total_created

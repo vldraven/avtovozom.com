@@ -1,6 +1,6 @@
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -8,6 +8,13 @@ from .db import SessionLocal
 from .import_plan_logic import process_import_plan
 from .models import ParseJob
 from .parser_logic import run_parser_job
+
+try:
+    from zoneinfo import ZoneInfo
+
+    MSK = ZoneInfo("Europe/Moscow")
+except Exception:  # pragma: no cover
+    MSK = timezone(timedelta(hours=3))
 
 
 def ensure_import_plan_tables() -> None:
@@ -57,11 +64,27 @@ def ensure_import_plan_tables() -> None:
         )
         conn.execute(
             text(
+                "CREATE INDEX IF NOT EXISTS ix_import_plan_items_plan_id "
+                "ON import_plan_items (plan_id)"
+            )
+        )
+        conn.execute(
+            text(
                 "INSERT INTO import_plans (id, status, stop_requested, banner, error) "
                 "SELECT 1, 'idle', FALSE, '', '' "
                 "WHERE NOT EXISTS (SELECT 1 FROM import_plans WHERE id = 1)"
             )
         )
+
+
+def _msk_hour_now() -> int:
+    return datetime.now(MSK).hour
+
+
+def _daily_crawl_allowed_now() -> bool:
+    """Whitelist daily crawl — не раньше 16:00 МСК (площадка спокойнее)."""
+    min_hour = int(os.getenv("PARSER_DAILY_MIN_HOUR_MSK", "16"))
+    return _msk_hour_now() >= min_hour
 
 
 def process_pending_jobs() -> None:
@@ -99,10 +122,22 @@ def process_import_plan_queue() -> None:
 
 
 def enqueue_daily_job_if_needed() -> None:
+    # При CHE168_NEW_PER_RUN=0 daily бесполезен — не копим очередь.
+    if int(os.getenv("CHE168_NEW_PER_RUN", "5")) <= 0:
+        return
+    if not _daily_crawl_allowed_now():
+        return
     db = SessionLocal()
     try:
-        latest = db.execute(select(ParseJob).order_by(ParseJob.id.desc()).limit(1)).scalar_one_or_none()
-        if not latest or (latest.started_at and (datetime.utcnow() - latest.started_at).total_seconds() > 20 * 3600):
+        interval_hours = float(os.getenv("PARSER_INTERVAL_HOURS", "20"))
+        latest = db.execute(
+            select(ParseJob).order_by(ParseJob.id.desc()).limit(1)
+        ).scalar_one_or_none()
+        if not latest or (
+            latest.started_at
+            and (datetime.utcnow() - latest.started_at).total_seconds()
+            > interval_hours * 3600
+        ):
             db.add(ParseJob(type="daily", status="queued"))
             db.commit()
     finally:

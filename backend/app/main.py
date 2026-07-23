@@ -219,6 +219,7 @@ from .n8n_bot_integration import (
     create_bot_calculation_request,
     verify_n8n_bot_api_secret,
 )
+from .agent_api import router as agent_api_router
 from .n8n_client import n8n_webhook_post
 from .push_notify import (
     chat_message_recipient_user_id,
@@ -269,6 +270,7 @@ except Exception:  # pragma: no cover - dependency may be absent in local dev un
     parse_authentication_credential_json = None
 
 app = FastAPI(title="Avtovozom API", version="0.1.0")
+app.include_router(agent_api_router)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
@@ -1022,6 +1024,124 @@ def startup() -> None:
             text(
                 "CREATE INDEX IF NOT EXISTS ix_avito_field_mappings_entity_type "
                 "ON avito_field_mappings (entity_type)"
+            )
+        )
+        # Agent sourcing (profiles / candidates / memory / approval sessions)
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS search_profiles (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(128) NOT NULL DEFAULT '',
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    criteria JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    brief TEXT NOT NULL DEFAULT '',
+                    max_select INTEGER NOT NULL DEFAULT 20,
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS import_candidates (
+                    id SERIAL PRIMARY KEY,
+                    profile_id INTEGER NOT NULL REFERENCES search_profiles(id) ON DELETE CASCADE,
+                    url VARCHAR(2048) NOT NULL DEFAULT '',
+                    listing_id VARCHAR(128) NOT NULL DEFAULT '',
+                    marketplace VARCHAR(32) NOT NULL DEFAULT 'che168',
+                    brand_id INTEGER NULL,
+                    brand_name VARCHAR(128) NOT NULL DEFAULT '',
+                    model_id INTEGER NULL,
+                    model_name VARCHAR(128) NOT NULL DEFAULT '',
+                    generation_id INTEGER NULL,
+                    generation_name VARCHAR(128) NOT NULL DEFAULT '',
+                    year INTEGER NULL,
+                    price_cny DOUBLE PRECISION NULL,
+                    mileage_km INTEGER NULL,
+                    title VARCHAR(512) NOT NULL DEFAULT '',
+                    score DOUBLE PRECISION NULL,
+                    reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    status VARCHAR(32) NOT NULL DEFAULT 'new',
+                    filter_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    selected_at TIMESTAMP WITHOUT TIME ZONE NULL,
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_import_candidates_profile_listing "
+                "ON import_candidates (profile_id, listing_id) WHERE listing_id <> ''"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_import_candidates_profile_id "
+                "ON import_candidates (profile_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_import_candidates_status "
+                "ON import_candidates (status)"
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS agent_memories (
+                    id SERIAL PRIMARY KEY,
+                    agent_key VARCHAR(64) NOT NULL DEFAULT 'sourcing',
+                    kind VARCHAR(32) NOT NULL DEFAULT 'lesson',
+                    content TEXT NOT NULL DEFAULT '',
+                    source VARCHAR(32) NOT NULL DEFAULT 'manual',
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_agent_memories_agent_key "
+                "ON agent_memories (agent_key)"
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS sourcing_approval_sessions (
+                    id SERIAL PRIMARY KEY,
+                    profile_id INTEGER NOT NULL REFERENCES search_profiles(id) ON DELETE CASCADE,
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    candidate_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    telegram_chat_id VARCHAR(64) NOT NULL DEFAULT '',
+                    telegram_message_id VARCHAR(64) NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO search_profiles (name, enabled, criteria, brief, max_select)
+                SELECT
+                    'Ежедневный отбор',
+                    TRUE,
+                    '{"year_min": 2019, "mileage_max": 100000, "marketplaces": ["che168"]}'::jsonb,
+                    'Ищи наиболее востребованные и ликвидные варианты под заказ из Китая на рынок РФ. Учитывай спрос, ликвидность перепродажи, адекватность цены. Не выдумывай URL.',
+                    20
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM search_profiles WHERE name = 'Ежедневный отбор'
+                )
+                """
             )
         )
     db = next(get_db())
@@ -5782,6 +5902,78 @@ def get_import_plan(
     _: User = Depends(require_roles("admin", "moderator")),
 ):
     return _import_plan_out(ensure_import_plan(db))
+
+
+@app.get("/admin/search-profiles")
+def admin_list_search_profiles(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    from .models import SearchProfile
+
+    rows = db.execute(select(SearchProfile).order_by(SearchProfile.id)).scalars().all()
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "enabled": p.enabled,
+            "criteria": p.criteria or {},
+            "brief": p.brief or "",
+            "max_select": p.max_select,
+            "updated_at": p.updated_at,
+        }
+        for p in rows
+    ]
+
+
+@app.get("/admin/import-candidates")
+def admin_list_import_candidates(
+    profile_id: int | None = None,
+    status: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    from .models import ImportCandidate, SearchProfile
+
+    q = select(ImportCandidate).order_by(
+        ImportCandidate.score.desc().nullslast(),
+        ImportCandidate.id.desc(),
+    )
+    if profile_id is not None:
+        q = q.where(ImportCandidate.profile_id == profile_id)
+    else:
+        default = db.execute(
+            select(SearchProfile).where(SearchProfile.enabled.is_(True)).order_by(SearchProfile.id)
+        ).scalars().first()
+        if default:
+            q = q.where(ImportCandidate.profile_id == default.id)
+    if status:
+        q = q.where(ImportCandidate.status == status)
+    q = q.limit(limit)
+    rows = db.execute(q).scalars().all()
+    return [
+        {
+            "id": c.id,
+            "profile_id": c.profile_id,
+            "url": c.url,
+            "listing_id": c.listing_id,
+            "marketplace": c.marketplace,
+            "brand_name": c.brand_name,
+            "model_name": c.model_name,
+            "year": c.year,
+            "price_cny": c.price_cny,
+            "mileage_km": c.mileage_km,
+            "title": c.title,
+            "score": c.score,
+            "reasons": c.reasons or [],
+            "status": c.status,
+            "filter_reasons": c.filter_reasons or [],
+            "selected_at": c.selected_at,
+            "created_at": c.created_at,
+        }
+        for c in rows
+    ]
 
 
 @app.put("/admin/import-plan", response_model=ImportPlanOut)

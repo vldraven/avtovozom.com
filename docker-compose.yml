@@ -42,7 +42,8 @@ services:
       # IndexNow: мгновенный пинг Яндекс/Bing при создании/снятии объявления (пусто — выключено)
       INDEXNOW_KEY: ${INDEXNOW_KEY:-}
       CHE168_MAX_LINKS_PER_MODEL: "40"
-      CHE168_NEW_PER_RUN: "5"
+      CHE168_NEW_PER_RUN: "0"
+      AGENT_API_SECRET: ${AGENT_API_SECRET:-}
       MEDIA_ROOT: /app/media
       # SMTP_* задайте в .env (скопируйте из .env.example). Без SMTP_HOST — коды только в логах backend.
       # При captcha: CHE168_FORCE_DETAIL_URLS: "https://i.che168.com/car/ID1,https://i.che168.com/car/ID2"
@@ -68,7 +69,7 @@ services:
       PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:3000}
       INDEXNOW_KEY: ${INDEXNOW_KEY:-}
       CHE168_MAX_LINKS_PER_MODEL: "40"
-      CHE168_NEW_PER_RUN: "5"
+      CHE168_NEW_PER_RUN: "0"
       MEDIA_ROOT: /app/media
       # При captcha: CHE168_FORCE_DETAIL_URLS: "https://i.che168.com/car/ID1,https://i.che168.com/car/ID2"
     depends_on:
