@@ -76,13 +76,15 @@ CREATE INDEX IF NOT EXISTS ix_sourcing_approval_sessions_status
     ON sourcing_approval_sessions (status);
 
 -- Seed default daily profile (idempotent)
-INSERT INTO search_profiles (name, enabled, criteria, brief, max_select)
+INSERT INTO search_profiles (name, enabled, criteria, brief, max_select, created_at, updated_at)
 SELECT
     'Ежедневный отбор',
     TRUE,
     '{"year_min": 2019, "mileage_max": 100000, "marketplaces": ["che168"]}'::jsonb,
     'Ищи наиболее востребованные и ликвидные варианты под заказ из Китая на рынок РФ. Учитывай спрос, ликвидность перепродажи, адекватность цены. Не выдумывай URL.',
-    20
+    20,
+    NOW(),
+    NOW()
 WHERE NOT EXISTS (
     SELECT 1 FROM search_profiles WHERE name = 'Ежедневный отбор'
 );

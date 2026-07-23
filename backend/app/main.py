@@ -1131,13 +1131,50 @@ def startup() -> None:
         conn.execute(
             text(
                 """
-                INSERT INTO search_profiles (name, enabled, criteria, brief, max_select)
+                ALTER TABLE search_profiles
+                  ALTER COLUMN created_at SET DEFAULT NOW(),
+                  ALTER COLUMN updated_at SET DEFAULT NOW()
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                ALTER TABLE import_candidates
+                  ALTER COLUMN created_at SET DEFAULT NOW(),
+                  ALTER COLUMN updated_at SET DEFAULT NOW()
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                ALTER TABLE agent_memories
+                  ALTER COLUMN created_at SET DEFAULT NOW()
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                ALTER TABLE sourcing_approval_sessions
+                  ALTER COLUMN created_at SET DEFAULT NOW(),
+                  ALTER COLUMN updated_at SET DEFAULT NOW()
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO search_profiles (name, enabled, criteria, brief, max_select, created_at, updated_at)
                 SELECT
                     'Ежедневный отбор',
                     TRUE,
                     '{"year_min": 2019, "mileage_max": 100000, "marketplaces": ["che168"]}'::jsonb,
                     'Ищи наиболее востребованные и ликвидные варианты под заказ из Китая на рынок РФ. Учитывай спрос, ликвидность перепродажи, адекватность цены. Не выдумывай URL.',
-                    20
+                    20,
+                    NOW(),
+                    NOW()
                 WHERE NOT EXISTS (
                     SELECT 1 FROM search_profiles WHERE name = 'Ежедневный отбор'
                 )

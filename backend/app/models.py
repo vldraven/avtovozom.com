@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -473,9 +474,14 @@ class SearchProfile(Base):
     criteria: Mapped[dict] = mapped_column(JSON, default=dict)
     brief: Mapped[str] = mapped_column(Text, default="")
     max_select: Mapped[int] = mapped_column(Integer, default=20)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, server_default=text("NOW()")
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=text("NOW()"),
     )
 
     candidates = relationship("ImportCandidate", back_populates="profile")
@@ -509,9 +515,14 @@ class ImportCandidate(Base):
     """new | filtered | scored | selected | rejected | imported"""
     filter_reasons: Mapped[list] = mapped_column(JSON, default=list)
     selected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, server_default=text("NOW()")
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=text("NOW()"),
     )
 
     profile = relationship("SearchProfile", back_populates="candidates")
@@ -529,7 +540,9 @@ class AgentMemory(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     source: Mapped[str] = mapped_column(String(32), default="manual")
     """tg_revise | tg_cancel | manual | run"""
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, server_default=text("NOW()")
+    )
 
 
 class SourcingApprovalSession(Base):
@@ -547,7 +560,12 @@ class SourcingApprovalSession(Base):
     telegram_chat_id: Mapped[str] = mapped_column(String(64), default="")
     telegram_message_id: Mapped[str] = mapped_column(String(64), default="")
     summary: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, server_default=text("NOW()")
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=text("NOW()"),
     )
