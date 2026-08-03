@@ -39,6 +39,8 @@ class AgentApiTests(unittest.TestCase):
         )
         self.db.add(model)
         self.db.flush()
+        self.db.add(CarModel(brand_id=brand.id, name="Q3"))
+        self.db.flush()
         self.brand_id = brand.id
         self.model_id = model.id
 
@@ -160,15 +162,22 @@ class AgentApiTests(unittest.TestCase):
             headers=self.headers,
             json={
                 "profile_id": self.profile_id,
-                "series_urls": ["https://www.che168.com/series/test/"],
+                "series_urls": [
+                    "https://www.che168.com/china/aodi/aodiq3/a3_5msdgscncgpi1ltocspexx0/"
+                ],
                 "use_whitelist": False,
                 "limit_per_series": 10,
             },
         )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["created"], 1)
+        cand = r.json()["candidates"][0]
+        self.assertEqual(cand["brand_name"], "Audi")
+        self.assertEqual(cand["model_name"], "Q3")
+        self.assertIsNotNone(cand["model_id"])
 
-        cand_id = r.json()["candidates"][0]["id"]
+        cand_id = cand["id"]
+
         score = self.client.post(
             "/agent/v1/candidates/score",
             headers=self.headers,
@@ -180,11 +189,15 @@ class AgentApiTests(unittest.TestCase):
                         "reasons": ["ликвидная"],
                         "year": 2022,
                         "mileage_km": 20000,
+                        "title": "奥迪Q3 2020款",
                     }
                 ]
             },
         )
         self.assertEqual(score.status_code, 200)
+        scored = score.json()[0]
+        self.assertEqual(scored["model_name"], "Q3")
+        self.assertIsNotNone(scored["model_id"])
 
         apply = self.client.post(
             "/agent/v1/apply-to-import-plan",
@@ -193,12 +206,15 @@ class AgentApiTests(unittest.TestCase):
         )
         self.assertEqual(apply.status_code, 200, apply.text)
         self.assertEqual(apply.json()["applied"], 1)
+        self.assertEqual(apply.json()["skipped_missing_model"], 0)
         self.assertEqual(apply.json()["already_today"], 1)
         self.assertEqual(apply.json()["needed"], 19)
 
         plan = self.client.get("/agent/v1/import-plan", headers=self.headers)
         self.assertEqual(plan.status_code, 200)
-        self.assertGreaterEqual(len(plan.json()["rows"]), 1)
+        rows = plan.json()["rows"]
+        self.assertGreaterEqual(len(rows), 1)
+        self.assertTrue(any(r.get("model_id") for r in rows))
 
 
 if __name__ == "__main__":

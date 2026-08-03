@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import os
-
 from sqlalchemy import or_
 
 from .models import Car
-from .schemas import CbrSnapshot
 
 _TRANSMISSION_PATTERNS: dict[str, list[str]] = {
     "at": ["%AT%", "%автомат%", "%自动%"],
@@ -38,18 +35,33 @@ def apply_transmission_filter(stmt, transmission: str | None):
     return stmt.where(or_(*[Car.transmission.ilike(p) for p in patterns]))
 
 
-def cny_bounds_from_rub_bounds(
+_FUEL_TYPE_PATTERNS: dict[str, list[str]] = {
+    "gasoline": ["%бензин%", "%gasoline%", "%petrol%", "%汽油%"],
+    "hybrid": ["%гибрид%", "%hybrid%", "%phev%", "%hev%", "%增程%"],
+    "electric": ["%электро%", "%electric%", "%ev%", "%纯电%", "%bev%"],
+}
+
+
+def apply_fuel_type_filter(stmt, fuel_type: str | None):
+    if not fuel_type:
+        return stmt
+    patterns = _FUEL_TYPE_PATTERNS.get(fuel_type.strip().lower())
+    if not patterns:
+        return stmt
+    return stmt.where(or_(*[Car.fuel_type.ilike(p) for p in patterns]))
+
+
+def matches_turnkey_rub_bounds(
+    estimated_total_rub: float | None,
     rub_from: float | None,
     rub_to: float | None,
-    snap: CbrSnapshot | None,
-) -> tuple[float | None, float | None]:
-    """Грубый перевод ₽ → CNY для фильтра по ориентировочной цене под ключ."""
-    if snap is None:
-        return None, None
-    mult = float(os.getenv("PRICE_FILTER_RUB_MULTIPLIER", "2.2"))
-    denom = float(snap.rub_per_cny) * mult
-    if denom <= 0:
-        return None, None
-    cny_from = float(rub_from) / denom if rub_from is not None else None
-    cny_to = float(rub_to) / denom if rub_to is not None else None
-    return cny_from, cny_to
+) -> bool:
+    """Проверка цены «под ключ» (₽) против границ фильтра каталога."""
+    if estimated_total_rub is None:
+        return False
+    total = float(estimated_total_rub)
+    if rub_from is not None and total < float(rub_from):
+        return False
+    if rub_to is not None and total > float(rub_to):
+        return False
+    return True

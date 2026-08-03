@@ -10,7 +10,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from .che168_parser import marketplace_from_detail_url, normalize_import_detail_url
+from .catalog_resolve import apply_catalog_ref, resolve_catalog
+from .che168_parser import (
+    marketplace_from_detail_url,
+    normalize_import_detail_url,
+    parse_che168_detail,
+)
 from .models import CarGeneration, CarModel, ImportPlan, ImportPlanItem, ParseJob
 from .parser_cancellation import request_cancel
 from .parser_logic import run_parser_job
@@ -19,6 +24,79 @@ logger = logging.getLogger(__name__)
 
 IMPORT_PLAN_MAX_RETRIES = 3
 SHARED_PLAN_ID = 1
+
+
+def _repair_plan_item_catalog(db: Session, item: ImportPlanItem) -> bool:
+    if item.model_id and item.brand_id:
+        return True
+    title = ""
+    series_raw = (item.model_name or "").strip() or None
+    url = (item.url or "").strip()
+
+    # Быстрый путь: title уже есть у candidate (после enrich)
+    if url:
+        from .models import ImportCandidate
+
+        cand = db.execute(
+            select(ImportCandidate)
+            .where(ImportCandidate.url == url)
+            .order_by(ImportCandidate.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if cand is not None:
+            title = (cand.title or "").strip()
+            if not series_raw and (cand.model_name or "").strip():
+                series_raw = cand.model_name.strip()
+            if cand.brand_id and cand.model_id:
+                item.brand_id = cand.brand_id
+                item.brand_name = (cand.brand_name or "")[:128]
+                item.model_id = cand.model_id
+                item.model_name = (cand.model_name or "")[:128]
+                return True
+
+    if title:
+        ref = resolve_catalog(
+            db,
+            title=title,
+            series_raw=series_raw,
+            brand_name=item.brand_name,
+            model_name=item.model_name,
+        )
+        if apply_catalog_ref(item, ref):
+            return True
+
+    if url:
+        try:
+            parsed = parse_che168_detail(
+                url, allow_playwright=False, http_timeout=15.0
+            )
+            title = parsed.title or title
+            series_raw = parsed.series_raw or series_raw
+        except Exception as e:
+            logger.warning("plan item catalog parse failed for %s: %s", url, e)
+    ref = resolve_catalog(
+        db,
+        title=title,
+        series_raw=series_raw,
+        brand_name=item.brand_name,
+        model_name=item.model_name,
+    )
+    return apply_catalog_ref(item, ref)
+
+
+def repair_plan_items_missing_catalog(db: Session, items: list[ImportPlanItem]) -> int:
+    """Дозаполняет brand/model у pending-строк без model_id. Возвращает число починенных."""
+    n = 0
+    for item in items:
+        if item.status == "success":
+            continue
+        if item.model_id:
+            continue
+        if not (item.url or "").strip():
+            continue
+        if _repair_plan_item_catalog(db, item):
+            n += 1
+    return n
 
 
 def ensure_import_plan(db: Session) -> ImportPlan:
@@ -80,6 +158,11 @@ def start_import_plan(db: Session) -> ImportPlan:
     plan = ensure_import_plan(db)
     if plan.status in ("running", "stopping"):
         return plan
+
+    repaired = repair_plan_items_missing_catalog(db, list(plan.items))
+    if repaired:
+        logger.info("import-plan: repaired catalog on %s rows before start", repaired)
+        db.flush()
 
     prepare_items_for_fresh_start(list(plan.items))
     queue = _queueable_items(list(plan.items))

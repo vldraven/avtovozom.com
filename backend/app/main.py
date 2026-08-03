@@ -102,12 +102,17 @@ from .email_utils import send_email
 from .media_storage import (
     delete_brand_logo_files,
     delete_car_photo_files,
+    delete_chat_attachment_dir,
     save_brand_logo,
     save_chat_attachment,
     save_uploaded_car_photos,
 )
 from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_car
-from .car_list_filters import apply_transmission_filter, cny_bounds_from_rub_bounds
+from .car_list_filters import (
+    apply_fuel_type_filter,
+    apply_transmission_filter,
+    matches_turnkey_rub_bounds,
+)
 from .body_colors import BODY_COLOR_OPTIONS, label_for_slug, slug_from_form
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
 from .engine_volume_util import normalize_passenger_engine_volume_cc
@@ -147,6 +152,7 @@ from .schemas import (
     BodyColorOptionOut,
     CarGenerationCreateIn,
     CarModelCreateIn,
+    CarModelUpdateIn,
     CarPriceBreakdownItemOut,
     CarPriceBreakdownOut,
     AdminTrimSpecUpdateIn,
@@ -167,6 +173,8 @@ from .schemas import (
     CustomsCalcConfigOut,
     FreeformRequestLeadIn,
     FreeformRequestLeadOut,
+    GuestChatSendIn,
+    GuestChatSessionOut,
     UtilCoeffDefaultsOut,
     CustomsCalcEstimateIn,
     CustomsCalcEstimateOut,
@@ -228,6 +236,8 @@ from .push_notify import (
 )
 from .telegram_notify import (
     notify_calculation_request,
+    notify_guest_chat_message,
+    notify_guest_chat_started,
     notify_new_calculation_request,
     notify_platform_chat_message,
 )
@@ -652,6 +662,7 @@ def _car_to_out(
         estimated_total_rub=est,
         trim_id=car.trim_id,
         trim=_trim_to_out(getattr(car, "trim", None)) if include_trim else None,
+        is_popular=bool(getattr(car, "is_popular", False)),
         updated_at=getattr(car, "updated_at", None),
     )
 
@@ -916,6 +927,30 @@ def startup() -> None:
         )
         conn.execute(
             text(
+                "ALTER TABLE car_brands ADD COLUMN IF NOT EXISTS is_popular "
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE car_models ADD COLUMN IF NOT EXISTS is_popular "
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE cars ADD COLUMN IF NOT EXISTS is_popular "
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_is_popular ON cars (is_popular) "
+                "WHERE is_popular IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
                 """
                 CREATE TABLE IF NOT EXISTS car_trims (
                     id SERIAL PRIMARY KEY,
@@ -973,10 +1008,19 @@ def startup() -> None:
         conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS chat_type VARCHAR(16) NOT NULL DEFAULT 'dealer'"))
         conn.execute(text("ALTER TABLE chats ALTER COLUMN request_id DROP NOT NULL"))
         conn.execute(text("ALTER TABLE chats ALTER COLUMN dealer_user_id DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE chats ADD COLUMN IF NOT EXISTS guest_token VARCHAR(64) NULL"))
+        conn.execute(text("ALTER TABLE chats ALTER COLUMN user_id DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE chat_messages ALTER COLUMN sender_user_id DROP NOT NULL"))
         conn.execute(
             text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_platform_user "
                 "ON chats (user_id) WHERE chat_type = 'platform'"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_guest_token "
+                "ON chats (guest_token) WHERE guest_token IS NOT NULL"
             )
         )
         conn.execute(
@@ -1149,6 +1193,14 @@ def startup() -> None:
         conn.execute(
             text(
                 """
+                ALTER TABLE import_candidates
+                  ADD COLUMN IF NOT EXISTS registration_date VARCHAR(32) NULL
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
                 ALTER TABLE agent_memories
                   ALTER COLUMN created_at SET DEFAULT NOW()
                 """
@@ -1170,8 +1222,8 @@ def startup() -> None:
                 SELECT
                     'Ежедневный отбор',
                     TRUE,
-                    '{"year_min": 2019, "mileage_max": 100000, "marketplaces": ["che168"]}'::jsonb,
-                    'Ищи наиболее востребованные и ликвидные варианты под заказ из Китая на рынок РФ. Учитывай спрос, ликвидность перепродажи, адекватность цены. Не выдумывай URL.',
+                    '{"series_urls": [], "mileage_max": 50000, "reg_age_years_min": 3, "reg_age_years_max": 5, "price_band": "mid_upper", "marketplaces": ["che168"]}'::jsonb,
+                    'Ищи наиболее востребованные и ликвидные варианты под заказ из Китая на рынок РФ. Учитывай спрос, ликвидность перепродажи, адекватность цены. Предпочти пробег до 50 тыс. км, возраст по регистрации 3–5 лет, внутри модели — средний и верхний ценовой сегмент. Не выдумывай URL. Источник объявлений — series_urls профиля.',
                     20,
                     NOW(),
                     NOW()
@@ -1186,6 +1238,33 @@ def startup() -> None:
         seed_initial_data(db)
         ensure_settings_row(db)
         migrate_legacy_trim_specs(db)
+        from .models import SearchProfile
+        from .sourcing_defaults import (
+            DEFAULT_SOURCING_BRIEF,
+            DEFAULT_SOURCING_CRITERIA,
+            DEFAULT_SOURCING_SERIES_URLS,
+        )
+
+        profile = db.execute(
+            select(SearchProfile)
+            .where(SearchProfile.name == "Ежедневный отбор")
+            .order_by(SearchProfile.id)
+        ).scalars().first()
+        if profile:
+            criteria = dict(profile.criteria or {})
+            urls = criteria.get("series_urls")
+            if not isinstance(urls, list) or not urls:
+                criteria["series_urls"] = list(DEFAULT_SOURCING_SERIES_URLS)
+            for key, value in DEFAULT_SOURCING_CRITERIA.items():
+                if key == "series_urls":
+                    continue
+                if key not in criteria or criteria.get(key) in (None, "", []):
+                    criteria[key] = value
+            profile.criteria = criteria
+            if not (profile.brief or "").strip():
+                profile.brief = DEFAULT_SOURCING_BRIEF
+            profile.updated_at = datetime.utcnow()
+            db.commit()
     finally:
         db.close()
 
@@ -1254,6 +1333,7 @@ def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
             models_with_listings=model_counts.get(b.id, 0),
             logo_storage_url=b.logo_storage_url,
             quick_filter_rank=b.quick_filter_rank,
+            is_popular=bool(b.is_popular),
         )
         for b in brands
     ]
@@ -1298,6 +1378,7 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
             name=m.name,
             slug=mmap.get((brand_id, m.id), ""),
             listings_count=counts.get(m.id, 0),
+            is_popular=bool(m.is_popular),
         )
         for m in models
     ]
@@ -1377,6 +1458,7 @@ def public_catalog_tree(db: Session = Depends(get_db)):
                     name=m.name,
                     slug=mmap.get((b.id, m.id), ""),
                     listings_count=listing_per_model.get((b.id, m.id), 0),
+                    is_popular=bool(m.is_popular),
                     generations=gen_items,
                 )
             )
@@ -1387,6 +1469,7 @@ def public_catalog_tree(db: Session = Depends(get_db)):
                 slug=bmap.get(b.id, ""),
                 listings_count=car_counts.get(b.id, 0),
                 models_with_listings=model_distinct.get(b.id, 0),
+                is_popular=bool(b.is_popular),
                 models=model_items,
             )
         )
@@ -2307,13 +2390,17 @@ def list_cars(
         default=None,
         description="КПП: at|amt|cvt|mt|auto|manual",
     ),
+    fuel_type: str | None = Query(
+        default=None,
+        description="Тип топлива: gasoline|hybrid|electric",
+    ),
     rub_from: float | None = None,
     rub_to: float | None = None,
     exclude_id: int | None = None,
     manufacturer: str | None = None,
     sort: str | None = Query(
         default="date_desc",
-        description="date_desc|date_asc|price_asc|price_desc",
+        description="date_desc|date_asc|price_asc|price_desc|relevance|year_desc|year_asc|mileage_asc|power_desc",
     ),
     include_breakdown: bool = Query(
         default=False,
@@ -2324,6 +2411,10 @@ def list_cars(
         ge=1,
         le=30,
         description="Ограничить число фото в каждом объявлении (меньше ответ для списков).",
+    ),
+    is_popular: bool | None = Query(
+        default=None,
+        description="Если true — только объявления с флагом витрины «Популярные модели».",
     ),
     page: int = 1,
     limit: int = 20,
@@ -2366,14 +2457,15 @@ def list_cars(
         stmt = stmt.where(Car.model_id == model_id)
     if generation_id is not None:
         stmt = stmt.where(Car.generation_id == generation_id)
+    if is_popular is True:
+        stmt = stmt.where(Car.is_popular.is_(True))
 
-    snap_pre, _cbr_pre = build_cbr_snapshot()
-    if (rub_from is not None or rub_to is not None) and cny_from is None and cny_to is None:
-        cf, ct = cny_bounds_from_rub_bounds(rub_from, rub_to, snap_pre)
-        if cf is not None:
-            cny_from = cf
-        if ct is not None:
-            cny_to = ct
+    # Фильтр rub_from/rub_to — по цене «под ключ» (estimated_total_rub), не по CNY.
+    filter_by_turnkey = (
+        (rub_from is not None or rub_to is not None)
+        and cny_from is None
+        and cny_to is None
+    )
 
     if year_from is not None:
         stmt = stmt.where(Car.year >= year_from)
@@ -2394,24 +2486,9 @@ def list_cars(
     if mileage_to is not None:
         stmt = stmt.where(Car.mileage_km.isnot(None), Car.mileage_km <= mileage_to)
     stmt = apply_transmission_filter(stmt, transmission)
+    stmt = apply_fuel_type_filter(stmt, fuel_type)
     if exclude_id is not None:
         stmt = stmt.where(Car.id != exclude_id)
-
-    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    s = (sort or "date_desc").strip().lower()
-    if s == "price_asc":
-        order = (Car.price_cny.asc(), Car.id.desc())
-    elif s == "price_desc":
-        order = (Car.price_cny.desc(), Car.id.desc())
-    elif s == "date_asc":
-        order = (Car.created_at.asc(), Car.id.asc())
-    else:
-        order = (Car.created_at.desc(), Car.id.desc())
-    cars = db.execute(
-        stmt.order_by(*order)
-        .offset((page - 1) * limit)
-        .limit(limit)
-    ).unique().scalars().all()
 
     snap, cbr_err = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
@@ -2421,6 +2498,104 @@ def list_cars(
         extras_for_est = parse_additional_expenses_json(
             settings_row.additional_expenses_json
         )
+
+    s = (sort or "date_desc").strip().lower()
+    est_by_id: dict[int, float] = {}
+
+    if filter_by_turnkey:
+        candidates = db.execute(stmt).unique().scalars().all()
+        scored: list[tuple[Car, float]] = []
+        if snap is not None:
+            for car in candidates:
+                try:
+                    est = _compute_estimated_total_rub(
+                        car, settings_row, snap, extras=extras_for_est
+                    )
+                except Exception:
+                    est = None
+                if not matches_turnkey_rub_bounds(est, rub_from, rub_to):
+                    continue
+                scored.append((car, float(est)))
+        if s == "price_asc":
+            scored.sort(key=lambda x: (x[1], -x[0].id))
+        elif s == "price_desc":
+            scored.sort(key=lambda x: (-x[1], -x[0].id))
+        elif s == "date_asc":
+            scored.sort(
+                key=lambda x: (x[0].created_at is None, x[0].created_at, x[0].id)
+            )
+        elif s == "year_desc":
+            scored.sort(
+                key=lambda x: (x[0].year is None, -(x[0].year or 0), -x[0].id)
+            )
+        elif s == "year_asc":
+            scored.sort(
+                key=lambda x: (x[0].year is None, x[0].year or 0, -x[0].id)
+            )
+        elif s == "mileage_asc":
+            scored.sort(
+                key=lambda x: (
+                    x[0].mileage_km is None,
+                    x[0].mileage_km or 0,
+                    -x[0].id,
+                )
+            )
+        elif s == "power_desc":
+            scored.sort(
+                key=lambda x: (
+                    x[0].horsepower is None,
+                    -(x[0].horsepower or 0),
+                    -x[0].id,
+                )
+            )
+        elif s == "relevance":
+            scored.sort(
+                key=lambda x: (
+                    not bool(x[0].is_popular),
+                    x[0].created_at is None,
+                    -(x[0].created_at.timestamp() if x[0].created_at else 0),
+                    -x[0].id,
+                )
+            )
+        else:
+            scored.sort(
+                key=lambda x: (
+                    x[0].created_at is None,
+                    -(x[0].created_at.timestamp() if x[0].created_at else 0),
+                    -x[0].id,
+                )
+            )
+        total = len(scored)
+        start = max(0, (page - 1) * limit)
+        page_slice = scored[start : start + limit]
+        cars = [c for c, _ in page_slice]
+        est_by_id = {c.id: e for c, e in page_slice}
+    else:
+        total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        if s == "price_asc":
+            order = (Car.price_cny.asc(), Car.id.desc())
+        elif s == "price_desc":
+            order = (Car.price_cny.desc(), Car.id.desc())
+        elif s == "date_asc":
+            order = (Car.created_at.asc(), Car.id.asc())
+        elif s == "year_desc":
+            order = (Car.year.desc().nulls_last(), Car.id.desc())
+        elif s == "year_asc":
+            order = (Car.year.asc().nulls_last(), Car.id.desc())
+        elif s == "mileage_asc":
+            order = (Car.mileage_km.asc().nulls_last(), Car.id.desc())
+        elif s == "power_desc":
+            order = (Car.horsepower.desc().nulls_last(), Car.id.desc())
+        elif s == "relevance":
+            order = (Car.is_popular.desc(), Car.created_at.desc(), Car.id.desc())
+        else:
+            order = (Car.created_at.desc(), Car.id.desc())
+        cars = db.execute(
+            stmt.order_by(*order)
+            .offset((page - 1) * limit)
+            .limit(limit)
+        ).unique().scalars().all()
+
     items: list[CarOut] = []
     for car in cars:
         pb = None
@@ -2429,16 +2604,17 @@ def list_cars(
                 pb = _build_car_price_breakdown(car, row=settings_row, cbr=snap)
             except Exception:
                 pb = None
-        est: float | None = None
-        if pb is not None:
-            est = float(pb.total_rub)
-        elif snap is not None:
-            try:
-                est = _compute_estimated_total_rub(
-                    car, settings_row, snap, extras=extras_for_est
-                )
-            except Exception:
-                est = None
+        est: float | None = est_by_id.get(car.id)
+        if est is None:
+            if pb is not None:
+                est = float(pb.total_rub)
+            elif snap is not None:
+                try:
+                    est = _compute_estimated_total_rub(
+                        car, settings_row, snap, extras=extras_for_est
+                    )
+                except Exception:
+                    est = None
         items.append(
             _car_to_out(
                 car,
@@ -2616,6 +2792,20 @@ def _optional_generation_id_form(raw: str | None) -> int | None:
         ) from None
 
 
+def _optional_bool_form(raw: str | None) -> bool | None:
+    """Form-поле чекбокса: '1'/'true'/'on' → True, '0'/'false' → False, пусто → None."""
+    if raw is None:
+        return None
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+    if s in ("1", "true", "yes", "on"):
+        return True
+    if s in ("0", "false", "no", "off"):
+        return False
+    raise HTTPException(status_code=400, detail="Invalid boolean form value")
+
+
 def _assert_generation_belongs_to_model(
     db: Session, generation_id: int | None, model_id: int
 ) -> None:
@@ -2703,6 +2893,7 @@ async def _update_car_from_multipart(
     photos: list[UploadFile] | None,
     remove_photo_ids: str | None = None,
     trim_id: int | None = None,
+    is_popular: bool | None = None,
 ) -> CarOut:
     model_row = db.execute(
         select(CarModel).where(CarModel.id == model_id)
@@ -2748,6 +2939,8 @@ async def _update_car_from_multipart(
     car.body_color_slug = _validated_body_color_slug_form(body_color_slug)
     if trim_id is not None:
         car.trim_id = trim_id
+    if is_popular is not None:
+        car.is_popular = bool(is_popular)
 
     raw_rm = (remove_photo_ids or "").strip()
     if raw_rm:
@@ -3041,9 +3234,64 @@ def admin_patch_car_brand(
         row.name = name
     if "quick_filter_rank" in data:
         row.quick_filter_rank = data["quick_filter_rank"]
+    if "is_popular" in data and data["is_popular"] is not None:
+        row.is_popular = bool(data["is_popular"])
     db.commit()
     db.refresh(row)
     _invalidate_slug_maps_cache()
+    return row
+
+
+@app.get("/admin/car-brands/{brand_id}/models", response_model=list[CarModelBriefOut])
+def admin_list_car_models(
+    brand_id: int,
+    response: Response,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    response.headers["Cache-Control"] = "no-store"
+    if not db.get(CarBrand, brand_id):
+        raise HTTPException(status_code=404, detail="Марка не найдена")
+    return (
+        db.execute(
+            select(CarModel)
+            .where(CarModel.brand_id == brand_id)
+            .order_by(CarModel.name.asc())
+        )
+        .scalars()
+        .all()
+    )
+
+
+@app.patch("/admin/car-models/{model_id}", response_model=CarModelBriefOut)
+def admin_patch_car_model(
+    model_id: int,
+    payload: CarModelUpdateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    row = db.get(CarModel, model_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Модель не найдена")
+    data = payload.model_dump(exclude_unset=True)
+    if "name" in data and data["name"] is not None:
+        name = str(data["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Пустое название")
+        dup = db.execute(
+            select(CarModel).where(
+                CarModel.brand_id == row.brand_id,
+                func.lower(CarModel.name) == name.lower(),
+                CarModel.id != model_id,
+            )
+        ).scalar_one_or_none()
+        if dup:
+            raise HTTPException(status_code=400, detail="Такая модель уже есть у этой марки")
+        row.name = name
+    if "is_popular" in data and data["is_popular"] is not None:
+        row.is_popular = bool(data["is_popular"])
+    db.commit()
+    db.refresh(row)
     return row
 
 
@@ -3386,6 +3634,7 @@ async def staff_update_own_car(
     photos: list[UploadFile] | None = File(None),
     remove_photo_ids: str | None = Form(None),
     trim_id: str | None = Form(None),
+    is_popular: str | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "moderator", "dealer")),
 ):
@@ -3433,6 +3682,7 @@ async def staff_update_own_car(
         photos=photos,
         remove_photo_ids=remove_photo_ids,
         trim_id=tid,
+        is_popular=_optional_bool_form(is_popular),
     )
 
 
@@ -4207,6 +4457,7 @@ async def admin_update_car(
     photos: list[UploadFile] | None = File(None),
     remove_photo_ids: str | None = Form(None),
     trim_id: str | None = Form(None),
+    is_popular: str | None = Form(None),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ):
@@ -4250,6 +4501,7 @@ async def admin_update_car(
         photos=photos,
         remove_photo_ids=remove_photo_ids,
         trim_id=tid,
+        is_popular=_optional_bool_form(is_popular),
     )
 
 
@@ -5334,6 +5586,8 @@ def _post_calculation_request_to_platform_chat(db: Session, request: Calculation
 
 
 def _chat_user_can_access(chat: Chat, user: User, *, is_staff: bool) -> bool:
+    if chat.chat_type == "guest":
+        return is_staff
     if chat.chat_type == "platform":
         return is_staff or chat.user_id == user.id
     return chat.user_id == user.id or chat.dealer_user_id == user.id
@@ -5370,8 +5624,76 @@ def _unread_platform_for_staff(db: Session, chat: Chat) -> int:
     )
 
 
+def _unread_guest_for_staff(db: Session, chat: Chat) -> int:
+    lr = chat.dealer_last_read_message_id or 0
+    return int(
+        db.execute(
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(
+                ChatMessage.chat_id == chat.id,
+                ChatMessage.sender_user_id.is_(None),
+                ChatMessage.message_type != "system",
+                ChatMessage.id > lr,
+            )
+        ).scalar_one()
+    )
+
+
+def _unread_guest_for_guest(db: Session, chat: Chat) -> int:
+    lr = chat.user_last_read_message_id or 0
+    return int(
+        db.execute(
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(
+                ChatMessage.chat_id == chat.id,
+                ChatMessage.sender_user_id.is_not(None),
+                ChatMessage.message_type != "system",
+                ChatMessage.id > lr,
+            )
+        ).scalar_one()
+    )
+
+
 def _platform_chat_messages_url(chat_id: int) -> str:
     return f"{_public_web_origin()}/messages?chat={chat_id}"
+
+
+def _ensure_guest_chat(db: Session, guest_token: str | None) -> tuple[Chat, str, bool]:
+    """Return (chat, token, created). Creates a new guest chat when token is missing/unknown."""
+    token = (guest_token or "").strip()
+    if token:
+        existing = db.execute(
+            select(Chat).where(Chat.chat_type == "guest", Chat.guest_token == token)
+        ).scalar_one_or_none()
+        if existing:
+            return existing, token, False
+
+    token = secrets.token_urlsafe(32)
+    chat = Chat(
+        chat_type="guest",
+        user_id=None,
+        guest_token=token,
+        request_id=None,
+        dealer_user_id=None,
+        status="open",
+    )
+    db.add(chat)
+    db.flush()
+    return chat, token, True
+
+
+def _get_guest_chat_or_404(db: Session, guest_token: str) -> Chat:
+    token = (guest_token or "").strip()
+    if not token:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    chat = db.execute(
+        select(Chat).where(Chat.chat_type == "guest", Chat.guest_token == token)
+    ).scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return chat
 
 
 def _user_peer_chat_label(user: User | None) -> str:
@@ -5460,7 +5782,8 @@ def _build_chat_list_items(
 
     user_ids: set[int] = set()
     for c in chats:
-        user_ids.add(c.user_id)
+        if c.user_id is not None:
+            user_ids.add(c.user_id)
         if c.dealer_user_id is not None:
             user_ids.add(c.dealer_user_id)
     user_map = {
@@ -5471,7 +5794,7 @@ def _build_chat_list_items(
         .unique()
         .scalars()
         .all()
-    }
+    } if user_ids else {}
 
     chats_sorted = sorted(
         chats,
@@ -5481,10 +5804,18 @@ def _build_chat_list_items(
 
     out: list[ChatListItemOut] = []
     for chat in chats_sorted:
-        if chat.chat_type == "platform":
+        if chat.chat_type == "guest":
+            title = "Гостевой чат"
+            if is_staff:
+                peer_display = f"Гость · #{chat.id}"
+                peer_role = "guest"
+                unread = _unread_guest_for_staff(db, chat)
+            else:
+                continue
+        elif chat.chat_type == "platform":
             title = "Чат с Avtovozom"
             if is_staff:
-                uc = user_map.get(chat.user_id)
+                uc = user_map.get(chat.user_id) if chat.user_id is not None else None
                 peer_display = _user_peer_chat_label(uc)
                 peer_role = "client"
                 unread = _unread_platform_for_staff(db, chat)
@@ -5576,7 +5907,7 @@ def my_chats(
 ):
     is_staff = _user_is_staff(current_user)
     if is_staff:
-        q = select(Chat).where(Chat.chat_type == "platform")
+        q = select(Chat).where(Chat.chat_type.in_(("platform", "guest")))
     else:
         _ensure_platform_chat(db, current_user.id)
         db.commit()
@@ -5586,6 +5917,146 @@ def my_chats(
         )
     chats = list(db.execute(q).scalars().all())
     return _build_chat_list_items(db, chats, current_user, is_staff=is_staff)
+
+
+@app.delete("/chats/{chat_id}")
+def delete_chat(
+    chat_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "moderator")),
+):
+    """Удаление гостевого чата (сообщения + вложения). Только staff."""
+    chat = db.execute(select(Chat).where(Chat.id == chat_id)).scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.chat_type != "guest":
+        raise HTTPException(
+            status_code=400,
+            detail="Удалять можно только гостевые чаты",
+        )
+    db.execute(delete(ChatMessage).where(ChatMessage.chat_id == chat.id))
+    db.delete(chat)
+    db.commit()
+    delete_chat_attachment_dir(chat_id)
+    return {"ok": True, "id": chat_id}
+
+
+@app.post("/public/guest-chats/messages", response_model=GuestChatSessionOut)
+def public_guest_chat_send(
+    payload: GuestChatSendIn,
+    db: Session = Depends(get_db),
+):
+    text_clean = (payload.text or "").strip()
+    if not text_clean:
+        raise HTTPException(status_code=400, detail="Добавьте текст")
+    if len(text_clean) > 4000:
+        raise HTTPException(status_code=400, detail="Сообщение слишком длинное")
+
+    chat, token, created = _ensure_guest_chat(db, payload.guest_token)
+    msg = ChatMessage(
+        chat_id=chat.id,
+        sender_user_id=None,
+        message_type="text",
+        text=text_clean,
+    )
+    db.add(msg)
+    db.flush()
+    db.refresh(msg)
+    chat.last_message_at = msg.created_at
+    chat.user_last_read_message_id = msg.id
+    db.commit()
+    db.refresh(msg)
+
+    url = _platform_chat_messages_url(chat.id)
+    if created:
+        notify_guest_chat_started(
+            chat_id=chat.id,
+            message_text=text_clean,
+            messages_url=url,
+        )
+    else:
+        notify_guest_chat_message(
+            chat_id=chat.id,
+            message_text=text_clean,
+            messages_url=url,
+        )
+
+    return GuestChatSessionOut(
+        guest_token=token,
+        chat_id=chat.id,
+        message=ChatMessageOut.model_validate(msg),
+    )
+
+
+@app.get("/public/guest-chats/{guest_token}/messages", response_model=list[ChatMessageOut])
+def public_guest_chat_messages(
+    guest_token: str,
+    limit: int = 80,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    chat = _get_guest_chat_or_404(db, guest_token)
+    messages = (
+        db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.chat_id == chat.id)
+            .order_by(ChatMessage.id.desc())
+            .offset(offset)
+            .limit(min(limit, 200))
+        )
+        .scalars()
+        .all()
+    )
+    latest_id = (
+        db.execute(select(func.max(ChatMessage.id)).where(ChatMessage.chat_id == chat.id)).scalar_one_or_none()
+    )
+    if latest_id:
+        prev = chat.user_last_read_message_id or 0
+        if latest_id > prev:
+            chat.user_last_read_message_id = latest_id
+            db.commit()
+    return list(reversed(messages))
+
+
+@app.get("/public/guest-chats/{guest_token}", response_model=ChatListItemOut)
+def public_guest_chat_meta(
+    guest_token: str,
+    db: Session = Depends(get_db),
+):
+    chat = _get_guest_chat_or_404(db, guest_token)
+    last_msg = (
+        db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.chat_id == chat.id)
+            .order_by(ChatMessage.id.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    preview = None
+    if last_msg:
+        if last_msg.message_type == "system":
+            preview = (last_msg.text or "")[:160] or "Системное сообщение"
+        elif last_msg.attachment_url and not (last_msg.text or "").strip():
+            preview = last_msg.attachment_original_name or "Вложение"
+        else:
+            preview = (last_msg.text or "")[:160] or None
+    return ChatListItemOut(
+        id=chat.id,
+        chat_type=chat.chat_type,
+        request_id=None,
+        user_id=None,
+        dealer_user_id=None,
+        status=chat.status,
+        created_at=chat.created_at,
+        title="Чат с Avtovozom",
+        peer_role="platform",
+        peer_display="Avtovozom",
+        last_message_text=preview,
+        last_message_at=last_msg.created_at if last_msg else chat.last_message_at,
+        unread_count=_unread_guest_for_guest(db, chat),
+    )
 
 
 @app.get("/chats/{chat_id}/messages", response_model=list[ChatMessageOut])
@@ -5628,6 +6099,11 @@ def chat_messages(
                 prev = chat.user_last_read_message_id or 0
                 if latest_id > prev:
                     chat.user_last_read_message_id = latest_id
+        elif chat.chat_type == "guest":
+            if is_staff:
+                prev = chat.dealer_last_read_message_id or 0
+                if latest_id > prev:
+                    chat.dealer_last_read_message_id = latest_id
         elif not is_staff:
             if current_user.id == chat.user_id:
                 prev = chat.user_last_read_message_id or 0
@@ -5694,6 +6170,9 @@ async def send_chat_message(
             chat.dealer_last_read_message_id = msg.id
         elif current_user.id == chat.user_id:
             chat.user_last_read_message_id = msg.id
+    elif chat.chat_type == "guest":
+        if is_staff:
+            chat.dealer_last_read_message_id = msg.id
     elif current_user.id == chat.user_id:
         chat.user_last_read_message_id = msg.id
     elif chat.dealer_user_id is not None and current_user.id == chat.dealer_user_id:
@@ -5963,6 +6442,78 @@ def admin_list_search_profiles(
     ]
 
 
+@app.patch("/admin/search-profiles/{profile_id}")
+def admin_patch_search_profile(
+    profile_id: int,
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    from .agent_api import normalize_series_url
+    from .models import SearchProfile
+
+    profile = db.get(SearchProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="search profile not found")
+
+    if "name" in payload and payload["name"] is not None:
+        profile.name = str(payload["name"])[:128]
+    if "enabled" in payload and payload["enabled"] is not None:
+        profile.enabled = bool(payload["enabled"])
+    if "brief" in payload and payload["brief"] is not None:
+        profile.brief = str(payload["brief"])
+    if "max_select" in payload and payload["max_select"] is not None:
+        ms = int(payload["max_select"])
+        if ms < 1 or ms > 100:
+            raise HTTPException(status_code=400, detail="max_select must be 1..100")
+        profile.max_select = ms
+
+    criteria = dict(profile.criteria or {})
+    if "criteria" in payload and isinstance(payload["criteria"], dict):
+        criteria.update(payload["criteria"])
+    if "series_urls" in payload:
+        raw_urls = payload["series_urls"]
+        if isinstance(raw_urls, str):
+            raw_list = [ln.strip() for ln in raw_urls.splitlines() if ln.strip()]
+        elif isinstance(raw_urls, list):
+            raw_list = [str(u).strip() for u in raw_urls if str(u).strip()]
+        else:
+            raise HTTPException(status_code=400, detail="series_urls must be list or text")
+        seen: set[str] = set()
+        urls: list[str] = []
+        for u in raw_list:
+            nu = normalize_series_url(u)
+            if nu and nu not in seen:
+                seen.add(nu)
+                urls.append(nu)
+        criteria["series_urls"] = urls
+    for key in (
+        "mileage_max",
+        "reg_age_years_min",
+        "reg_age_years_max",
+        "price_band",
+        "year_min",
+        "year_max",
+        "marketplaces",
+        "require_year_price",
+    ):
+        if key in payload:
+            criteria[key] = payload[key]
+    profile.criteria = criteria
+    profile.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+    return {
+        "id": profile.id,
+        "name": profile.name,
+        "enabled": profile.enabled,
+        "criteria": profile.criteria or {},
+        "brief": profile.brief or "",
+        "max_select": profile.max_select,
+        "updated_at": profile.updated_at,
+    }
+
+
 @app.get("/admin/import-candidates")
 def admin_list_import_candidates(
     profile_id: int | None = None,
@@ -6001,6 +6552,7 @@ def admin_list_import_candidates(
             "year": c.year,
             "price_cny": c.price_cny,
             "mileage_km": c.mileage_km,
+            "registration_date": getattr(c, "registration_date", None),
             "title": c.title,
             "score": c.score,
             "reasons": c.reasons or [],

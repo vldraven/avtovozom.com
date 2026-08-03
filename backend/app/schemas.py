@@ -145,6 +145,8 @@ class CarOut(BaseModel):
     """Ссылка на справочник комплектаций; для формы редактирования."""
     trim: CarTrimOut | None = None
     """Комплектация из справочника Autohome; заполняется на карточке объявления."""
+    is_popular: bool = False
+    """Показывать в блоке «Популярные модели» на главной."""
     updated_at: datetime | None = None
     """Дата последнего обновления объявления (для <lastmod> в sitemap)."""
 
@@ -176,6 +178,7 @@ class CarBrandBriefOut(BaseModel):
     name: str
     logo_storage_url: str | None = None
     quick_filter_rank: int | None = None
+    is_popular: bool = False
 
     class Config:
         from_attributes = True
@@ -186,15 +189,24 @@ class CarBrandUpdateIn(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
     quick_filter_rank: int | None = None
+    is_popular: bool | None = None
 
 
 class CarModelBriefOut(BaseModel):
     id: int
     brand_id: int
     name: str
+    is_popular: bool = False
 
     class Config:
         from_attributes = True
+
+
+class CarModelUpdateIn(BaseModel):
+    """Частичное обновление модели (только переданные поля)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    is_popular: bool | None = None
 
 
 class CatalogBrandOut(BaseModel):
@@ -207,6 +219,7 @@ class CatalogBrandOut(BaseModel):
     models_with_listings: int = 0
     logo_storage_url: str | None = None
     quick_filter_rank: int | None = None
+    is_popular: bool = False
 
 
 class CatalogModelOut(BaseModel):
@@ -215,6 +228,7 @@ class CatalogModelOut(BaseModel):
     name: str
     slug: str = ""
     listings_count: int = 0
+    is_popular: bool = False
 
 
 class CatalogTreeGenerationOut(BaseModel):
@@ -229,6 +243,7 @@ class CatalogTreeModelOut(BaseModel):
     name: str
     slug: str
     listings_count: int = 0
+    is_popular: bool = False
     generations: list[CatalogTreeGenerationOut] = Field(default_factory=list)
 
 
@@ -238,6 +253,7 @@ class CatalogTreeBrandOut(BaseModel):
     slug: str
     listings_count: int = 0
     models_with_listings: int = 0
+    is_popular: bool = False
     models: list[CatalogTreeModelOut]
 
 
@@ -914,7 +930,8 @@ class ChatOut(BaseModel):
     id: int
     chat_type: str = "dealer"
     request_id: int | None = None
-    user_id: int
+    user_id: int | None = None
+    guest_token: str | None = None
     dealer_user_id: int | None = None
     status: str
     created_at: datetime
@@ -929,7 +946,7 @@ class ChatListItemOut(BaseModel):
     id: int
     chat_type: str = "dealer"
     request_id: int | None = None
-    user_id: int
+    user_id: int | None = None
     dealer_user_id: int | None = None
     status: str
     created_at: datetime
@@ -944,7 +961,7 @@ class ChatListItemOut(BaseModel):
 class ChatMessageOut(BaseModel):
     id: int
     chat_id: int
-    sender_user_id: int
+    sender_user_id: int | None = None
     message_type: str
     text: str | None
     attachment_url: str | None = None
@@ -953,6 +970,17 @@ class ChatMessageOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class GuestChatSendIn(BaseModel):
+    guest_token: str | None = None
+    text: str = ""
+
+
+class GuestChatSessionOut(BaseModel):
+    guest_token: str
+    chat_id: int
+    message: ChatMessageOut
 
 
 class ChatMessageCreateIn(BaseModel):

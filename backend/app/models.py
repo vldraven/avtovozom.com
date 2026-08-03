@@ -87,6 +87,8 @@ class CarBrand(Base):
     logo_storage_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Меньше — левее в ряду логотипов; NULL — не показывать в быстром фильтре.
     quick_filter_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Витрина «Популярные марки» на главной.
+    is_popular: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class CarModel(Base):
@@ -97,6 +99,8 @@ class CarModel(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     che168_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Витрина «Популярные модели» на главной.
+    is_popular: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     brand = relationship("CarBrand")
     generations = relationship("CarGeneration", back_populates="model")
@@ -213,6 +217,8 @@ class Car(Base):
     registration_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
     production_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Витрина «Популярные модели» на главной — флаг на карточке объявления.
+    is_popular: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
@@ -324,7 +330,7 @@ class DealerOffer(Base):
 
 
 class Chat(Base):
-    """Чат клиента с Avtovozom (platform) или legacy-чат по паре (заявка, дилер)."""
+    """Чат клиента с Avtovozom (platform/guest) или legacy-чат по паре (заявка, дилер)."""
 
     __tablename__ = "chats"
     __table_args__ = (
@@ -334,7 +340,8 @@ class Chat(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     chat_type: Mapped[str] = mapped_column(String(16), default="dealer", index=True)
     request_id: Mapped[int | None] = mapped_column(ForeignKey("calculation_requests.id"), nullable=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    guest_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     dealer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -348,7 +355,8 @@ class ChatMessage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     chat_id: Mapped[int] = mapped_column(ForeignKey("chats.id"), nullable=False)
-    sender_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # None = сообщение гостя (chat_type=guest)
+    sender_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     message_type: Mapped[str] = mapped_column(String(16), default="text")
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     attachment_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -508,6 +516,8 @@ class ImportCandidate(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     price_cny: Mapped[float | None] = mapped_column(Float, nullable=True)
     mileage_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    registration_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    """YYYY-MM-DD первой регистрации, если удалось распарсить."""
     title: Mapped[str] = mapped_column(String(512), default="")
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     reasons: Mapped[list] = mapped_column(JSON, default=list)
