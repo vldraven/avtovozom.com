@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { mediaSrc } from "../../lib/media";
 import { isAdminRole } from "../../lib/roles";
+import SiteHeader from "../../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -20,6 +21,9 @@ export default function AdminBrandsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [drafts, setDrafts] = useState({});
+  const [expandedBrandId, setExpandedBrandId] = useState(null);
+  const [brandModels, setBrandModels] = useState({});
+  const [modelsBusyId, setModelsBusyId] = useState(null);
 
   const loadBrands = useCallback(async (t) => {
     const res = await fetch(`${API_URL}/admin/car-brands`, {
@@ -36,6 +40,7 @@ export default function AdminBrandsPage() {
       d[b.id] = {
         name: b.name,
         quick_filter_rank: b.quick_filter_rank == null ? "" : String(b.quick_filter_rank),
+        is_popular: Boolean(b.is_popular),
       };
     }
     setDrafts(d);
@@ -96,7 +101,11 @@ export default function AdminBrandsPage() {
     const res = await fetch(`${API_URL}/admin/car-brands/${brandId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ name, quick_filter_rank: rankPayload }),
+      body: JSON.stringify({
+        name,
+        quick_filter_rank: rankPayload,
+        is_popular: Boolean(d.is_popular),
+      }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -105,6 +114,35 @@ export default function AdminBrandsPage() {
     }
     setMessage("Сохранено");
     await loadBrands(token);
+  }
+
+  async function loadModels(brandId) {
+    setModelsBusyId(brandId);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/admin/car-brands/${brandId}/models`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setError("Не удалось загрузить модели");
+        return;
+      }
+      const data = await res.json();
+      setBrandModels((prev) => ({ ...prev, [brandId]: Array.isArray(data) ? data : [] }));
+    } finally {
+      setModelsBusyId(null);
+    }
+  }
+
+  async function toggleBrandModels(brandId) {
+    if (expandedBrandId === brandId) {
+      setExpandedBrandId(null);
+      return;
+    }
+    setExpandedBrandId(brandId);
+    if (!brandModels[brandId]) {
+      await loadModels(brandId);
+    }
   }
 
   async function uploadLogo(brandId, fileList) {
@@ -184,29 +222,22 @@ export default function AdminBrandsPage() {
 
   return (
     <div className="layout">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
-          </Link>
-          <div className="auth-bar" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
-              Выйти
-            </button>
-          </div>
-        </div>
-      </header>
+      <SiteHeader authBarStyle={{ display: "flex", gap: 12, alignItems: "center" }}>
+        <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
+        <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
+          Выйти
+        </button>
+      </SiteHeader>
       <main className="site-main">
-        <div className="container" style={{ maxWidth: 960 }}>
+        <div className="container" style={{ maxWidth: 1040 }}>
           <p className="muted" style={{ marginBottom: "0.5rem" }}>
             <Link href="/profile">← Профиль</Link>
           </p>
           <h1 className="section-title">Справочник марок</h1>
           <p className="muted section-title--flush-top" style={{ marginBottom: "1rem", maxWidth: "52rem" }}>
-            Названия, логотипы и порядок в будущем ряду быстрых фильтров (меньшее число — левее). Пустой «Порядок» —
-            марка не в ряду логотипов. На существующей БД один раз выполните SQL из{" "}
-            <code className="text-muted">backend/migrations/002_car_brand_logo_quick_filter.sql</code>.
+            Галочка «На главной» у марки — блок «Популярные марки» (нужен логотип). Популярные авто на
+            главной выбираются в карточке объявления. Порядок — ряд логотипов (меньшее число — левее;
+            пусто — не в ряду).
           </p>
           {message ? <div className="alert alert--success">{message}</div> : null}
           {error ? <div className="alert alert--danger">{error}</div> : null}
@@ -247,83 +278,144 @@ export default function AdminBrandsPage() {
                   <th style={{ padding: "0.5rem" }}>Лого</th>
                   <th style={{ padding: "0.5rem" }}>Название</th>
                   <th style={{ padding: "0.5rem" }}>Порядок</th>
+                  <th style={{ padding: "0.5rem" }} title="Популярная марка на главной">
+                    На главной
+                  </th>
                   <th style={{ padding: "0.5rem" }}>Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {brands.map((b) => (
-                  <tr key={b.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
-                    <td style={{ padding: "0.5rem", verticalAlign: "top" }}>{b.id}</td>
-                    <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
-                      {b.logo_storage_url ? (
-                        <img
-                          src={mediaSrc(b.logo_storage_url)}
-                          alt=""
-                          style={{
-                            width: 48,
-                            height: 48,
-                            objectFit: "contain",
-                            background: "#f1f5f9",
-                            borderRadius: 8,
-                          }}
-                        />
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
-                      <input
-                        className="input"
-                        style={{ minWidth: 140 }}
-                        value={drafts[b.id]?.name ?? b.name}
-                        onChange={(e) =>
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [b.id]: { ...prev[b.id], name: e.target.value },
-                          }))
-                        }
-                      />
-                    </td>
-                    <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
-                      <input
-                        className="input"
-                        style={{ width: 72 }}
-                        inputMode="numeric"
-                        placeholder="—"
-                        value={drafts[b.id]?.quick_filter_rank ?? ""}
-                        onChange={(e) =>
-                          setDrafts((prev) => ({
-                            ...prev,
-                            [b.id]: { ...prev[b.id], quick_filter_rank: e.target.value },
-                          }))
-                        }
-                      />
-                    </td>
-                    <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                        <button type="button" className="btn btn-primary btn-sm" onClick={() => saveBrand(b.id)}>
-                          Сохранить
-                        </button>
-                        <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer", margin: 0 }}>
-                          Загрузить лого
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp,image/gif"
-                            style={{ display: "none" }}
-                            onChange={(e) => {
-                              uploadLogo(b.id, e.target.files);
-                              e.target.value = "";
+                  <Fragment key={b.id}>
+                    <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>{b.id}</td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        {b.logo_storage_url ? (
+                          <img
+                            src={mediaSrc(b.logo_storage_url)}
+                            alt=""
+                            style={{
+                              width: 48,
+                              height: 48,
+                              objectFit: "contain",
+                              background: "#f1f5f9",
+                              borderRadius: 8,
                             }}
                           />
-                        </label>
-                        {b.logo_storage_url ? (
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeLogo(b.id)}>
-                            Убрать лого
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        <input
+                          className="input"
+                          style={{ minWidth: 140 }}
+                          value={drafts[b.id]?.name ?? b.name}
+                          onChange={(e) =>
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [b.id]: { ...prev[b.id], name: e.target.value },
+                            }))
+                          }
+                        />
+                      </td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        <input
+                          className="input"
+                          style={{ width: 72 }}
+                          inputMode="numeric"
+                          placeholder="—"
+                          value={drafts[b.id]?.quick_filter_rank ?? ""}
+                          onChange={(e) =>
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [b.id]: { ...prev[b.id], quick_filter_rank: e.target.value },
+                            }))
+                          }
+                        />
+                      </td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "middle" }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(drafts[b.id]?.is_popular)}
+                          onChange={(e) =>
+                            setDrafts((prev) => ({
+                              ...prev,
+                              [b.id]: { ...prev[b.id], is_popular: e.target.checked },
+                            }))
+                          }
+                          aria-label={`Популярная марка ${b.name}`}
+                        />
+                      </td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={() => saveBrand(b.id)}>
+                            Сохранить
                           </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => toggleBrandModels(b.id)}
+                          >
+                            {expandedBrandId === b.id ? "Скрыть модели" : "Модели"}
+                          </button>
+                          <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer", margin: 0 }}>
+                            Загрузить лого
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/gif"
+                              style={{ display: "none" }}
+                              onChange={(e) => {
+                                uploadLogo(b.id, e.target.files);
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                          {b.logo_storage_url ? (
+                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeLogo(b.id)}>
+                              Убрать лого
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedBrandId === b.id ? (
+                      <tr>
+                        <td colSpan={6} style={{ padding: "0.75rem 1rem 1rem", background: "#f8fafc" }}>
+                          {modelsBusyId === b.id && !brandModels[b.id] ? (
+                            <p className="muted" style={{ margin: 0 }}>
+                              Загрузка моделей…
+                            </p>
+                          ) : (brandModels[b.id] || []).length === 0 ? (
+                            <p className="muted" style={{ margin: 0 }}>
+                              Моделей пока нет
+                            </p>
+                          ) : (
+                            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 8 }}>
+                              {(brandModels[b.id] || []).map((m) => (
+                                <li
+                                  key={m.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 10,
+                                    fontSize: "0.875rem",
+                                  }}
+                                >
+                                  <span>
+                                    {m.name}{" "}
+                                    <span className="muted" style={{ fontSize: "0.8rem" }}>
+                                      #{m.id}
+                                    </span>
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

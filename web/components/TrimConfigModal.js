@@ -29,9 +29,9 @@ function buildCarSpecSummary(car) {
 }
 
 /**
- * Полная комплектация в попапе (как «Все характеристики» на auto.ru).
+ * Полная комплектация в попапе (макеты 03b / 34b).
  */
-export default function TrimConfigModal({ open, onClose, car }) {
+export default function TrimConfigModal({ open, onClose, car, onChat }) {
   const trim = car?.trim;
   const sections = trim?.sections?.length ? trim.sections : [];
 
@@ -54,6 +54,16 @@ export default function TrimConfigModal({ open, onClose, car }) {
   const summary = buildCarSpecSummary(car);
   const overview = sections.find((s) => s.group === "Основное");
   const configSections = sections.filter((s) => s.group !== "Основное");
+  const bodyColor = String(car.body_color_label || "").trim();
+
+  const overviewItems = [
+    ...(bodyColor ? [{ name: "Цвет кузова", value: bodyColor }] : []),
+    ...((overview?.items || []).filter((item) => String(item?.name || "").trim() !== "Цвет кузова")),
+  ];
+  const sectionsToShow = [
+    ...(overviewItems.length ? [{ group: overview?.group || "Основное", items: overviewItems }] : []),
+    ...configSections,
+  ];
 
   return (
     <div
@@ -81,7 +91,7 @@ export default function TrimConfigModal({ open, onClose, car }) {
         </header>
 
         <div className="trim-modal__scroll">
-          {(overview?.items?.length ? [overview] : []).concat(configSections).map((sec, secIdx) => (
+          {sectionsToShow.map((sec, secIdx) => (
             <section key={secIdx} className="trim-modal__section">
               <h3 className="trim-modal__section-title">{sec.group}</h3>
               <dl className="trim-modal__rows">
@@ -95,6 +105,21 @@ export default function TrimConfigModal({ open, onClose, car }) {
             </section>
           ))}
         </div>
+
+        {typeof onChat === "function" ? (
+          <div className="trim-modal__footer">
+            <button
+              type="button"
+              className="btn btn-outline-accent trim-modal__chat-btn"
+              onClick={() => {
+                onClose();
+                onChat();
+              }}
+            >
+              Задать вопрос
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

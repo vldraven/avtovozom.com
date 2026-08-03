@@ -2,6 +2,7 @@ import {
   buildCatalogCarsQuery,
   catalogFetchKey,
   catalogSsrCarsLimit,
+  catalogTextQueryFromRouter,
   isCarDetailSegments,
   resolveCatalogTree,
   segmentsFromSlugParam,
@@ -9,7 +10,17 @@ import {
 import { catalogFilterKeyFromQuery, parseFiltersFromQuery } from "./catalogFilters";
 import { getServerApiBase } from "./serverApiUrl";
 
-const VALID_SORTS = new Set(["date_desc", "date_asc", "price_asc", "price_desc"]);
+const VALID_SORTS = new Set([
+  "relevance",
+  "date_desc",
+  "date_asc",
+  "price_asc",
+  "price_desc",
+  "year_desc",
+  "year_asc",
+  "mileage_asc",
+  "power_desc",
+]);
 
 export async function fetchCatalogPageProps({ params, query }) {
   const segments = segmentsFromSlugParam(params?.slug ?? null);
@@ -48,7 +59,8 @@ export async function fetchCatalogPageProps({ params, query }) {
 
   const rawSort = Array.isArray(query?.sort) ? query.sort[0] : query?.sort;
   const listSort =
-    rawSort && VALID_SORTS.has(String(rawSort)) ? String(rawSort) : "date_desc";
+    rawSort && VALID_SORTS.has(String(rawSort)) ? String(rawSort) : "relevance";
+  const textQuery = catalogTextQueryFromRouter(query);
 
   const api = getServerApiBase();
   let tree = [];
@@ -86,7 +98,7 @@ export async function fetchCatalogPageProps({ params, query }) {
     modelId: resolved.model?.id ?? null,
   });
   const ssrLimit = catalogSsrCarsLimit(resolved);
-  const carsQuery = buildCatalogCarsQuery(resolved, listSort, ssrLimit, filterQuery);
+  const carsQuery = buildCatalogCarsQuery(resolved, listSort, ssrLimit, filterQuery, textQuery);
   if (carsQuery) {
     try {
       const carsRes = await fetch(`${api}/cars?${carsQuery.toString()}`, {
@@ -112,7 +124,12 @@ export async function fetchCatalogPageProps({ params, query }) {
         tree,
         cars,
         total,
-        fetchKey: catalogFetchKey(segments, listSort, catalogFilterKeyFromQuery(query)),
+        fetchKey: catalogFetchKey(
+          segments,
+          listSort,
+          catalogFilterKeyFromQuery(query),
+          textQuery
+        ),
       },
     },
   };

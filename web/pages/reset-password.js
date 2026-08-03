@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
+import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -37,37 +38,37 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="layout layout--no-mobile-dock">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
-          </Link>
-        </div>
-      </header>
+      <SiteHeader />
       <main className="site-main">
         <div className="container page-narrow page-narrow--auth">
-          <h1 className="section-title">Создать новый пароль</h1>
+          <header className="auth-page-hero">
+            <h1 className="section-title auth-page-hero__title">Создать новый пароль</h1>
+            <p className="auth-page-hero__lead muted">Задайте надёжный пароль — минимум 8 символов.</p>
+          </header>
           {message ? <div className="alert alert--success">{message}</div> : null}
           {error ? <div className="alert alert--danger">{error}</div> : null}
           {!token ? (
-            <div className="panel">
+            <div className="panel auth-panel">
               <p className="muted">Ссылка восстановления некорректна или устарела.</p>
               <Link href="/auth?mode=forgot" className="btn btn-primary">
                 Запросить новую ссылку
               </Link>
             </div>
           ) : (
-            <form className="panel form-stack form-stack--tight" onSubmit={submit}>
-              <input
-                className="input"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Новый пароль, минимум 8 символов"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={8}
-                required
-              />
+            <form className="panel auth-panel form-stack form-stack--tight" onSubmit={submit}>
+              <label className="auth-field">
+                <span className="auth-field__label">Новый пароль</span>
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Минимум 8 символов"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={8}
+                  required
+                />
+              </label>
               <button type="submit" className="btn btn-primary" disabled={busy || password.length < 8}>
                 {busy ? "Сохраняем…" : "Сохранить пароль"}
               </button>

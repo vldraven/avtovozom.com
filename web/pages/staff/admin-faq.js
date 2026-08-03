@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { isAdminRole } from "../../lib/roles";
+import SiteHeader from "../../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -179,16 +180,9 @@ export default function AdminFaqPage() {
 
   return (
     <div className="layout">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/profile" className="site-logo">
-            avtovozom
-          </Link>
-          <div className="auth-bar">
-            <HeaderProfileLink token={token} userRole={me?.role} />
-          </div>
-        </div>
-      </header>
+      <SiteHeader logoHref="/profile">
+          <HeaderProfileLink token={token} me={me} />
+        </SiteHeader>
 
       <main className="site-main">
         <div className="container page-narrow">

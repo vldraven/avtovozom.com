@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import LeadForm from "../components/LeadForm";
 import { absoluteUrl } from "../lib/siteUrl";
+import SiteHeader from "../components/SiteHeader";
 
 export default function DeliveryFromChinaPage() {
   const jsonLd = {
@@ -62,25 +63,14 @@ export default function DeliveryFromChinaPage() {
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </Head>
 
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <div className="site-header__brand">
-            <Link href="/" className="site-logo">
-              avtovozom
-            </Link>
-            <span className="site-tagline">Доставка автомобилей из Китая</span>
-          </div>
-
-          <div className="auth-bar">
-            <Link href="/catalog" className="btn btn-ghost btn-sm">
-              Каталог
-            </Link>
-            <Link href="/customs-calculator" className="btn btn-secondary btn-sm">
-              Калькулятор растаможки
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader tagline="Доставка автомобилей из Китая">
+          <Link href="/catalog" className="btn btn-ghost btn-sm">
+            Каталог
+          </Link>
+          <Link href="/customs-calculator" className="btn btn-secondary btn-sm">
+            Калькулятор растаможки
+          </Link>
+        </SiteHeader>
 
       <main className="site-main">
         <div className="container page-narrow">
@@ -90,32 +80,32 @@ export default function DeliveryFromChinaPage() {
             <b>доставка в Россию</b>, а также сопровождение по этапам ввоза и растаможки.
           </p>
 
-          <section className="panel" style={{ marginTop: "1.25rem" }}>
-            <h2 className="section-title section-title--flush-top" style={{ marginBottom: "0.5rem" }}>
+          <section className="panel landing-section">
+            <h2 className="section-title section-title--flush-top landing-section__title">
               Как проходит заказ
             </h2>
-            <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>
-              <li style={{ marginBottom: "0.5rem" }}>
+            <ol className="landing-list">
+              <li>
                 Вы оставляете запрос: марка/модель и желаемые параметры.
               </li>
-              <li style={{ marginBottom: "0.5rem" }}>
+              <li>
                 Подбираем варианты, согласуем условия и подготавливаем расчёт.
               </li>
-              <li style={{ marginBottom: "0.5rem" }}>
+              <li>
                 Организуем выкуп и перевозку до РФ.
               </li>
               <li>Помогаем с этапами оформления и ориентируем по срокам.</li>
             </ol>
           </section>
 
-          <section className="panel" style={{ marginTop: "1rem" }}>
-            <h2 className="section-title section-title--flush-top" style={{ marginBottom: "0.5rem" }}>
+          <section className="panel landing-section--tight">
+            <h2 className="section-title section-title--flush-top landing-section__title">
               Что вы получаете
             </h2>
-            <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
-              <li style={{ marginBottom: "0.35rem" }}>Подбор и проверка модели перед заказом.</li>
-              <li style={{ marginBottom: "0.35rem" }}>Выкуп автомобиля под согласованные условия.</li>
-              <li style={{ marginBottom: "0.35rem" }}>Доставка в РФ и помощь по этапам ввоза.</li>
+            <ul className="landing-list landing-list--compact">
+              <li>Подбор и проверка модели перед заказом.</li>
+              <li>Выкуп автомобиля под согласованные условия.</li>
+              <li>Доставка в РФ и помощь по этапам ввоза.</li>
               <li>Сводка по стоимости: доставка + платежи (в формате ориентировочной цены).</li>
             </ul>
           </section>
@@ -125,7 +115,7 @@ export default function DeliveryFromChinaPage() {
             lead="Опишите желаемый автомобиль — подготовим ориентировочный расчёт под ключ до РФ."
           />
 
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1.25rem" }}>
+          <div className="landing-cta-row">
             <Link href="/" className="btn btn-primary">
               Подобрать автомобиль
             </Link>

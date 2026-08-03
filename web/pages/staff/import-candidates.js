@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
+import SiteHeader from "../../components/SiteHeader";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { isStaffRole } from "../../lib/roles";
 
@@ -85,28 +86,54 @@ export default function StaffImportCandidatesPage() {
     })();
   }, [router, load]);
 
+  function logout() {
+    clearToken({ logout: true });
+    router.push("/");
+  }
+
   if (!me) {
     return (
-      <div className="container">
-        <p className="muted">Загрузка…</p>
+      <div className="layout">
+        <main className="site-main">
+          <div className="container">
+            <p className="ui-state ui-state--loading muted">Загрузка…</p>
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="container import-plan-page">
-      <header className="page-header row-between">
-        <div>
-          <h1 className="page-title">Кандидаты агента</h1>
-          <p className="muted">
-            Staging отбора: score, reasons, статус. План импорта —{" "}
-            <Link href="/staff/import-plan">отдельно</Link>.
-          </p>
-        </div>
-        <HeaderProfileLink />
-      </header>
+    <div className="layout">
+      <SiteHeader authBarStyle={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
+            Выйти
+          </button>
+        </SiteHeader>
 
-      <div className="import-plan-toolbar" style={{ gap: "0.75rem", flexWrap: "wrap" }}>
+      <main className="site-main">
+        <div className="container import-plan-page">
+          <p className="muted import-candidates-crumbs">
+            <Link href="/">← Главная</Link>
+            {" · "}
+            <Link href="/profile">Профиль</Link>
+            {" · "}
+            <Link href="/staff/import-plan">План импорта</Link>
+            {" · "}
+            <Link href="/staff/search-profiles">URL отбора</Link>
+          </p>
+
+          <header className="page-header">
+            <h1 className="page-title">Кандидаты агента</h1>
+            <p className="muted">
+              Staging отбора: score, reasons, статус. Профили URL —{" "}
+              <Link href="/staff/search-profiles">редактировать</Link>, план импорта —{" "}
+              <Link href="/staff/import-plan">отдельно</Link>.
+            </p>
+          </header>
+
+          <div className="import-plan-toolbar" style={{ gap: "0.75rem", flexWrap: "wrap" }}>
         <label className="muted">
           Профиль{" "}
           <select
@@ -211,6 +238,8 @@ export default function StaffImportCandidatesPage() {
           </tbody>
         </table>
       </div>
+        </div>
+      </main>
     </div>
   );
 }

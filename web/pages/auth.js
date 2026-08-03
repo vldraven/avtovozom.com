@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import PinSetupPanel from "../components/PinSetupPanel";
 import { saveToken } from "../lib/auth";
+import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -170,27 +171,54 @@ export default function AuthPage() {
 
   return (
     <div className="layout layout--no-mobile-dock">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
-          </Link>
-        </div>
-      </header>
+      <SiteHeader />
       <main className="site-main">
         <div className={`container page-narrow page-narrow--auth${pinSetupRequired ? " page-narrow--pin-auth" : ""}`}>
-          {!pinSetupRequired ? <h1 className="section-title">Вход и регистрация</h1> : null}
+          {!pinSetupRequired ? (
+            <header className="auth-page-hero">
+              <h1 className="section-title auth-page-hero__title">Вход и регистрация</h1>
+              <p className="auth-page-hero__lead muted">
+                Аккаунт нужен для чатов по сделке, избранного и расчётов.
+              </p>
+            </header>
+          ) : null}
+          {!pinSetupRequired && (mode === "login" || mode === "register") ? (
+            <div className="auth-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "login"}
+                className={`auth-tabs__tab${mode === "login" ? " auth-tabs__tab--active" : ""}`}
+                onClick={goLogin}
+              >
+                Вход
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "register"}
+                className={`auth-tabs__tab${mode === "register" ? " auth-tabs__tab--active" : ""}`}
+                onClick={goRegister}
+              >
+                Регистрация
+              </button>
+            </div>
+          ) : null}
+
           {message && <div className="alert alert--success">{message}</div>}
           {error && <div className="alert alert--danger">{error}</div>}
 
           {pinSetupRequired ? (
             <div className="panel panel--pin-setup">
-              <PinSetupPanel onComplete={() => router.push(nextUrl)} />
+              <PinSetupPanel
+                onComplete={() => router.push(nextUrl)}
+                onSkip={() => router.push(nextUrl)}
+              />
             </div>
           ) : null}
 
           {!pinSetupRequired && mode === "login" && (
-            <div className="panel">
+            <div className="panel auth-panel">
               <form
                 className="form-stack form-stack--tight"
                 autoComplete="on"
@@ -199,30 +227,33 @@ export default function AuthPage() {
                   login();
                 }}
               >
-                <input
-                  className="input"
-                  name="username"
-                  placeholder="Email или телефон"
-                  type="text"
-                  autoComplete="username"
-                  value={loginIdentifier}
-                  onChange={(e) => setLoginIdentifier(e.target.value)}
-                />
-                <input
-                  className="input"
-                  name="password"
-                  placeholder="Пароль"
-                  type="password"
-                  autoComplete="current-password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                />
+                <label className="auth-field">
+                  <span className="auth-field__label">Email или телефон</span>
+                  <input
+                    className="input"
+                    name="username"
+                    placeholder="Email или телефон"
+                    type="text"
+                    autoComplete="username"
+                    value={loginIdentifier}
+                    onChange={(e) => setLoginIdentifier(e.target.value)}
+                  />
+                </label>
+                <label className="auth-field">
+                  <span className="auth-field__label">Пароль</span>
+                  <input
+                    className="input"
+                    name="password"
+                    placeholder="Пароль"
+                    type="password"
+                    autoComplete="current-password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                  />
+                </label>
                 <div className="toolbar auth-actions">
-                  <button type="submit" className="btn btn-primary" disabled={busy}>
+                  <button type="submit" className="btn btn-primary auth-submit-wide" disabled={busy}>
                     Войти
-                  </button>
-                  <button type="button" className="btn btn-secondary" onClick={goRegister}>
-                    Зарегистрироваться
                   </button>
                 </div>
                 <p className="auth-reset-disclaimer">
@@ -231,12 +262,18 @@ export default function AuthPage() {
                     Восстановить
                   </button>
                 </p>
+                <p className="auth-switch-hint">
+                  Нет аккаунта?{" "}
+                  <button type="button" className="auth-reset-disclaimer__link" onClick={goRegister}>
+                    Зарегистрироваться
+                  </button>
+                </p>
               </form>
             </div>
           )}
 
           {!pinSetupRequired && mode === "forgot" && (
-            <div className="panel">
+            <div className="panel auth-panel">
               <h2 className="section-title panel-heading-sm">Восстановление пароля</h2>
               {resetSentEmail ? (
                 <div className="auth-reset-success">
@@ -257,14 +294,17 @@ export default function AuthPage() {
                 </div>
               ) : (
                 <div className="form-stack form-stack--tight">
-                  <input
-                    className="input"
-                    placeholder="Email"
-                    type="email"
-                    autoComplete="email"
-                    value={resetEmail}
-                    onChange={(e) => setResetEmail(e.target.value)}
-                  />
+                  <label className="auth-field">
+                    <span className="auth-field__label">Email</span>
+                    <input
+                      className="input"
+                      placeholder="Email"
+                      type="email"
+                      autoComplete="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                    />
+                  </label>
                   <button
                     type="button"
                     className="btn btn-primary"
@@ -282,42 +322,59 @@ export default function AuthPage() {
           )}
 
           {!pinSetupRequired && mode === "register" && (
-            <div className="panel">
+            <div className="panel auth-panel">
               <h2 className="section-title panel-heading-sm">Регистрация</h2>
+              <p className="auth-register-steps muted">
+                {codeSent
+                  ? "Шаг 2 из 2 — введите код из письма, затем при необходимости установите PIN."
+                  : "Шаг 1 из 2 — email, телефон и имя. Затем код на почту."}
+              </p>
               <div className="form-stack form-stack--tight">
-                <input
-                  className="input"
-                  placeholder="Email"
-                  type="email"
-                  value={regEmail}
-                  onChange={(e) => setRegEmail(e.target.value)}
-                />
-                <input
-                  className="input"
-                  placeholder="Телефон"
-                  value={regPhone}
-                  onChange={(e) => setRegPhone(e.target.value)}
-                />
-                <input
-                  className="input"
-                  placeholder="Имя"
-                  value={regName}
-                  onChange={(e) => setRegName(e.target.value)}
-                />
+                <label className="auth-field">
+                  <span className="auth-field__label">Email</span>
+                  <input
+                    className="input"
+                    placeholder="Email"
+                    type="email"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                  />
+                </label>
+                <label className="auth-field">
+                  <span className="auth-field__label">Телефон</span>
+                  <input
+                    className="input"
+                    placeholder="Телефон"
+                    value={regPhone}
+                    onChange={(e) => setRegPhone(e.target.value)}
+                  />
+                </label>
+                <label className="auth-field">
+                  <span className="auth-field__label">Имя</span>
+                  <input
+                    className="input"
+                    placeholder="Имя"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                  />
+                </label>
                 {!codeSent ? (
                   <button type="button" className="btn btn-primary" disabled={busy} onClick={startRegister}>
                     Отправить код на email
                   </button>
                 ) : (
                   <>
-                    <input
-                      className="input"
-                      placeholder="Код подтверждения из письма"
-                      value={regCode}
-                      onChange={(e) => setRegCode(e.target.value)}
-                    />
+                    <label className="auth-field">
+                      <span className="auth-field__label">Код подтверждения</span>
+                      <input
+                        className="input"
+                        placeholder="Код из письма"
+                        value={regCode}
+                        onChange={(e) => setRegCode(e.target.value)}
+                      />
+                    </label>
                     <button type="button" className="btn btn-primary" disabled={busy} onClick={verifyRegister}>
-                      Подтвердить регистрацию
+                      Подтвердить
                     </button>
                   </>
                 )}

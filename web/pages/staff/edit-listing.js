@@ -9,6 +9,7 @@ import { publicCarHref } from "../../lib/carRoutes";
 import { mediaSrc } from "../../lib/media";
 import { fuelTypeSelectOptions, normalizeFuelTypeValue } from "../../lib/fuelTypes";
 import { canCreateListings, isAdminRole } from "../../lib/roles";
+import SiteHeader from "../../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -72,6 +73,7 @@ export default function StaffEditListingPage() {
   const [registrationDate, setRegistrationDate] = useState("");
   const [productionDate, setProductionDate] = useState("");
   const [bodyColorSlug, setBodyColorSlug] = useState("");
+  const [isPopular, setIsPopular] = useState(false);
   const [bodyColorOptions, setBodyColorOptions] = useState([]);
   const [existingPhotos, setExistingPhotos] = useState([]);
   const [photoIdsToRemove, setPhotoIdsToRemove] = useState(() => new Set());
@@ -163,6 +165,7 @@ export default function StaffEditListingPage() {
       setRegistrationDate(c.registration_date || "");
       setProductionDate(c.production_date || "");
       setBodyColorSlug(c.body_color_slug || "");
+      setIsPopular(Boolean(c.is_popular));
       const ph = [...(c.photos || [])].sort((a, b) => a.sort_order - b.sort_order);
       setExistingPhotos(ph);
       setPhotoIdsToRemove(new Set());
@@ -348,6 +351,7 @@ export default function StaffEditListingPage() {
     fd.append("registration_date", registrationDate);
     fd.append("production_date", productionDate);
     fd.append("body_color_slug", bodyColorSlug);
+    fd.append("is_popular", isPopular ? "1" : "0");
     if (loadedTrimId == null && trimId) {
       fd.append("trim_id", trimId);
     }
@@ -400,25 +404,18 @@ export default function StaffEditListingPage() {
 
   return (
     <div className="layout">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
+      <SiteHeader authBarStyle={{display: "flex", gap: 12, alignItems: "center"}}>
+          <Link
+            href={cardPublicHref || `/cars/${carId}`}
+            className="btn btn-ghost btn-sm"
+          >
+            К карточке
           </Link>
-          <div className="auth-bar" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <Link
-              href={cardPublicHref || `/cars/${carId}`}
-              className="btn btn-ghost btn-sm"
-            >
-              К карточке
-            </Link>
-            <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
-              Выйти
-            </button>
-          </div>
-        </div>
-      </header>
+          <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
+            Выйти
+          </button>
+        </SiteHeader>
       <main className="site-main">
         <div className="container" style={{ maxWidth: 640 }}>
           <h1 className="section-title">Редактирование объявления</h1>
@@ -692,6 +689,25 @@ export default function StaffEditListingPage() {
                   })),
                 ]}
               />
+              <label
+                className="muted"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  margin: 0,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isPopular}
+                  onChange={(e) => setIsPopular(e.target.checked)}
+                />
+                <span>
+                  Показывать на главной в блоке «Популярные модели»
+                </span>
+              </label>
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Город
                 <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />

@@ -10,11 +10,24 @@ import HeaderProfileLink from "./HeaderProfileLink";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-function CatalogIcon() {
+function HomeIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
       <path
         d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CatalogIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path
+        d="M5 5h6v6H5V5Zm8 0h6v6h-6V5ZM5 13h6v6H5v-6Zm8 0h6v6h-6v-6Z"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinejoin="round"
@@ -30,6 +43,19 @@ function AddListingIcon() {
       <path d="M12 8v8M8 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
+}
+
+function LoginIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <circle cx="12" cy="9" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6.5 19.5a5.5 5.5 0 0 1 11 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function dockAuthHref(path) {
+  return `/auth?next=${encodeURIComponent(path)}`;
 }
 
 export default function MobileBottomNav() {
@@ -154,21 +180,33 @@ export default function MobileBottomNav() {
   if (messagesThreadOpen) return null;
 
   const isHomeNav = router.pathname === "/";
+  const isCatalogNav =
+    router.pathname === "/catalog" || router.pathname === "/catalog/[[...slug]]" || router.pathname.startsWith("/cars/");
   const showAdd = Boolean(token && canCreateListings(me?.role));
-  const colCount = !token ? 2 : 4 + (showAdd ? 1 : 0);
+  // 5 consumer tabs + optional «+» for dealer/admin (привычный путь)
+  const colCount = 5 + (showAdd ? 1 : 0);
   const staffListingActive =
     router.pathname === "/staff/new-listing" || router.pathname === "/staff/edit-listing";
+  const authNext = router.asPath || "/";
 
   return (
     <nav className="mobile-bottom-nav" aria-label="Основная навигация по сайту">
-      <div
-        className="mobile-bottom-nav__inner"
-        style={{ "--mobile-dock-cols": String(colCount) }}
-      >
+      <div className="mobile-bottom-nav__inner" style={{ "--mobile-dock-cols": String(colCount) }}>
         <Link
           href="/"
           className={`mobile-dock__item${isHomeNav ? " mobile-dock__item--active" : ""}`}
           aria-current={isHomeNav ? "page" : undefined}
+        >
+          <span className="mobile-dock__icon">
+            <HomeIcon />
+          </span>
+          <span className="mobile-dock__label">Главная</span>
+        </Link>
+
+        <Link
+          href="/catalog"
+          className={`mobile-dock__item${isCatalogNav ? " mobile-dock__item--active" : ""}`}
+          aria-current={isCatalogNav ? "page" : undefined}
         >
           <span className="mobile-dock__icon">
             <CatalogIcon />
@@ -176,39 +214,65 @@ export default function MobileBottomNav() {
           <span className="mobile-dock__label">Каталог</span>
         </Link>
 
-        {!token ? (
-          <Link href={`/auth?next=${encodeURIComponent(router.asPath || "/")}`} className="mobile-dock__item">
+        {token ? (
+          <HeaderMessagesLink token={token} variant="dock" />
+        ) : (
+          <Link href="/messages" className="mobile-dock__item">
             <span className="mobile-dock__icon">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                <circle cx="12" cy="9" r="3.5" stroke="currentColor" strokeWidth="1.5" />
                 <path
-                  d="M6.5 19.5a5.5 5.5 0 0 1 11 0"
+                  d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8A2.5 2.5 0 0 1 17.5 17H9l-4 3v-3.5A2.5 2.5 0 0 1 4 14.5v-8Z"
                   stroke="currentColor"
                   strokeWidth="1.5"
-                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
               </svg>
             </span>
+            <span className="mobile-dock__label">Чаты</span>
+          </Link>
+        )}
+
+        {token ? (
+          <HeaderFavoritesLink token={token} variant="dock" />
+        ) : (
+          <Link href={dockAuthHref("/favorites")} className="mobile-dock__item">
+            <span className="mobile-dock__icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                <path
+                  d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span className="mobile-dock__label">Избранное</span>
+          </Link>
+        )}
+
+        {showAdd ? (
+          <Link
+            href="/staff/new-listing"
+            className={`mobile-dock__item${staffListingActive ? " mobile-dock__item--active" : ""}`}
+            aria-current={staffListingActive ? "page" : undefined}
+          >
+            <span className="mobile-dock__icon">
+              <AddListingIcon />
+            </span>
+            <span className="mobile-dock__label">Объявл.</span>
+          </Link>
+        ) : null}
+
+        {token ? (
+          <HeaderProfileLink token={token} me={me} layout="dock" />
+        ) : (
+          <Link href={dockAuthHref(authNext)} className="mobile-dock__item">
+            <span className="mobile-dock__icon">
+              <LoginIcon />
+            </span>
             <span className="mobile-dock__label">Войти</span>
           </Link>
-        ) : (
-          <>
-            <HeaderMessagesLink token={token} variant="dock" />
-            <HeaderProfileLink token={token} userRole={me?.role} layout="dock" />
-            {showAdd ? (
-              <Link
-                href="/staff/new-listing"
-                className={`mobile-dock__item${staffListingActive ? " mobile-dock__item--active" : ""}`}
-                aria-current={staffListingActive ? "page" : undefined}
-              >
-                <span className="mobile-dock__icon">
-                  <AddListingIcon />
-                </span>
-                <span className="mobile-dock__label">Объявл.</span>
-              </Link>
-            ) : null}
-            <HeaderFavoritesLink token={token} variant="dock" />
-          </>
         )}
       </div>
     </nav>

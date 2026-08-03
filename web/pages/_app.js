@@ -2,6 +2,7 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import { useEffect } from "react";
 
+import "../lib/suppressExtensionErrors";
 import AppLockGate from "../components/AppLockGate";
 import MobileBottomNav from "../components/MobileBottomNav";
 import PwaInstallPrompt from "../components/PwaInstallPrompt";
@@ -31,7 +32,8 @@ export default function App({ Component, pageProps }) {
     path !== "/auth" &&
     path !== "/reset-password" &&
     path !== "/messages";
-  const showMobileBottomNav = path !== "/messages";
+  const showMobileBottomNav =
+    path !== "/messages" && path !== "/auth" && path !== "/reset-password";
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -44,6 +46,47 @@ export default function App({ Component, pageProps }) {
     return () => {
       window.removeEventListener("focus", onFocus);
       clearInterval(id);
+    };
+  }, []);
+
+  // MetaMask и другие расширения кидают unhandled rejection → Next.js overlay поверх страницы.
+  useEffect(() => {
+    if (typeof window === "undefined" || process.env.NODE_ENV === "production") {
+      return undefined;
+    }
+    if (window.__AVTOVOZOM_EXTENSION_ERROR_GUARD__) {
+      return undefined;
+    }
+    window.__AVTOVOZOM_EXTENSION_ERROR_GUARD__ = true;
+
+    function isExtensionNoise(value) {
+      const text = String(
+        value?.message || value?.reason?.message || value?.reason || value || ""
+      );
+      const stack = String(value?.stack || value?.reason?.stack || "");
+      return (
+        /MetaMask|Failed to connect to MetaMask/i.test(text) ||
+        /chrome-extension:\/\//i.test(stack) ||
+        /chrome-extension:\/\//i.test(text)
+      );
+    }
+
+    const onError = (event) => {
+      if (!isExtensionNoise(event.error || event.message)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const onRejection = (event) => {
+      if (!isExtensionNoise(event)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+
+    window.addEventListener("error", onError, true);
+    window.addEventListener("unhandledrejection", onRejection, true);
+    return () => {
+      window.removeEventListener("error", onError, true);
+      window.removeEventListener("unhandledrejection", onRejection, true);
     };
   }, []);
 

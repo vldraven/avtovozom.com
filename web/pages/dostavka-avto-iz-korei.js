@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import LeadForm from "../components/LeadForm";
 import { absoluteUrl } from "../lib/siteUrl";
+import SiteHeader from "../components/SiteHeader";
 
 export default function DeliveryFromKoreaPage() {
   const jsonLd = {
@@ -62,25 +63,14 @@ export default function DeliveryFromKoreaPage() {
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </Head>
 
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <div className="site-header__brand">
-            <Link href="/" className="site-logo">
-              avtovozom
-            </Link>
-            <span className="site-tagline">Доставка автомобилей из Кореи</span>
-          </div>
-
-          <div className="auth-bar">
-            <Link href="/catalog" className="btn btn-ghost btn-sm">
-              Каталог
-            </Link>
-            <Link href="/customs-calculator" className="btn btn-secondary btn-sm">
-              Калькулятор растаможки
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader tagline="Доставка автомобилей из Кореи">
+          <Link href="/catalog" className="btn btn-ghost btn-sm">
+            Каталог
+          </Link>
+          <Link href="/customs-calculator" className="btn btn-secondary btn-sm">
+            Калькулятор растаможки
+          </Link>
+        </SiteHeader>
 
       <main className="site-main">
         <div className="container page-narrow">
@@ -90,26 +80,26 @@ export default function DeliveryFromKoreaPage() {
             <b>доставка в Россию</b> с сопровождением по этапам ввоза и растаможки.
           </p>
 
-          <section className="panel" style={{ marginTop: "1.25rem" }}>
-            <h2 className="section-title section-title--flush-top" style={{ marginBottom: "0.5rem" }}>
+          <section className="panel landing-section">
+            <h2 className="section-title section-title--flush-top landing-section__title">
               Как проходит заказ
             </h2>
-            <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>
-              <li style={{ marginBottom: "0.5rem" }}>Вы оставляете запрос: марка/модель и параметры.</li>
-              <li style={{ marginBottom: "0.5rem" }}>Мы подбираем варианты и согласуем условия заказа.</li>
-              <li style={{ marginBottom: "0.5rem" }}>Организуем выкуп и отправку до РФ.</li>
+            <ol className="landing-list">
+              <li>Вы оставляете запрос: марка/модель и параметры.</li>
+              <li>Мы подбираем варианты и согласуем условия заказа.</li>
+              <li>Организуем выкуп и отправку до РФ.</li>
               <li>Помогаем по этапам оформления и растаможки.</li>
             </ol>
           </section>
 
-          <section className="panel" style={{ marginTop: "1rem" }}>
-            <h2 className="section-title section-title--flush-top" style={{ marginBottom: "0.5rem" }}>
+          <section className="panel landing-section--tight">
+            <h2 className="section-title section-title--flush-top landing-section__title">
               Что входит в услугу
             </h2>
-            <ul style={{ margin: 0, paddingLeft: "1.25rem" }}>
-              <li style={{ marginBottom: "0.35rem" }}>Подбор и проверка доступности модели.</li>
-              <li style={{ marginBottom: "0.35rem" }}>Согласование условий покупки и выкупа.</li>
-              <li style={{ marginBottom: "0.35rem" }}>Логистика и доставка в РФ.</li>
+            <ul className="landing-list landing-list--compact">
+              <li>Подбор и проверка доступности модели.</li>
+              <li>Согласование условий покупки и выкупа.</li>
+              <li>Логистика и доставка в РФ.</li>
               <li>Сводка по ориентировочной стоимости под запрос.</li>
             </ul>
           </section>
@@ -119,7 +109,7 @@ export default function DeliveryFromKoreaPage() {
             lead="Kia, Hyundai, Genesis и другие модели — оставьте заявку, мы свяжемся и уточним детали."
           />
 
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1.25rem" }}>
+          <div className="landing-cta-row">
             <Link href="/" className="btn btn-primary">
               Подобрать автомобиль
             </Link>

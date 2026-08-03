@@ -108,23 +108,35 @@ export function catalogSsrCarsLimit(resolved) {
   return CATALOG_SSR_LIMIT;
 }
 
-export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_LIMIT, filterQuery = null) {
+export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_LIMIT, filterQuery = null, textQuery = null) {
   const params = new URLSearchParams();
   const { brand, model, generation, badGenSlug, unknownSlug } = resolved;
   if (unknownSlug) return null;
   if (brand) params.set("brand_id", String(brand.id));
   if (model) params.set("model_id", String(model.id));
   if (generation && !badGenSlug) params.set("generation_id", String(generation.id));
-  if (listSort && listSort !== "date_desc") params.set("sort", listSort);
+  if (listSort && listSort !== "relevance") params.set("sort", listSort);
   if (filterQuery) {
     appendFiltersToSearchParams(params, filterQuery);
+    // Query brand/model на /catalog без slug (редирект с главной, ссылки без slug).
+    if (!brand && filterQuery.brandId) params.set("brand_id", String(filterQuery.brandId));
+    if (!model && filterQuery.modelId) params.set("model_id", String(filterQuery.modelId));
   }
+  const qq = textQuery != null ? String(textQuery).trim() : "";
+  if (qq) params.set("q", qq);
   params.set("photo_limit", "8");
   params.set("limit", String(limit));
   return params;
 }
 
-export function catalogFetchKey(segments, listSort, filterKey = "") {
+export function catalogTextQueryFromRouter(query) {
+  if (!query) return "";
+  const raw = query.q;
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v != null ? String(v).trim() : "";
+}
+
+export function catalogFetchKey(segments, listSort, filterKey = "", textQuery = "") {
   const seg = segments.length ? segments.join("/") : "";
-  return `${seg}|${listSort || "date_desc"}|${filterKey || ""}`;
+  return `${seg}|${listSort || "relevance"}|${filterKey || ""}|${textQuery || ""}`;
 }

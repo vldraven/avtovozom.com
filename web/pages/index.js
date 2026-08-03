@@ -3,12 +3,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import BrandLogoMarquee from "../components/BrandLogoMarquee";
 import CatalogCardMedia from "../components/CatalogCardMedia";
 import CatalogQuickFilters from "../components/CatalogQuickFilters";
-import CatalogSortDropdown from "../components/CatalogSortDropdown";
+import BrandLogoMarquee from "../components/BrandLogoMarquee";
 import DealerOpenRequests from "../components/DealerOpenRequests";
+import HomeCarCard from "../components/HomeCarCard";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
+import SiteLogo from "../components/SiteLogo";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import HeaderProfileLink from "../components/HeaderProfileLink";
 import HeaderFavoritesLink from "../components/HeaderFavoritesLink";
@@ -16,7 +17,9 @@ import TelegramChannelHeaderLink from "../components/TelegramChannelHeaderLink";
 import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
+import { carSpecMetaBits, carListingTitle, carTotalRub } from "../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
+import { mediaSrc } from "../lib/media";
 import { peekScrollRestoreTarget, isListingBackNavigation, saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { organizationAndWebSiteJsonLd, jsonLdScriptProps } from "../lib/schema";
@@ -26,13 +29,77 @@ import { absoluteUrl } from "../lib/siteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
 import {
   appendFiltersToSearchParams,
-  catalogFiltersToQuery,
   EMPTY_CATALOG_FILTERS,
-  parseFiltersFromQuery,
+  FUEL_TYPE_OPTIONS,
+  homeHasListingQuery,
+  RUB_TO_PRESETS,
 } from "../lib/catalogFilters";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const HOME_VALID_SORTS = ["date_desc", "date_asc", "price_asc", "price_desc"];
+const HOME_FRESH_LOTS_LIMIT = 16;
+const HOME_POPULAR_CARS_LIMIT = 12;
+
+const HOME_FUEL_TYPE_OPTIONS = [{ value: "", label: "Любое" }, ...FUEL_TYPE_OPTIONS];
+
+const HOME_PRICE_OPTIONS = [
+  { value: "", label: "Любая" },
+  ...RUB_TO_PRESETS.map((p) => ({ value: p.value, label: p.label })),
+];
+
+const HOME_DEAL_STEPS = [
+  { n: 1, title: "Заявка и расчёт", text: "Смета под ключ за 2 часа" },
+  { n: 2, title: "Проверка и выкуп", text: "Диагностика с фото до оплаты" },
+  { n: 3, title: "Доставка", text: "Статус — в чате сделки" },
+  { n: 4, title: "Растаможка и ключи", text: "ЭПТС, учёт и передача авто" },
+];
+
+const HOME_BENEFITS = [
+  {
+    title: "Одна цена в договоре",
+    text: "Стоимость под ключ до города фиксируется до предоплаты — доплат по факту нет.",
+    icon: (
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v4a1 1 0 0 0 1 1h4 M9 13h6M9 17h4" />
+    ),
+  },
+  {
+    title: "Отчёты бесплатно",
+    text: "Диагностика с фото, история по АТС и видео-осмотр — по заявке, без оплаты.",
+    icon: (
+      <>
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+        <circle cx="12" cy="13" r="4" />
+      </>
+    ),
+  },
+  {
+    title: "Всё в кабинете",
+    text: "Чат по сделке, статус доставки и документы — в одном месте после входа.",
+    icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  },
+];
+
+const HOME_STEP_ICONS = [
+  <>
+    <path d="M9 12h6M9 16h6M9 8h2" />
+    <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+    <path d="M15 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+  </>,
+  <>
+    <circle cx="10" cy="10" r="6" />
+    <path d="m21 21-4.35-4.35" />
+    <path d="m8 10 1.5 1.5L13 8" />
+  </>,
+  <>
+    <path d="M1 3h13v13H1z" />
+    <path d="M14 8h4l3 3v5h-7z" />
+    <circle cx="5.5" cy="18.5" r="1.8" />
+    <circle cx="17.5" cy="18.5" r="1.8" />
+  </>,
+  <>
+    <path d="M9 11l3 3L22 4" />
+    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+  </>,
+];
 
 /** Иначе GET справочников может отдаваться из HTTP-кэша без только что созданной записи. */
 const STAFF_GET_INIT = { cache: "no-store" };
@@ -101,6 +168,15 @@ export default function Home({ initialData = null }) {
         isListingBackNavigation(`${window.location.pathname}${window.location.search}`))
   );
   const [mobileHeaderMenuOpen, setMobileHeaderMenuOpen] = useState(false);
+  const [heroBrandId, setHeroBrandId] = useState("");
+  const [heroModelId, setHeroModelId] = useState("");
+  const [heroRubTo, setHeroRubTo] = useState("");
+  const [heroFuelType, setHeroFuelType] = useState("");
+  const [heroModels, setHeroModels] = useState([]);
+  const [heroModelsBusy, setHeroModelsBusy] = useState(false);
+  const [homeFilterDraft, setHomeFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
+  const [homeFilterApplied, setHomeFilterApplied] = useState(EMPTY_CATALOG_FILTERS);
+  const [popularCars, setPopularCars] = useState(initialData?.popularCars ?? []);
   const [cars, setCars] = useState(cacheSeed?.cars ?? initialData?.cars ?? []);
   const [total, setTotal] = useState(cacheSeed?.total ?? initialData?.total ?? 0);
   const [catalogCbr, setCatalogCbr] = useState(cacheSeed?.cbr ?? initialData?.cbr ?? null);
@@ -110,12 +186,9 @@ export default function Home({ initialData = null }) {
   const [q, setQ] = useState("");
   const [catalogBrands, setCatalogBrands] = useState(
     cacheSeed?.brands ?? initialData?.brands ?? []
-  );  const [brandsExpanded, setBrandsExpanded] = useState(false);
-  const [catalogModels, setCatalogModels] = useState([]);
-  const [selectedBrandId, setSelectedBrandId] = useState(null);
-  const [selectedModelId, setSelectedModelId] = useState(null);
-  const [filterDraft, setFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
-  const [quickFilterModels, setQuickFilterModels] = useState([]);
+  );
+  const [catalogTree, setCatalogTree] = useState(initialData?.tree ?? []);
+  const [brandsExpanded, setBrandsExpanded] = useState(false);
   const [token, setToken] = useState("");
   const [me, setMe] = useState(null);
   const [latestParserJob, setLatestParserJob] = useState(null);
@@ -140,27 +213,18 @@ export default function Home({ initialData = null }) {
   const staffBrandsLoadGen = useRef(0);
   const staffModelsLoadGen = useRef(0);
   const staffGensLoadGen = useRef(0);
-  const [listSort, setListSort] = useState(
-    cacheSeed?.listSort ?? initialData?.listSort ?? "date_desc"
-  );  const [profileReady, setProfileReady] = useState(false);
+  const [listSort] = useState("date_desc");
+  const [profileReady, setProfileReady] = useState(false);
   const [requestModalCar, setRequestModalCar] = useState(null);
   const [requestModalComment, setRequestModalComment] = useState("");
   const [requestModalBusy, setRequestModalBusy] = useState(false);
+  const [activeDeal, setActiveDeal] = useState(null);
   const sortedBrands = useMemo(() => {
     return [...catalogBrands].sort(
       (a, b) =>
         b.listings_count - a.listings_count || a.name.localeCompare(b.name, "ru")
     );
   }, [catalogBrands]);
-
-  const appliedFilters = useMemo(
-    () =>
-      parseFiltersFromQuery(router.query, {
-        brandId: selectedBrandId,
-        modelId: selectedModelId,
-      }),
-    [router.query, selectedBrandId, selectedModelId]
-  );
 
   const quickFilterBrands = useMemo(() => {
     return catalogBrands
@@ -267,30 +331,26 @@ export default function Home({ initialData = null }) {
 
   const loadCars = useCallback(async () => {
     if (!router.isReady) return;
-    const rawB = router.query.brand;
-    const rawM = router.query.model;
-    const rawQ = router.query.q;
-    const brand = Array.isArray(rawB) ? rawB[0] : rawB;
-    const model = Array.isArray(rawM) ? rawM[0] : rawM;
-    const qq = Array.isArray(rawQ) ? rawQ[0] : rawQ;
     const params = new URLSearchParams();
-    if (qq != null && String(qq).trim() !== "") params.set("q", String(qq).trim());
-    if (brand) {
-      const n = Number(brand);
-      if (!Number.isNaN(n)) params.set("brand_id", String(n));
-    }
-    if (model) {
-      const n = Number(model);
-      if (!Number.isNaN(n)) params.set("model_id", String(n));
-    }
-    appendFiltersToSearchParams(params, parseFiltersFromQuery(router.query));
-    if (listSort && listSort !== "date_desc") {
-      params.set("sort", listSort);
-    }
     params.set("photo_limit", "8");
-    params.set("limit", "100");
+    params.set("limit", String(HOME_FRESH_LOTS_LIMIT));
+    params.set("sort", "date_desc");
+    if (homeFilterApplied.brandId) params.set("brand_id", String(homeFilterApplied.brandId));
+    if (homeFilterApplied.modelId) params.set("model_id", String(homeFilterApplied.modelId));
+    appendFiltersToSearchParams(params, homeFilterApplied);
+    const popularParams = new URLSearchParams();
+    popularParams.set("is_popular", "true");
+    popularParams.set("photo_limit", "8");
+    popularParams.set("limit", String(HOME_POPULAR_CARS_LIMIT));
+    popularParams.set("sort", "date_desc");
+    if (homeFilterApplied.brandId) popularParams.set("brand_id", String(homeFilterApplied.brandId));
+    if (homeFilterApplied.modelId) popularParams.set("model_id", String(homeFilterApplied.modelId));
+    appendFiltersToSearchParams(popularParams, homeFilterApplied);
     try {
-      const res = await fetch(`${API_URL}/cars?${params.toString()}`);
+      const [res, popularRes] = await Promise.all([
+        fetch(`${API_URL}/cars?${params.toString()}`),
+        fetch(`${API_URL}/cars?${popularParams.toString()}`),
+      ]);
       const data = await res.json();
       const nextCars = data.items || [];
       const nextTotal = data.total || 0;
@@ -300,12 +360,17 @@ export default function Home({ initialData = null }) {
       setTotal(nextTotal);
       setCatalogCbr(nextCbr);
       setCatalogCbrError(nextCbrError);
+      if (popularRes.ok) {
+        const popularData = await popularRes.json();
+        setPopularCars(popularData.items || []);
+      }
       setListingPageCache(HOME_LIST_CACHE_NS, router.asPath, {
         cars: nextCars,
         total: nextTotal,
         cbr: nextCbr,
         cbrError: nextCbrError,
-        listSort,
+        listSort: "date_desc",
+        brands: catalogBrands,
       });
     } catch {
       setCars([]);
@@ -313,84 +378,101 @@ export default function Home({ initialData = null }) {
       setCatalogCbr(null);
       setCatalogCbrError("network");
     }
-  }, [router.isReady, router.query, router.asPath, listSort]);
-
-  function applyQuickFilters(filtersOverride) {
-    const fd = filtersOverride || filterDraft;
-    const brandRow = catalogBrands.find((b) => b.id === fd.brandId);
-    const modelRow =
-      quickFilterModels.find((m) => m.id === fd.modelId) || catalogModels.find((m) => m.id === fd.modelId);
-    const filterQuery = catalogFiltersToQuery(fd, { omitBrandModel: true });
-    const qq = q.trim();
-    if (qq) filterQuery.q = qq;
-    if (listSort !== "date_desc") filterQuery.sort = listSort;
-
-    if (brandRow?.slug && modelRow?.slug) {
-      router.push({ pathname: `/catalog/${brandRow.slug}/${modelRow.slug}`, query: filterQuery });
-      return;
-    }
-    if (brandRow?.slug) {
-      router.push({ pathname: `/catalog/${brandRow.slug}`, query: filterQuery });
-      return;
-    }
-    const homeQuery = catalogFiltersToQuery(fd);
-    if (qq) homeQuery.q = qq;
-    if (listSort !== "date_desc") homeQuery.sort = listSort;
-    router.replace({ pathname: "/", query: homeQuery });
-  }
-
-  function onSelectBrand(brandId) {
-    const row = catalogBrands.find((b) => b.id === brandId);
-    if (row?.slug) {
-      router.push(`/catalog/${row.slug}`);
-      return;
-    }
-    const qq = q.trim();
-    const query = {};
-    if (qq) query.q = qq;
-    query.brand = String(brandId);
-    router.replace({ pathname: "/", query }, undefined, { shallow: true });
-  }
-
-  function onSelectModel(modelId) {
-    const rawB = router.query.brand;
-    const qb = Array.isArray(rawB) ? rawB[0] : rawB;
-    const bid = qb || selectedBrandId;
-    const brandRow = catalogBrands.find((b) => b.id === Number(bid));
-    const modelRow = catalogModels.find((m) => m.id === modelId);
-    if (brandRow?.slug && modelRow?.slug) {
-      router.push(`/catalog/${brandRow.slug}/${modelRow.slug}`);
-      return;
-    }
-    const qq = q.trim();
-    const query = {};
-    if (qq) query.q = qq;
-    if (bid) query.brand = String(bid);
-    query.model = String(modelId);
-    router.replace({ pathname: "/", query }, undefined, { shallow: true });
-  }
-
-  function clearBrandModel() {
-    const qq = q.trim();
-    const query = {};
-    if (qq) query.q = qq;
-    router.replace({ pathname: "/", query }, undefined, { shallow: true });
-  }
+  }, [router.isReady, router.asPath, catalogBrands, homeFilterApplied]);
 
   function onSearchSubmit(e) {
     e.preventDefault();
-    const rawB = router.query.brand;
-    const rawM = router.query.model;
-    const brand = Array.isArray(rawB) ? rawB[0] : rawB;
-    const model = Array.isArray(rawM) ? rawM[0] : rawM;
     const qq = q.trim();
-    if (!qq) setQ("");
-    const query = {};
-    if (qq) query.q = qq;
-    if (brand) query.brand = String(brand);
-    if (model) query.model = String(model);
-    router.replace({ pathname: "/", query }, undefined, { shallow: true });
+    if (!qq) {
+      router.push("/catalog");
+      return;
+    }
+    router.push({ pathname: "/catalog", query: { q: qq } });
   }
+
+  function onHeroFiltersSubmit(e) {
+    e.preventDefault();
+    const fd = {
+      ...EMPTY_CATALOG_FILTERS,
+      brandId: heroBrandId ? Number(heroBrandId) : null,
+      modelId: heroModelId ? Number(heroModelId) : null,
+      rubTo: heroRubTo ? Number(heroRubTo) : null,
+      fuelType: heroFuelType || null,
+    };
+    setHomeFilterDraft(fd);
+    setHomeFilterApplied(fd);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!heroBrandId) {
+      setHeroModels([]);
+      setHeroModelId("");
+      return undefined;
+    }
+    setHeroModelsBusy(true);
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/catalog/models?brand_id=${encodeURIComponent(heroBrandId)}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error("models");
+        const data = await res.json();
+        if (cancelled) return;
+        setHeroModels(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setHeroModels([]);
+      } finally {
+        if (!cancelled) setHeroModelsBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [heroBrandId]);
+
+  const desktopArrivals = useMemo(() => cars.slice(0, HOME_FRESH_LOTS_LIMIT), [cars]);
+
+  const popularBrands = useMemo(() => {
+    const withLogo = (list) => (list || []).filter((b) => b.logo_storage_url && b.slug);
+    const sortBrands = (list) =>
+      [...list].sort(
+        (a, b) =>
+          (a.quick_filter_rank ?? 999) - (b.quick_filter_rank ?? 999) ||
+          (b.listings_count || 0) - (a.listings_count || 0) ||
+          String(a.name || "").localeCompare(String(b.name || ""), "ru")
+      );
+    const flagged = sortBrands(withLogo(catalogBrands.filter((b) => b.is_popular)));
+    if (flagged.length) return flagged;
+    return sortBrands(withLogo(quickFilterBrands.length ? quickFilterBrands : catalogBrands));
+  }, [catalogBrands, quickFilterBrands]);
+
+  const homeFilterBrandOptions = useMemo(
+    () => sortedBrands.map((b) => ({ id: b.id, name: b.name })),
+    [sortedBrands]
+  );
+
+  const homeFilterModelOptions = useMemo(() => {
+    if (!homeFilterDraft.brandId) return [];
+    const brand = (catalogTree || []).find((b) => b.id === homeFilterDraft.brandId);
+    if (brand?.models?.length) {
+      return brand.models.map((m) => ({ id: m.id, name: m.name }));
+    }
+    return [];
+  }, [catalogTree, homeFilterDraft.brandId]);
+
+  const applyHomeQuickFilters = useCallback(
+    (filtersOverride) => {
+      const fd = filtersOverride || homeFilterDraft;
+      setHomeFilterDraft(fd);
+      setHomeFilterApplied(fd);
+    },
+    [homeFilterDraft]
+  );
+
+  const showCountLabel = total
+    ? `Показать ${Number(total).toLocaleString("ru-RU")}`
+    : "Показать авто";
 
   async function cancelParserJob(jobId) {
     if (!token || !jobId || cancelParserBusy) return;
@@ -1068,59 +1150,26 @@ export default function Home({ initialData = null }) {
     }
   }, [router.isReady, router.asPath]);
 
+  /** SSR-фетч /catalog/tree иногда не успевает (холодный старт backend) — без этого фильтр «Модель» остаётся пустым на весь сеанс. */
   useEffect(() => {
-    if (!selectedBrandId) {
-      setCatalogModels([]);
-      return;
-    }
-    (async () => {
-      const res = await fetch(`${API_URL}/catalog/models?brand_id=${selectedBrandId}`);
-      if (res.ok) {
-        const list = await res.json();
-        list.sort(
-          (a, b) =>
-            b.listings_count - a.listings_count || a.name.localeCompare(b.name, "ru")
-        );
-        setCatalogModels(list);
-      }
-    })();
-  }, [selectedBrandId]);
-
-  useEffect(() => {
-    if (!router.isReady) return;
-    setFilterDraft(
-      parseFiltersFromQuery(router.query, {
-        brandId: selectedBrandId,
-        modelId: selectedModelId,
-      })
-    );
-  }, [router.isReady, router.query, selectedBrandId, selectedModelId]);
-
-  useEffect(() => {
-    const bid = filterDraft.brandId;
-    if (!bid) {
-      setQuickFilterModels([]);
-      return undefined;
-    }
-    if (bid === selectedBrandId && catalogModels.length > 0) {
-      setQuickFilterModels(catalogModels);
-      return undefined;
-    }
+    if (catalogTree.length > 0) return;
     let cancelled = false;
     (async () => {
-      const res = await fetch(`${API_URL}/catalog/models?brand_id=${bid}`);
-      if (!res.ok || cancelled) return;
-      const list = await res.json();
-      list.sort(
-        (a, b) =>
-          b.listings_count - a.listings_count || a.name.localeCompare(b.name, "ru")
-      );
-      if (!cancelled) setQuickFilterModels(list);
+      try {
+        const res = await fetch(`${API_URL}/catalog/tree`, { cache: "no-store" });
+        if (!cancelled && res.ok) {
+          const nextTree = await res.json();
+          if (Array.isArray(nextTree) && nextTree.length > 0) setCatalogTree(nextTree);
+        }
+      } catch {
+        /* ignore */
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [filterDraft.brandId, selectedBrandId, catalogModels]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (isAdminRole(me?.role)) return;
@@ -1152,32 +1201,45 @@ export default function Home({ initialData = null }) {
   }, [whitelistCatalog, parserAdminBrand, parserAdminBrandNames, staffBrandsParser, me?.role]);
 
   useEffect(() => {
-    if (!router.isReady) return;
-    const rawB = router.query.brand;
-    const rawM = router.query.model;
-    const rawQ = router.query.q;
-    const brand = Array.isArray(rawB) ? rawB[0] : rawB;
-    const model = Array.isArray(rawM) ? rawM[0] : rawM;
-    const qq = Array.isArray(rawQ) ? rawQ[0] : rawQ;
-    if (brand) {
-      const n = Number(brand);
-      if (!Number.isNaN(n)) setSelectedBrandId(n);
-    } else {
-      setSelectedBrandId(null);
+    if (!token || !profileReady) {
+      setActiveDeal(null);
+      return undefined;
     }
-    if (model) {
-      const n = Number(model);
-      if (!Number.isNaN(n)) setSelectedModelId(n);
-    } else {
-      setSelectedModelId(null);
+    if (isStaffRole(me?.role) || me?.role === "dealer") {
+      setActiveDeal(null);
+      return undefined;
     }
-    if (qq != null && String(qq) !== "") setQ(String(qq));
-    const rawS = router.query.sort;
-    const sv = Array.isArray(rawS) ? rawS[0] : rawS;
-    if (sv && ["date_desc", "date_asc", "price_asc", "price_desc"].includes(String(sv))) {
-      setListSort(String(sv));
-    }
-  }, [router.isReady, router.query.brand, router.query.model, router.query.q, router.query.sort]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [rr, cr] = await Promise.all([
+          fetch(`${API_URL}/requests/my`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API_URL}/chats/my`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        if (cancelled) return;
+        const requests = rr.ok ? await rr.json() : [];
+        const chats = cr.ok ? await cr.json() : [];
+        const openReq = (requests || []).find((r) => r.status === "open" || r.status === "in_progress");
+        const platform = (chats || []).find((c) => c.chat_type === "platform") || (chats || [])[0];
+        if (!openReq && !platform) {
+          setActiveDeal(null);
+          return;
+        }
+        setActiveDeal({
+          requestId: openReq?.id ?? null,
+          status: openReq?.status ?? null,
+          comment: openReq?.comment ?? "",
+          chatId: platform?.id ?? null,
+          chatTitle: platform?.title || platform?.peer_label || "Чат сделки",
+        });
+      } catch {
+        if (!cancelled) setActiveDeal(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, profileReady, me?.role]);
 
   const loadHomeCatalogParallel = useCallback(async () => {
     if (!router.isReady) {
@@ -1302,12 +1364,13 @@ export default function Home({ initialData = null }) {
         <meta property="og:url" content={absoluteUrl("/")} />
         <script {...jsonLdScriptProps(organizationAndWebSiteJsonLd())}></script>
       </Head>
-      <div className="layout">
-      <header className="site-header">
-        <div className="container site-header__inner">
+      <div className="layout layout--home">
+      <header className="site-header site-header--home">
+        {/* —— Mobile header —— */}
+        <div className="container site-header__inner home-only-mobile">
           <button
             type="button"
-            className="site-header__burger site-header__burger--desktop"
+            className="site-header__burger"
             aria-label="Открыть меню"
             aria-expanded={mobileHeaderMenuOpen}
             onClick={() => setMobileHeaderMenuOpen((v) => !v)}
@@ -1319,24 +1382,9 @@ export default function Home({ initialData = null }) {
             </span>
           </button>
           <div className="site-header__brand">
-            <Link href="/" className="site-logo">
-              avtovozom
-            </Link>
+            <SiteLogo />
             <span className="site-tagline">Доставка автомобилей из Китая и Кореи</span>
           </div>
-          <button
-            type="button"
-            className="site-header__burger site-header__burger--mobile"
-            aria-label="Открыть меню"
-            aria-expanded={mobileHeaderMenuOpen}
-            onClick={() => setMobileHeaderMenuOpen((v) => !v)}
-          >
-            <span className={`site-header__burger-icon${mobileHeaderMenuOpen ? " is-open" : ""}`} aria-hidden>
-              <span />
-              <span />
-              <span />
-            </span>
-          </button>
           <div className="auth-bar">
             <Link href="/customs-calculator" className="site-header-calc-link">
               Калькулятор растаможки
@@ -1356,15 +1404,49 @@ export default function Home({ initialData = null }) {
                     Добавить объявление
                   </Link>
                 )}
-                <HeaderProfileLink token={token} userRole={me?.role} />
+                <HeaderProfileLink token={token} me={me} />
                 <HeaderFavoritesLink token={token} />
                 <TelegramChannelHeaderLink />
               </>
             )}
           </div>
         </div>
+
+        {/* —— Desktop header (mockup 36) —— */}
+        <div className="container site-header__inner home-d-header home-only-desktop">
+          <SiteLogo />
+          <nav className="home-d-nav" aria-label="Основная навигация">
+            <Link href="/catalog">Каталог</Link>
+            <Link href="/customs-calculator">Калькулятор</Link>
+            <Link href="/faq">FAQ</Link>
+          </nav>
+          <div className="home-d-header__actions">
+            <HeaderMessagesLink token={token} />
+            <HeaderFavoritesLink token={token} />
+            {!token ? (
+              <>
+                <Link href="/auth" className="btn home-d-btn-login">
+                  Войти
+                </Link>
+                <Link href="/auth" className="btn home-d-btn-register">
+                  Регистрация
+                </Link>
+              </>
+            ) : (
+              <>
+                <HeaderProfileLink token={token} me={me} />
+                {canCreateListings(me?.role) ? (
+                  <Link href="/staff/new-listing" className="btn btn-primary btn-sm home-d-btn-cta">
+                    Добавить объявление
+                  </Link>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+
         {mobileHeaderMenuOpen ? (
-          <div className="site-header-mobile-menu-wrap">
+          <div className="site-header-mobile-menu-wrap home-only-mobile">
             <button
               type="button"
               className="site-header-mobile-menu__backdrop"
@@ -1372,41 +1454,10 @@ export default function Home({ initialData = null }) {
               onClick={() => setMobileHeaderMenuOpen(false)}
             />
             <div className="container site-header-mobile-menu__container">
-              <nav className="site-header-desktop-menu" aria-label="Меню сайта">
-                <div className="site-header-desktop-menu__column">
-                  <Link href="/catalog" className="site-header-desktop-menu__lead">
-                    Каталог
-                  </Link>
-                  <Link href="/customs-calculator">Калькулятор растаможки</Link>
-                  <Link href="/dostavka-avto-iz-kitaya">Доставка авто из Китая</Link>
-                  <Link href="/dostavka-avto-iz-korei">Доставка авто из Кореи</Link>
-                  <Link href="/faq">Частые вопросы</Link>
-                </div>
-                <div className="site-header-desktop-menu__column">
-                  <p className="site-header-desktop-menu__title">Покупателю</p>
-                  <Link href="/catalog">Автомобили под заказ</Link>
-                  <Link href="/request-quote">Заказать расчёт</Link>
-                  <Link href="/customs-calculator">Рассчитать стоимость</Link>
-                </div>
-                <div className="site-header-desktop-menu__column">
-                  <p className="site-header-desktop-menu__title">Направления</p>
-                  <Link href="/dostavka-avto-iz-kitaya">Авто из Китая</Link>
-                  <Link href="/dostavka-avto-iz-korei">Авто из Кореи</Link>
-                </div>
-                <div className="site-header-desktop-menu__column">
-                  <p className="site-header-desktop-menu__title">Аккаунт</p>
-                  {!token ? (
-                    <Link href="/auth">Войти</Link>
-                  ) : (
-                    <>
-                      <Link href="/profile">Профиль</Link>
-                      <Link href="/favorites">Избранное</Link>
-                      {canCreateListings(me?.role) ? <Link href="/staff/new-listing">Добавить объявление</Link> : null}
-                    </>
-                  )}
-                </div>
-              </nav>
               <nav className="site-header-mobile-menu" aria-label="Меню сайта">
+                <Link href="/catalog" className="site-header-mobile-menu__link">
+                  Каталог
+                </Link>
                 <Link href="/customs-calculator" className="site-header-mobile-menu__link">
                   Калькулятор растаможки
                 </Link>
@@ -1444,149 +1495,466 @@ export default function Home({ initialData = null }) {
         ) : null}
       </header>
 
-      <main className="site-main">
+      <main className="site-main site-main--home">
         <div className="container">
-          <section className="home-hero" aria-label="Поиск и выбор марки">
-            <h1 className="home-hero__title">Доставка автомобилей из Китая и Кореи</h1>
-            <p className="home-hero__subtitle">
-              Подбор, выкуп и доставка до вашего города с гарантией лучшей цены
-            </p>
-            <form className="home-search-form" onSubmit={onSearchSubmit} role="search">
-              <input
-                className="input"
-                name="q"
-                placeholder="Марка, модель или название объявления"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                autoComplete="off"
-                aria-label="Поиск по каталогу"
-              />
-              <button type="submit" className="btn btn-primary">
-                Найти
-              </button>
-            </form>
-
-            <CatalogQuickFilters
-              brands={sortedBrands}
-              models={quickFilterModels}
-              draft={filterDraft}
-              applied={appliedFilters}
-              onChangeDraft={setFilterDraft}
-              onApply={applyQuickFilters}
-            />
-
-            <div className="home-hero__delivery-links">
-              <Link href="/dostavka-avto-iz-kitaya" className="btn btn-ghost btn-sm">
-                Доставка авто из Китая
-              </Link>
-              <Link href="/dostavka-avto-iz-korei" className="btn btn-ghost btn-sm">
-                Доставка авто из Кореи
-              </Link>
+          {/* ===================== MOBILE showcase (guest mockup) ===================== */}
+          <div className="home-m home-only-mobile">
+            <div className="home-m-top">
+              <div className="home-m-top__row">
+                <SiteLogo className="home-m-top__logo" />
+                {!token ? (
+                  <Link href="/auth" className="home-m-top__login">
+                    Войти
+                  </Link>
+                ) : (
+                  <div className="home-m-top__auth">
+                    <HeaderMessagesLink token={token} />
+                    <HeaderProfileLink token={token} me={me} />
+                  </div>
+                )}
+              </div>
+              <form className="home-m-search" onSubmit={onSearchSubmit} role="search">
+                <span className="home-m-search__icon" aria-hidden>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
+                    <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <input
+                  className="home-m-search__input"
+                  name="q"
+                  placeholder="Марка, модель или VIN"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  autoComplete="off"
+                  aria-label="Поиск по каталогу"
+                />
+              </form>
+              <div className="home-m-filters">
+                <CatalogQuickFilters
+                  brands={homeFilterBrandOptions}
+                  models={homeFilterModelOptions}
+                  draft={homeFilterDraft}
+                  applied={homeFilterApplied}
+                  onChangeDraft={setHomeFilterDraft}
+                  onApply={applyHomeQuickFilters}
+                  applyLabel="Показать"
+                  applyOnSelect
+                />
+              </div>
             </div>
 
-            <div className="catalog-picker">
-              <h2 className="catalog-picker__section-title">Марки</h2>
-              <BrandLogoMarquee brands={quickFilterBrands} />
-              {selectedBrandId || selectedModelId ? (
-                <div className="catalog-breadcrumb">
-                  <button type="button" onClick={clearBrandModel}>
-                    Все марки
-                  </button>
-                  {selectedBrandId ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>
-                        {catalogBrands.find((b) => b.id === selectedBrandId)?.name || "Марка"}
-                      </span>
-                    </>
-                  ) : null}
-                  {selectedModelId ? (
-                    <>
-                      <span aria-hidden>·</span>
-                      <span>
-                        {catalogModels.find((m) => m.id === selectedModelId)?.name || "Модель"}
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="brands-compact-grid" role="list">
-                {visibleBrands.map((b) => {
-                  const itemClass = `brands-compact-item${selectedBrandId === b.id ? " brands-compact-item--active" : ""}`;
-                  const itemInner = (
-                    <>
-                      <span className="brands-compact-item__name">{b.name}</span>
-                      <span className="brands-compact-item__count">
-                        {b.listings_count > 0 ? b.listings_count : "—"}
-                      </span>
-                    </>
-                  );
-                  /* Со slug — настоящая ссылка на /catalog/{slug} (crawlable + SEO);
-                     без slug — прежнее поведение через query-фильтр. */
-                  if (b.slug) {
-                    return (
-                      <Link key={b.id} href={`/catalog/${b.slug}`} role="listitem" className={itemClass}>
-                        {itemInner}
-                      </Link>
-                    );
-                  }
-                  return (
-                    <button
-                      key={b.id}
-                      type="button"
-                      role="listitem"
-                      className={itemClass}
-                      onClick={() => onSelectBrand(b.id)}
-                    >
-                      {itemInner}
-                    </button>
-                  );
-                })}
-              </div>
-              {sortedBrands.length > brandsCollapsedLimit ? (
-                <button
-                  type="button"
-                  className="brands-compact-more"
-                  onClick={() => setBrandsExpanded((v) => !v)}
-                >
-                  {brandsExpanded ? "Свернуть" : "Все марки"}
-                  <span className="brands-compact-more__chev" aria-hidden>
-                    {brandsExpanded ? "▴" : "▾"}
-                  </span>
-                </button>
-              ) : null}
-              {selectedBrandId ? (
-                <div style={{ marginTop: "1rem" }}>
-                  <h2 className="catalog-picker__section-title" style={{ marginBottom: "0.5rem" }}>
-                    Модели · {catalogBrands.find((x) => x.id === selectedBrandId)?.name}
-                  </h2>
-                  <div className="models-strip" role="list">
-                    {catalogModels.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        role="listitem"
-                        className={`model-chip${selectedModelId === m.id ? " model-chip--active" : ""}`}
-                        onClick={() => onSelectModel(m.id)}
-                      >
-                        {m.name}
-                        {m.listings_count > 0 ? (
-                          <span className="model-chip__badge">{m.listings_count}</span>
-                        ) : null}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              <div className="home-hero__catalog-link">
-                <Link href="/catalog" className="btn btn-primary">
-                  Смотреть каталог
+            <section className="home-m-hero" aria-label="Витрина">
+              <p className="home-m-hero__eyebrow">Авто из Китая</p>
+              <h1 className="home-m-hero__title">Цена под ключ до вашего города</h1>
+              <p className="home-m-hero__subtitle">
+                Подбор, проверка, доставка и растаможка. Считаем сразу с доставкой до Москвы,
+                а не до Владивостока — доплат по факту нет.
+              </p>
+              <div className="home-m-hero__cta-row">
+                <Link href="/request-quote" className="btn btn-primary home-m-hero__cta">
+                  Рассчитать
+                </Link>
+                <Link href="/catalog" className="btn home-m-hero__cta home-m-hero__cta--ghost">
+                  Каталог
                 </Link>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <TelegramChannelSticky />
+            {activeDeal ? (
+              <div className="home-deal-card">
+                <div className="home-deal-card__body">
+                  <p className="home-deal-card__eyebrow">
+                    {activeDeal.requestId != null ? `Ваша сделка · №${activeDeal.requestId}` : "Ваша сделка"}
+                  </p>
+                  <p className="home-deal-card__title">
+                    {activeDeal.comment
+                      ? String(activeDeal.comment).slice(0, 120)
+                      : activeDeal.chatTitle}
+                  </p>
+                  {activeDeal.status ? (
+                    <p className="home-deal-card__meta">
+                      {activeDeal.status === "in_progress" ? "В работе" : "Принята — ждём расчёт"}
+                    </p>
+                  ) : null}
+                </div>
+                <Link
+                  href={
+                    activeDeal.chatId != null
+                      ? `/messages?chat=${encodeURIComponent(String(activeDeal.chatId))}`
+                      : "/messages"
+                  }
+                  className="btn btn-primary"
+                >
+                  Открыть чат сделки
+                </Link>
+              </div>
+            ) : null}
+
+            <div className="home-quick-tiles" role="navigation" aria-label="Быстрые действия">
+              <Link href="/customs-calculator" className="home-quick-tile">
+                <span className="home-quick-tile__icon" aria-hidden>
+                  ₽
+                </span>
+                <span className="home-quick-tile__label">Калькулятор</span>
+              </Link>
+              <Link href="/request-quote" className="home-quick-tile">
+                <span className="home-quick-tile__icon" aria-hidden>
+                  ✎
+                </span>
+                <span className="home-quick-tile__label">Заявка</span>
+              </Link>
+              <Link href="/faq" className="home-quick-tile">
+                <span className="home-quick-tile__icon" aria-hidden>
+                  ?
+                </span>
+                <span className="home-quick-tile__label">FAQ</span>
+              </Link>
+            </div>
+
+            {popularBrands.length > 0 ? (
+              <section className="home-m-brands" aria-label="Популярные марки">
+                <div className="home-m-brands__head">
+                  <h2 className="home-m-brands__title">Популярные марки</h2>
+                </div>
+                <div className="home-m-brands__scroller">
+                  {popularBrands.map((b) => (
+                    <Link
+                      key={b.id}
+                      href={`/catalog/${b.slug}`}
+                      className="home-m-brands__tile"
+                      title={b.name}
+                    >
+                      <img
+                        src={mediaSrc(b.logo_storage_url)}
+                        alt=""
+                        width={40}
+                        height={40}
+                        loading="lazy"
+                        decoding="async"
+                        className="home-m-brands__logo"
+                      />
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {popularCars.length > 0 ? (
+              <section className="home-m-models" aria-label="Популярные модели">
+                <div className="home-m-models__head">
+                  <h2 className="home-m-models__title">Популярные модели</h2>
+                  <Link href="/catalog" className="home-m-models__link">
+                    Все
+                  </Link>
+                </div>
+                <div className="home-m-models__scroller">
+                  {popularCars.map((car) => (
+                    <HomeCarCard
+                      key={`m-pop-${car.id}`}
+                      car={car}
+                      variant="mobile"
+                      className="home-m-models__card"
+                      draggable={false}
+                      onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="home-m-arrivals" aria-label="Последние поступления">
+              <div className="home-m-arrivals__head">
+                <h2 className="home-m-arrivals__title">Последние поступления</h2>
+              </div>
+              {cars.length === 0 ? (
+                <div className="ui-state">
+                  <p className="ui-state__title">Лотов пока нет</p>
+                  <div className="ui-state__actions">
+                    <Link href="/catalog" className="btn btn-secondary btn-sm">
+                      Каталог
+                    </Link>
+                    <Link href="/request-quote" className="btn btn-primary btn-sm">
+                      Заявка
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="home-m-arrivals__list">
+                  {cars.slice(0, HOME_FRESH_LOTS_LIMIT).map((car) => (
+                    <HomeCarCard
+                      key={`m-${car.id}`}
+                      car={car}
+                      variant="mobile"
+                      draggable={false}
+                      onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {!token ? (
+              <aside className="home-m-auth-card">
+                <h2 className="home-m-auth-card__title">Войдите, чтобы вести сделку</h2>
+                <p className="home-m-auth-card__text">
+                  Чат с менеджером, избранное, статусы доставки и документы — в личном кабинете.
+                </p>
+                <Link href="/auth" className="btn btn-primary home-m-auth-card__cta">
+                  Войти или зарегистрироваться
+                </Link>
+              </aside>
+            ) : null}
+          </div>
+
+          {/* ===================== DESKTOP showcase ===================== */}
+          <div className="home-d home-only-desktop">
+            <section className="home-d-hero" aria-label="Витрина">
+              <p className="home-d-hero__eyebrow">Китай · под ключ</p>
+              <h1 className="home-d-hero__title">Цена под ключ до вашего города</h1>
+              <p className="home-d-hero__subtitle">
+                Подбор, диагностика на месте, доставка и растаможка. Считаем сразу с доставкой
+                до Москвы, а не до Владивостока — без доплат по факту.
+              </p>
+              <form className="home-d-filters" onSubmit={onHeroFiltersSubmit}>
+                <div className="home-d-filters__field">
+                  <SiteSelectDropdown
+                    className="site-dropdown--block"
+                    label="Марка"
+                    placeholder="Любая"
+                    searchable
+                    value={heroBrandId}
+                    onChange={(v) => {
+                      setHeroBrandId(v || "");
+                      setHeroModelId("");
+                    }}
+                    options={[
+                      { value: "", label: "Любая" },
+                      ...sortedBrands.map((b) => ({ value: String(b.id), label: b.name })),
+                    ]}
+                  />
+                </div>
+                <div className="home-d-filters__field">
+                  <SiteSelectDropdown
+                    className="site-dropdown--block"
+                    label="Модель"
+                    placeholder={heroModelsBusy ? "Загрузка…" : "Любая"}
+                    searchable
+                    disabled={!heroBrandId || heroModelsBusy}
+                    value={heroModelId}
+                    onChange={(v) => setHeroModelId(v || "")}
+                    options={[
+                      { value: "", label: heroModelsBusy ? "Загрузка…" : "Любая" },
+                      ...heroModels.map((m) => ({ value: String(m.id), label: m.name })),
+                    ]}
+                  />
+                </div>
+                <div className="home-d-filters__field">
+                  <SiteSelectDropdown
+                    className="site-dropdown--block"
+                    label="Цена под ключ"
+                    placeholder="Любая"
+                    value={heroRubTo}
+                    onChange={(v) => setHeroRubTo(v || "")}
+                    options={HOME_PRICE_OPTIONS}
+                  />
+                </div>
+                <div className="home-d-filters__field">
+                  <SiteSelectDropdown
+                    className="site-dropdown--block"
+                    label="Тип топлива"
+                    placeholder="Любая"
+                    value={heroFuelType}
+                    onChange={(v) => setHeroFuelType(v || "")}
+                    options={HOME_FUEL_TYPE_OPTIONS}
+                  />
+                </div>
+                <button type="submit" className="btn btn-primary home-d-filters__submit">
+                  {showCountLabel}
+                </button>
+              </form>
+              <div className="home-d-stats" aria-label="Цифры платформы">
+                <div className="home-d-stats__item">
+                  <strong>{total ? Number(total).toLocaleString("ru-RU") : "—"}</strong>
+                  <span>авто в подборе</span>
+                </div>
+                <div className="home-d-stats__item">
+                  <strong>6–8 нед.</strong>
+                  <span>доставка</span>
+                </div>
+                <div className="home-d-stats__item">
+                  <strong>0 ₽</strong>
+                  <span>за расчёт и отчёты</span>
+                </div>
+              </div>
+            </section>
+
+            {popularBrands.length > 0 ? (
+              <section className="home-d-brands" aria-label="Популярные марки">
+                <div className="home-d-brands__head">
+                  <h2 className="home-d-brands__title">Популярные марки</h2>
+                </div>
+                <BrandLogoMarquee brands={popularBrands} variant="home" />
+              </section>
+            ) : null}
+
+            {activeDeal ? (
+              <div className="home-deal-card home-deal-card--desktop">
+                <div className="home-deal-card__body">
+                  <p className="home-deal-card__eyebrow">
+                    {activeDeal.requestId != null ? `Ваша сделка · №${activeDeal.requestId}` : "Ваша сделка"}
+                  </p>
+                  <p className="home-deal-card__title">
+                    {activeDeal.comment
+                      ? String(activeDeal.comment).slice(0, 120)
+                      : activeDeal.chatTitle}
+                  </p>
+                </div>
+                <Link
+                  href={
+                    activeDeal.chatId != null
+                      ? `/messages?chat=${encodeURIComponent(String(activeDeal.chatId))}`
+                      : "/messages"
+                  }
+                  className="btn btn-primary"
+                >
+                  Открыть чат сделки
+                </Link>
+              </div>
+            ) : null}
+
+            <section className="home-d-arrivals" aria-label="Последние поступления">
+              <div className="home-d-arrivals__head">
+                <h2 className="home-d-arrivals__title">Последние поступления</h2>
+                <Link href="/catalog" className="home-d-arrivals__link">
+                  В каталог
+                </Link>
+              </div>
+              {desktopArrivals.length === 0 ? (
+                <div className="ui-state">
+                  <p className="ui-state__title">Лотов пока нет</p>
+                  <div className="ui-state__actions">
+                    <Link href="/catalog" className="btn btn-secondary btn-sm">
+                      Каталог
+                    </Link>
+                    <Link href="/request-quote" className="btn btn-primary btn-sm">
+                      Заявка
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                <div className="home-d-carousel" role="list">
+                  {desktopArrivals.map((car) => {
+                    const totalRub = carTotalRub(car);
+                    const title = carListingTitle(car);
+                    const metaBits = carSpecMetaBits(car);
+                    return (
+                      <article
+                        key={car.id}
+                        className="catalog-card home-d-card"
+                        role="listitem"
+                        data-home-car-id={car.id}
+                      >
+                        <Link
+                          href={listingCarHref(car)}
+                          className="catalog-card__main home-d-card__main"
+                          draggable={false}
+                          onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
+                        >
+                          <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
+                          <div className="catalog-card__content home-d-card__body">
+                            <p className="home-d-card__price">
+                              {totalRub != null ? (
+                                <>
+                                  <strong>{Math.round(totalRub).toLocaleString("ru-RU")} ₽</strong>
+                                  <span>под ключ</span>
+                                </>
+                              ) : (
+                                <strong>{Math.round(car.price_cny).toLocaleString("ru-RU")} ¥</strong>
+                              )}
+                            </p>
+                            <p className="home-d-card__title">{title}</p>
+                            {metaBits.length ? (
+                              <p className="home-d-card__meta">{metaBits.join(" · ")}</p>
+                            ) : null}
+                          </div>
+                        </Link>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {popularCars.length > 0 ? (
+              <section className="home-d-models" aria-label="Популярные модели">
+                <div className="home-d-models__head">
+                  <h2 className="home-d-models__title">Популярные модели</h2>
+                  <Link href="/catalog" className="home-d-models__link">
+                    Все модели
+                  </Link>
+                </div>
+                <div className="home-d-carousel" role="list">
+                  {popularCars.map((car) => (
+                    <HomeCarCard
+                      key={`pop-${car.id}`}
+                      car={car}
+                      variant="desktop"
+                      role="listitem"
+                      draggable={false}
+                      onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <div className="home-d-steps-row">
+              <section className="home-d-steps" aria-label="Как проходит сделка">
+                <h2 className="home-d-steps__title">Как проходит сделка</h2>
+                <div className="home-d-steps__grid">
+                  <div className="home-d-steps__connector" aria-hidden />
+                  {HOME_DEAL_STEPS.map((s, i) => (
+                    <article key={s.n} className="home-d-step">
+                      <span className="home-d-step__icon" aria-hidden>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          {HOME_STEP_ICONS[i]}
+                        </svg>
+                      </span>
+                      <p className="home-d-step__n">Шаг {s.n}</p>
+                      <p className="home-d-step__title">{s.title}</p>
+                      <p className="home-d-step__text">{s.text}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+              <aside className="home-d-steps-cta">
+                <p className="home-d-steps-cta__title">Не нашли нужное авто?</p>
+                <p className="home-d-steps-cta__text">
+                  Оставьте заявку — подберём под бюджет и пришлём 3 варианта со сметой.
+                </p>
+                <Link href="/request-quote" className="btn btn-primary home-d-steps-cta__btn">
+                  Заявка на подбор
+                </Link>
+              </aside>
+            </div>
+
+            <section className="home-d-benefits" aria-label="Преимущества">
+              {HOME_BENEFITS.map((b) => (
+                <article key={b.title} className="home-d-benefit">
+                  <span className="home-d-benefit__icon" aria-hidden>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      {b.icon}
+                    </svg>
+                  </span>
+                  <h3 className="home-d-benefit__title">{b.title}</h3>
+                  <p className="home-d-benefit__text">{b.text}</p>
+                </article>
+              ))}
+            </section>
+          </div>
+
+          <div className="home-only-mobile home-m-staff-gap" />
 
           <div className="toolbar toolbar--below-hero">
             {token && isStaffRole(me?.role) && (
@@ -1596,23 +1964,9 @@ export default function Home({ initialData = null }) {
             )}
           </div>
 
-          <div className="catalog-list-toolbar">
-            <h2 className="section-title section-title--flush-top catalog-list-toolbar__title">
-              Объявления <span className="text-muted">· {total}</span>
-            </h2>
-            <CatalogSortDropdown
-              value={listSort}
-              onChange={(v) => {
-                setListSort(v);
-                const q = { ...router.query };
-                if (v === "date_desc") {
-                  delete q.sort;
-                } else {
-                  q.sort = v;
-                }
-                router.replace({ pathname: "/", query: q }, undefined, { shallow: true });
-              }}
-            />
+          {/* Mobile listings live in home-m-arrivals; keep staff tools below. */}
+          <div className="home-only-desktop">
+            {/* spacer for desktop staff blocks alignment */}
           </div>
 
       {profileReady && isStaffRole(me?.role) && (
@@ -1864,7 +2218,7 @@ export default function Home({ initialData = null }) {
       })()}
       {parserJobMessage && <div className="muted parser-job-message">{parserJobMessage}</div>}
 
-      {(catalogCbr || catalogCbrError) && (
+      {(catalogCbr || catalogCbrError) && profileReady && isStaffRole(me?.role) ? (
         <p className="muted catalog-cbr-line">
           {catalogCbr ? (
             <>
@@ -1874,9 +2228,16 @@ export default function Home({ initialData = null }) {
             <>Расчётный курс недоступен ({catalogCbrError || "ошибка"}).</>
           )}
         </p>
-      )}
+      ) : null}
 
+      {profileReady && isStaffRole(me?.role) ? (
       <section className="catalog-section">
+        <h2 className="section-title panel-heading-sm">Свежие лоты · админ</h2>
+        {cars.length === 0 ? (
+          <div className="ui-state">
+            <p className="ui-state__title">Лотов пока нет</p>
+          </div>
+        ) : (
         <div className="catalog-grid">
           {cars.map((car) => {
             const totalRub =
@@ -1895,105 +2256,59 @@ export default function Home({ initialData = null }) {
                 <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
                 <div className="catalog-card__content">
                   <h3 className="catalog-card__title">{car.title}</h3>
-                  <p className="catalog-card__meta">
-                    <span className="catalog-card__model-line">
-                      {car.brand} · <strong>{car.model}</strong>
-                      {car.generation ? (
-                        <>
-                          {" "}
-                          · {car.generation}
-                        </>
-                      ) : null}
-                    </span>
-                    <span className="catalog-card__meta-rest">
-                      {" "}
-                      · {car.year}
-                      {car.mileage_km != null
-                        ? ` · ${Number(car.mileage_km).toLocaleString("ru-RU")} км`
-                        : ""}
-                      {car.engine_volume_cc ? ` · ${car.engine_volume_cc} см³` : ""}
-                      {car.horsepower != null && car.horsepower > 0
-                        ? ` · ${car.horsepower} л.с.`
-                        : ""}
-                      {car.fuel_type ? ` · ${car.fuel_type}` : ""}
-                    </span>
-                  </p>
                   <p className="catalog-card__price">
                     {totalRub != null ? (
                       <>
                         <strong className="catalog-price-rub">
                           {Math.round(totalRub).toLocaleString("ru-RU")} ₽
                         </strong>
-                        <span className="text-muted catalog-price-sub">
-                          в России (расчётная)
-                        </span>
+                        <span className="text-muted catalog-price-sub">под ключ</span>
                       </>
                     ) : (
                       <>
                         {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
-                        <span className="text-muted catalog-price-cny-note">
-                          {" "}
-                          CNY
-                        </span>
                       </>
                     )}
                   </p>
                 </div>
               </Link>
               <div className="catalog-card__actions">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    openRequestForModal(car);
-                  }}
-                >
-                  Получить расчёт
-                </button>
-                <Link
-                  href={listingCarHref(car)}
-                  className="btn btn-secondary btn-sm"
-                  onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
-                >
-                  Подробнее
-                </Link>
-                {profileReady && isStaffRole(me?.role) && (
-                  <div className="catalog-card__admin">
-                    <span className="catalog-card__admin-label">Администратор</span>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {isAdminRole(me?.role) ? (
-                        <>
-                          <Link href={`/staff/publish-telegram/${car.id}`} className="btn btn-secondary btn-sm">
-                            В Telegram
-                          </Link>
-                          <Link href={`/staff/publish-vk/${car.id}`} className="btn btn-secondary btn-sm">
-                            В VK
-                          </Link>
-                          <Link href={`/staff/publish-avito/${car.id}`} className="btn btn-secondary btn-sm">
-                            На Avito
-                          </Link>
-                        </>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="btn btn-danger btn-sm"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          deleteCar(car.id);
-                        }}
-                      >
-                        Удалить объявление
-                      </button>
-                    </div>
+                <div className="catalog-card__admin">
+                  <span className="catalog-card__admin-label">Администратор</span>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {isAdminRole(me?.role) ? (
+                      <>
+                        <Link href={`/staff/publish-telegram/${car.id}`} className="btn btn-secondary btn-sm">
+                          В Telegram
+                        </Link>
+                        <Link href={`/staff/publish-vk/${car.id}`} className="btn btn-secondary btn-sm">
+                          В VK
+                        </Link>
+                        <Link href={`/staff/publish-avito/${car.id}`} className="btn btn-secondary btn-sm">
+                          На Avito
+                        </Link>
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        deleteCar(car.id);
+                      }}
+                    >
+                      Удалить объявление
+                    </button>
                   </div>
-                )}
+                </div>
               </div>
             </article>
             );
           })}
         </div>
+        )}
       </section>
+      ) : null}
 
       <RequestConfirmModal
         open={!!requestModalCar}
@@ -2013,6 +2328,23 @@ export default function Home({ initialData = null }) {
         />
       )}
 
+          <Link href="/messages" className="home-d-consult home-only-desktop">
+            <span className="home-d-consult__icon" aria-hidden>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8A2.5 2.5 0 0 1 17.5 17H9l-4 3v-3.5A2.5 2.5 0 0 1 4 14.5v-8Z"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span className="home-d-consult__text">
+              <strong>Есть вопрос?</strong>
+              <span>Ответит менеджер в чате</span>
+            </span>
+          </Link>
+
         </div>
       </main>
     </div>
@@ -2021,44 +2353,53 @@ export default function Home({ initialData = null }) {
 }
 
 /**
- * SSR публичной части главной (марки + первая страница каталога), чтобы контент и ссылки
- * на марки попадали в HTML для поисковых ботов. Клиент далее работает как раньше.
+ * SSR витрины: марки + свежие лоты. Listing-query с `/` уводим на `/catalog`.
  */
 export async function getServerSideProps({ query }) {
+  if (homeHasListingQuery(query)) {
+    const params = new URLSearchParams();
+    for (const [key, raw] of Object.entries(query || {})) {
+      if (raw == null) continue;
+      const values = Array.isArray(raw) ? raw : [raw];
+      for (const v of values) {
+        if (String(v).trim() === "") continue;
+        params.append(key, String(v));
+      }
+    }
+    const qs = params.toString();
+    return {
+      redirect: {
+        destination: qs ? `/catalog?${qs}` : "/catalog",
+        permanent: false,
+      },
+    };
+  }
+
   const api = getServerApiBase();
-
-  const first = (v) => (Array.isArray(v) ? v[0] : v);
-  const rawQ = first(query.q);
-  const rawB = first(query.brand);
-  const rawM = first(query.model);
-  const rawS = first(query.sort);
-  const listSort =
-    rawS && HOME_VALID_SORTS.includes(String(rawS)) ? String(rawS) : "date_desc";
-
   const params = new URLSearchParams();
-  if (rawQ != null && String(rawQ).trim() !== "") params.set("q", String(rawQ).trim());
-  if (rawB != null) {
-    const n = Number(rawB);
-    if (!Number.isNaN(n)) params.set("brand_id", String(n));
-  }
-  if (rawM != null) {
-    const n = Number(rawM);
-    if (!Number.isNaN(n)) params.set("model_id", String(n));
-  }
-  appendFiltersToSearchParams(params, parseFiltersFromQuery(query));
-  if (listSort !== "date_desc") params.set("sort", listSort);
   params.set("photo_limit", "8");
-  params.set("limit", "100");
+  params.set("limit", String(HOME_FRESH_LOTS_LIMIT));
+  params.set("sort", "date_desc");
+
+  const popularParams = new URLSearchParams();
+  popularParams.set("is_popular", "true");
+  popularParams.set("photo_limit", "8");
+  popularParams.set("limit", String(HOME_POPULAR_CARS_LIMIT));
+  popularParams.set("sort", "date_desc");
 
   let brands = [];
   let cars = [];
+  let popularCars = [];
   let total = 0;
   let cbr = null;
   let cbrError = null;
+  let tree = [];
   try {
-    const [bRes, cRes] = await Promise.all([
+    const [bRes, cRes, pRes, tRes] = await Promise.all([
       fetch(`${api}/catalog/brands`, { headers: { Accept: "application/json" } }),
       fetch(`${api}/cars?${params.toString()}`, { headers: { Accept: "application/json" } }),
+      fetch(`${api}/cars?${popularParams.toString()}`, { headers: { Accept: "application/json" } }),
+      fetch(`${api}/catalog/tree`, { headers: { Accept: "application/json" } }),
     ]);
     if (bRes.ok) brands = await bRes.json();
     if (cRes.ok) {
@@ -2068,11 +2409,30 @@ export async function getServerSideProps({ query }) {
       cbr = d.cbr || null;
       cbrError = d.cbr_error || null;
     }
+    if (pRes.ok) {
+      const p = await pRes.json();
+      popularCars = p.items || [];
+    }
+    if (tRes.ok) {
+      const t = await tRes.json();
+      tree = Array.isArray(t) ? t : [];
+    }
   } catch {
-    /* API недоступен на сервере — отдаём что есть, клиент догрузит */
+    /* API недоступен на сервере — клиент догрузит */
   }
 
   return {
-    props: { initialData: { brands, cars, total, cbr, cbrError, listSort } },
+    props: {
+      initialData: {
+        brands,
+        cars,
+        popularCars,
+        total,
+        cbr,
+        cbrError,
+        tree,
+        listSort: "date_desc",
+      },
+    },
   };
 }

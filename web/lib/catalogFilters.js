@@ -4,12 +4,32 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 export const CATALOG_FILTER_QUERY_KEYS = [
   "year_from",
+  "year_to",
   "hp_to",
   "mileage_to",
-  "trans",
+  "fuel",
   "rub_from",
   "rub_to",
 ];
+
+/** Query на `/`, которые относятся к листингу — редиректим на `/catalog`. */
+export const HOME_LISTING_REDIRECT_QUERY_KEYS = [
+  "q",
+  "brand",
+  "model",
+  "sort",
+  ...CATALOG_FILTER_QUERY_KEYS,
+];
+
+export function homeHasListingQuery(query) {
+  if (!query || typeof query !== "object") return false;
+  return HOME_LISTING_REDIRECT_QUERY_KEYS.some((key) => {
+    const raw = query[key];
+    if (raw == null) return false;
+    const v = Array.isArray(raw) ? raw[0] : raw;
+    return String(v).trim() !== "";
+  });
+}
 
 export const YEAR_FROM_OPTIONS = Array.from({ length: CURRENT_YEAR - 1999 }, (_, i) => {
   const y = CURRENT_YEAR + 1 - i;
@@ -30,19 +50,10 @@ export const MILEAGE_TO_OPTIONS = [
   label: `до ${km.toLocaleString("ru-RU")} км`,
 }));
 
-export const TRANSMISSION_GROUPS = [
-  {
-    label: "Автомат",
-    items: [
-      { value: "at", label: "Автоматическая", suffix: "AT" },
-      { value: "amt", label: "Робот", suffix: "AMT" },
-      { value: "cvt", label: "Вариатор", suffix: "CVT" },
-    ],
-  },
-  {
-    label: null,
-    items: [{ value: "mt", label: "Механика", suffix: "MT" }],
-  },
+export const FUEL_TYPE_OPTIONS = [
+  { value: "gasoline", label: "Бензин" },
+  { value: "hybrid", label: "Гибрид" },
+  { value: "electric", label: "Электро" },
 ];
 
 export const RUB_TO_PRESETS = [
@@ -56,10 +67,12 @@ export const RUB_TO_PRESETS = [
 export const EMPTY_CATALOG_FILTERS = {
   brandId: null,
   modelId: null,
+  generationId: null,
   yearFrom: null,
+  yearTo: null,
   hpTo: null,
   mileageTo: null,
-  transmission: null,
+  fuelType: null,
   rubFrom: null,
   rubTo: null,
 };
@@ -88,7 +101,7 @@ function parsePositiveFloat(raw) {
 }
 
 /** Разбор query Next.js / URL в объект фильтров. */
-export function parseFiltersFromQuery(query, { brandId = null, modelId = null } = {}) {
+export function parseFiltersFromQuery(query, { brandId = null, modelId = null, generationId = null } = {}) {
   const rawB = firstQueryValue(query?.brand);
   const rawM = firstQueryValue(query?.model);
   let bid = brandId;
@@ -104,10 +117,12 @@ export function parseFiltersFromQuery(query, { brandId = null, modelId = null } 
   return {
     brandId: bid,
     modelId: mid,
+    generationId,
     yearFrom: parsePositiveInt(query?.year_from),
+    yearTo: parsePositiveInt(query?.year_to),
     hpTo: parsePositiveInt(query?.hp_to),
     mileageTo: parsePositiveInt(query?.mileage_to),
-    transmission: firstQueryValue(query?.trans),
+    fuelType: firstQueryValue(query?.fuel),
     rubFrom: parsePositiveFloat(query?.rub_from),
     rubTo: parsePositiveFloat(query?.rub_to),
   };
@@ -118,10 +133,12 @@ export function filtersAreEqual(a, b) {
   return (
     a.brandId === b.brandId &&
     a.modelId === b.modelId &&
+    a.generationId === b.generationId &&
     a.yearFrom === b.yearFrom &&
+    a.yearTo === b.yearTo &&
     a.hpTo === b.hpTo &&
     a.mileageTo === b.mileageTo &&
-    a.transmission === b.transmission &&
+    a.fuelType === b.fuelType &&
     a.rubFrom === b.rubFrom &&
     a.rubTo === b.rubTo
   );
@@ -131,9 +148,10 @@ export function hasActiveCatalogFilters(filters) {
   if (!filters) return false;
   return Boolean(
     filters.yearFrom ||
+      filters.yearTo ||
       filters.hpTo ||
       filters.mileageTo ||
-      filters.transmission ||
+      filters.fuelType ||
       filters.rubFrom ||
       filters.rubTo
   );
@@ -142,7 +160,8 @@ export function hasActiveCatalogFilters(filters) {
 /** Ключ для cache-bust fetch каталога. */
 export function catalogFilterKeyFromQuery(query) {
   const f = parseFiltersFromQuery(query);
-  return [f.yearFrom, f.hpTo, f.mileageTo, f.transmission, f.rubFrom, f.rubTo]
+  const rawQ = firstQueryValue(query?.q);
+  return [f.brandId, f.modelId, f.generationId, f.yearFrom, f.yearTo, f.hpTo, f.mileageTo, f.fuelType, f.rubFrom, f.rubTo, rawQ || ""]
     .map((x) => (x == null ? "" : String(x)))
     .join("|");
 }
@@ -150,10 +169,12 @@ export function catalogFilterKeyFromQuery(query) {
 /** Добавить фильтры в URLSearchParams для GET /cars. */
 export function appendFiltersToSearchParams(params, filters) {
   if (!params || !filters) return params;
+  if (filters.generationId) params.set("generation_id", String(filters.generationId));
   if (filters.yearFrom) params.set("year_from", String(filters.yearFrom));
+  if (filters.yearTo) params.set("year_to", String(filters.yearTo));
   if (filters.hpTo) params.set("hp_to", String(filters.hpTo));
   if (filters.mileageTo) params.set("mileage_to", String(filters.mileageTo));
-  if (filters.transmission) params.set("transmission", String(filters.transmission));
+  if (filters.fuelType) params.set("fuel_type", String(filters.fuelType));
   if (filters.rubFrom) params.set("rub_from", String(filters.rubFrom));
   if (filters.rubTo) params.set("rub_to", String(filters.rubTo));
   return params;
@@ -167,24 +188,17 @@ export function catalogFiltersToQuery(filters, { omitBrandModel = false } = {}) 
     if (filters.modelId) out.model = String(filters.modelId);
   }
   if (filters.yearFrom) out.year_from = String(filters.yearFrom);
+  if (filters.yearTo) out.year_to = String(filters.yearTo);
   if (filters.hpTo) out.hp_to = String(filters.hpTo);
   if (filters.mileageTo) out.mileage_to = String(filters.mileageTo);
-  if (filters.transmission) out.trans = String(filters.transmission);
+  if (filters.fuelType) out.fuel = String(filters.fuelType);
   if (filters.rubFrom) out.rub_from = String(Math.round(filters.rubFrom));
   if (filters.rubTo) out.rub_to = String(Math.round(filters.rubTo));
   return out;
 }
 
-export function transmissionLabel(value) {
-  if (!value) return null;
-  for (const group of TRANSMISSION_GROUPS) {
-    for (const item of group.items) {
-      if (item.value === value) {
-        return item.suffix ? `${item.label} · ${item.suffix}` : item.label;
-      }
-    }
-  }
-  return value;
+export function fuelTypeLabel(value) {
+  return FUEL_TYPE_OPTIONS.find((o) => o.value === value)?.label || value || null;
 }
 
 export function formatRubShort(n) {
@@ -201,6 +215,8 @@ export function chipLabelForFilter(key, filters) {
   if (!filters) return null;
   switch (key) {
     case "year":
+      if (filters.yearFrom && filters.yearTo) return `${filters.yearFrom}–${filters.yearTo}`;
+      if (filters.yearTo) return `до ${filters.yearTo}`;
       return filters.yearFrom ? `от ${filters.yearFrom}` : null;
     case "hp":
       return filters.hpTo ? `до ${Number(filters.hpTo).toLocaleString("ru-RU")} л.с.` : null;
@@ -208,8 +224,8 @@ export function chipLabelForFilter(key, filters) {
       return filters.mileageTo
         ? `до ${Number(filters.mileageTo).toLocaleString("ru-RU")} км`
         : null;
-    case "transmission":
-      return transmissionLabel(filters.transmission);
+    case "fuelType":
+      return fuelTypeLabel(filters.fuelType);
     case "price": {
       if (filters.rubFrom && filters.rubTo) {
         return `${formatRubShort(filters.rubFrom)} – ${formatRubShort(filters.rubTo)}`;

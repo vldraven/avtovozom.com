@@ -6,6 +6,7 @@ import AdminParserPanel from "../components/AdminParserPanel";
 import AdminRequestsWidget from "../components/AdminRequestsWidget";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
+import PinSetupPanel from "../components/PinSetupPanel";
 import {
   canUseWebAuthn,
   clearToken,
@@ -20,6 +21,7 @@ import {
 import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
+import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -34,6 +36,14 @@ function formatRequestDate(iso) {
 function requestStatusLabel(status) {
   if (status === "open") return "Принята — ждём расчёт";
   if (status === "in_progress") return "В работе";
+  if (status === "closed" || status === "done") return "Закрыта";
+  return status;
+}
+
+function offerStatusLabel(status) {
+  if (status === "pending") return "ожидает";
+  if (status === "selected") return "выбрано";
+  if (status === "rejected") return "отклонено";
   return status;
 }
 
@@ -57,10 +67,17 @@ export default function ProfilePage() {
   const [removingCarId, setRemovingCarId] = useState(null);
   const [expandedRequestId, setExpandedRequestId] = useState(null);
   const [platformChatId, setPlatformChatId] = useState(null);
+  const [pinEnabled, setPinEnabled] = useState(false);
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [offerChatBusyId, setOfferChatBusyId] = useState(null);
 
   async function reloadParserJobsWithToken(t) {
     const j = await fetch(`${API_URL}/admin/parser/jobs`, { headers: { Authorization: `Bearer ${t}` } });
     if (j.ok) setAdminJobs(await j.json());
+  }
+
+  async function refreshPinState() {
+    setPinEnabled(await hasPinLock());
   }
 
   async function loadMyRequestsOnly(t) {
@@ -133,6 +150,7 @@ export default function ProfilePage() {
     setCompanyName(data.company_name || "");
     setPhone(data.phone || "");
     await loadRoleData(access, data.role);
+    await refreshPinState();
   }
 
   const loadMeRef = useRef(loadMe);
@@ -173,6 +191,16 @@ export default function ProfilePage() {
   useEffect(() => {
     setSupportsPasskey(canUseWebAuthn());
   }, []);
+
+  useEffect(() => {
+    if (!me || typeof window === "undefined") return;
+    const hash = window.location.hash?.replace(/^#/, "");
+    if (!hash) return;
+    const el = document.getElementById(hash);
+    if (el) {
+      requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+  }, [me]);
 
   async function removeOwnListing(carId) {
     if (
@@ -273,144 +301,143 @@ export default function ProfilePage() {
     }
   }
 
+  async function openOfferChat(offer) {
+    if (offer?.chat_id != null) {
+      router.push(`/messages?chat=${encodeURIComponent(String(offer.chat_id))}`);
+      return;
+    }
+    if (!token || offer?.id == null) return;
+    setOfferChatBusyId(offer.id);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/offers/${offer.id}/open-chat`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof body.detail === "string" ? body.detail : "Не удалось открыть чат по предложению.");
+        return;
+      }
+      if (body.chat_id != null) {
+        router.push(`/messages?chat=${encodeURIComponent(String(body.chat_id))}`);
+      }
+    } finally {
+      setOfferChatBusyId(null);
+    }
+  }
+
+  const showClientRequests = me?.role === "user";
+  const unreadOffersTotal = requests.reduce(
+    (sum, r) => sum + (Number(r.unread_offers_count) || 0),
+    0
+  );
+
   return (
     <div className="layout">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
-          </Link>
-          <div className="auth-bar">
-            <HeaderMessagesLink token={token} />
-          </div>
-        </div>
-      </header>
+      <SiteHeader tagline="Профиль">
+          <HeaderMessagesLink token={token} />
+        </SiteHeader>
       <main className="site-main">
-        <div className="container">
-          <h1 className="section-title">Профиль</h1>
+        <div className="container page-narrow page-narrow--profile">
+          <header className="profile-hub-hero profile-hub-hero--ink">
+            <div className="profile-hub-hero__row">
+              <div className="profile-hub-hero__avatar" aria-hidden>
+                {(me?.full_name || me?.email || "A")
+                  .trim()
+                  .split(/\s+/)
+                  .slice(0, 2)
+                  .map((p) => p[0]?.toUpperCase() || "")
+                  .join("") || "A"}
+              </div>
+              <div className="profile-hub-hero__text">
+                <p className="profile-hub-hero__eyebrow">Аккаунт</p>
+                <h1 className="profile-hub-hero__title">
+                  {me?.full_name || me?.email || "Профиль"}
+                </h1>
+                {me ? (
+                  <p className="profile-hub-hero__lead">
+                    {me.email}
+                    {me.role && me.role !== "user" ? ` · ${me.role}` : ""}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </header>
+
           {message && <div className="alert alert--success">{message}</div>}
           {error && <div className="alert alert--danger">{error}</div>}
           {!me ? (
-            <p className="muted">Загрузка...</p>
+            <p className="ui-state ui-state--loading muted">Загрузка...</p>
           ) : (
             <>
-              <section className="panel">
-                <h2 className="section-title panel-heading-sm">Данные пользователя</h2>
-                <p className="muted">
-                  Email: <b>{me.email}</b> · Роль: <b>{me.role}</b>
-                </p>
-                {me.must_change_password && (
-                  <div className="alert alert--warn">Вам нужно сменить временный пароль.</div>
-                )}
-                <div className="profile-field-grid">
-                  <input className="input" placeholder="Имя (ФИО)" value={name} onChange={(e) => setName(e.target.value)} />
-                  <label className="muted form-label">
-                    Имя в чатах
-                    <input
-                      className="input"
-                      placeholder="Как вас видят клиенты и дилеры"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                    />
-                  </label>
-                  {me.role === "dealer" ? (
-                    <label className="muted form-label">
-                      Название компании
-                      <input
-                        className="input"
-                        placeholder="Для публичного профиля и чатов"
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                      />
-                    </label>
-                  ) : null}
-                  <input className="input" placeholder="Телефон" value={phone} onChange={(e) => setPhone(e.target.value)} />
-                  <button type="button" className="btn btn-primary" onClick={saveProfile}>
-                    Сохранить профиль
-                  </button>
-                  <button type="button" className="btn btn-ghost" onClick={logout}>
-                    Выйти
-                  </button>
+              <div className="profile-hub-stats" aria-label="Сводка">
+                <div className="profile-hub-stat">
+                  <span className="profile-hub-stat__value">{platformChatId ? "1" : "0"}</span>
+                  <span className="profile-hub-stat__label">Сделка</span>
                 </div>
-              </section>
+                <Link href="/favorites" className="profile-hub-stat">
+                  <span className="profile-hub-stat__value">★</span>
+                  <span className="profile-hub-stat__label">Избранное</span>
+                </Link>
+                <a href="#requests" className="profile-hub-stat">
+                  <span className="profile-hub-stat__value">{requests.length}</span>
+                  <span className="profile-hub-stat__label">Заявки</span>
+                </a>
+              </div>
 
-              {isStaffRole(me.role) && <AdminRequestsWidget token={token} />}
+              <nav className="profile-hub-nav profile-hub-nav--list" aria-label="Разделы профиля">
+                {showClientRequests ? (
+                  <a className="profile-hub-nav__item" href="#requests">
+                    <span>Мои заявки</span>
+                    {unreadOffersTotal > 0 ? (
+                      <span className="profile-hub-nav__badge">{unreadOffersTotal}</span>
+                    ) : (
+                      <span className="profile-hub-nav__chev" aria-hidden>
+                        ›
+                      </span>
+                    )}
+                  </a>
+                ) : null}
+                <Link className="profile-hub-nav__item" href="/favorites">
+                  <span>Избранное</span>
+                  <span className="profile-hub-nav__chev" aria-hidden>
+                    ›
+                  </span>
+                </Link>
+                <Link className="profile-hub-nav__item" href="/messages">
+                  <span>Чаты</span>
+                  <span className="profile-hub-nav__chev" aria-hidden>
+                    ›
+                  </span>
+                </Link>
+                <a className="profile-hub-nav__item" href="#profile-data">
+                  <span>Мои данные</span>
+                  <span className="profile-hub-nav__chev" aria-hidden>
+                    ›
+                  </span>
+                </a>
+                <a className="profile-hub-nav__item" href="#security">
+                  <span>Безопасность</span>
+                  <span className="profile-hub-nav__chev" aria-hidden>
+                    ›
+                  </span>
+                </a>
+                {isStaffRole(me.role) || canCreateListings(me.role) ? (
+                  <a className="profile-hub-nav__item" href="#staff-tools">
+                    <span>Рабочие инструменты</span>
+                    <span className="profile-hub-nav__chev" aria-hidden>
+                      ›
+                    </span>
+                  </a>
+                ) : null}
+              </nav>
 
-              {isAdminRole(me.role) && (
-                <section className="panel" id="admin-settings">
-                  <h2 className="section-title panel-heading-sm">Управление учётными записями</h2>
+              {showClientRequests ? (
+                <section className="panel" id="requests">
+                  <h2 className="section-title panel-heading-sm">Мои заявки</h2>
                   <p className="muted section-title--flush-top">
-                    Список пользователей, создание, редактирование и сброс пароля.
-                  </p>
-                  <Link href="/staff/admin-users" className="btn btn-primary btn-inline">
-                    Открыть управление УЗ
-                  </Link>
-                  <div style={{ marginTop: "0.65rem", display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-                    <Link href="/staff/admin-brands" className="btn btn-secondary btn-inline">
-                      Справочник марок и логотипы
-                    </Link>
-                    <Link href="/staff/admin-customs-calculator" className="btn btn-secondary btn-inline">
-                      Редактировать коэффициенты
-                    </Link>
-                    <Link href="/staff/admin-faq" className="btn btn-secondary btn-inline">
-                      Редактировать FAQ
-                    </Link>
-                    <Link href="/staff/import-plan" className="btn btn-secondary btn-inline">
-                      План импорта
-                    </Link>
-                    <Link href="/staff/import-candidates" className="btn btn-secondary btn-inline">
-                      Кандидаты агента
-                    </Link>
-                  </div>
-                </section>
-              )}
-
-              <section className="panel">
-                <h2 className="section-title panel-heading-sm">Смена пароля</h2>
-                <div className="profile-field-grid">
-                  <input
-                    className="input"
-                    type="password"
-                    placeholder="Старый пароль"
-                    value={oldPassword}
-                    onChange={(e) => setOldPassword(e.target.value)}
-                  />
-                  <input
-                    className="input"
-                    type="password"
-                    placeholder="Новый пароль (минимум 8 символов)"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                  />
-                  <button type="button" className="btn btn-secondary" onClick={changePassword}>
-                    Сменить пароль
-                  </button>
-                </div>
-              </section>
-
-              {supportsPasskey ? (
-                <section className="panel">
-                  <h2 className="section-title panel-heading-sm">Быстрый вход</h2>
-                  <p className="muted section-title--flush-top">
-                    Включите вход через Face ID, Touch ID, отпечаток или системный PIN устройства.
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={enablePasskey}
-                    disabled={passkeyBusy}
-                  >
-                    {passkeyBusy ? "Настраиваем..." : "Включить биометрию"}
-                  </button>
-                </section>
-              ) : null}
-
-              {me.role === "user" && (
-                <section className="panel">
-                  <h2 className="section-title panel-heading-sm">Мои заявки на расчёт</h2>
-                  <p className="muted section-title--flush-top">
-                    Список заявок и переписка с Avtovozom — в чате. Разверните заявку, чтобы открыть объявление и
-                    комментарий.
+                    Статус сделки, предложения дилеров и чат с Avtovozom — здесь.
                   </p>
                   {platformChatId ? (
                     <button
@@ -422,11 +449,26 @@ export default function ProfilePage() {
                     </button>
                   ) : null}
                   {requests.length === 0 ? (
-                    <p className="muted">Заявок пока нет — выберите авто в каталоге и нажмите «Заказать расчёт».</p>
+                    <div className="profile-empty">
+                      <p className="profile-empty__title">Заявок пока нет</p>
+                      <p className="muted">
+                        Выберите авто в каталоге или оставьте заявку на подбор — расчёт появится в этом разделе.
+                      </p>
+                      <div className="profile-empty__actions">
+                        <Link href="/catalog" className="btn btn-primary btn-sm">
+                          В каталог
+                        </Link>
+                        <Link href="/request-quote" className="btn btn-secondary btn-sm">
+                          Заявка на подбор
+                        </Link>
+                      </div>
+                    </div>
                   ) : (
                     <div className="profile-request-list">
                       {requests.map((r) => {
                         const expanded = expandedRequestId === r.id;
+                        const unread = Number(r.unread_offers_count) || 0;
+                        const offers = Array.isArray(r.offers) ? r.offers : [];
                         return (
                           <article key={r.id} className="profile-request-card">
                             <div
@@ -458,6 +500,21 @@ export default function ProfilePage() {
                                     {r.car_brand} {r.car_model}
                                     {r.car_year != null ? ` · ${r.car_year}` : ""}
                                   </span>
+                                  {unread > 0 ? (
+                                    <span className="admin-requests-offers-pill">
+                                      +{unread}{" "}
+                                      {unread === 1 ? "предложение" : unread < 5 ? "предложения" : "предложений"}
+                                    </span>
+                                  ) : offers.length > 0 ? (
+                                    <span className="admin-requests-offers-pill admin-requests-offers-pill--empty">
+                                      {offers.length}{" "}
+                                      {offers.length === 1
+                                        ? "предложение"
+                                        : offers.length < 5
+                                          ? "предложения"
+                                          : "предложений"}
+                                    </span>
+                                  ) : null}
                                 </div>
                                 <div className="muted profile-request-card__meta-tight">{r.car_title}</div>
                                 <div className="muted profile-request-card__meta-loose">
@@ -490,6 +547,38 @@ export default function ProfilePage() {
                                     <p className="profile-comment-block__text">{r.comment}</p>
                                   </div>
                                 ) : null}
+                                <div className="profile-offers-block">
+                                  <div className="profile-offers-heading">Предложения по сделке</div>
+                                  {!offers.length ? (
+                                    <p className="muted profile-offers-empty">
+                                      Пока нет предложений — как только появится расчёт, он отобразится здесь.
+                                    </p>
+                                  ) : (
+                                    <ul className="profile-offers-list">
+                                      {offers.map((o) => (
+                                        <li key={o.id} className="profile-offer-card">
+                                          <div className="profile-offer-card__title">
+                                            {Math.round(Number(o.total_price)).toLocaleString("ru-RU")}{" "}
+                                            {o.currency} · срок ~ {o.eta_days} дн. · {offerStatusLabel(o.status)}
+                                          </div>
+                                          {o.terms_text ? (
+                                            <p className="profile-offer-card__terms">{o.terms_text}</p>
+                                          ) : null}
+                                          <div className="profile-offer-card__actions">
+                                            <button
+                                              type="button"
+                                              className="btn btn-secondary btn-sm"
+                                              disabled={offerChatBusyId === o.id}
+                                              onClick={() => openOfferChat(o)}
+                                            >
+                                              {offerChatBusyId === o.id ? "Открываем…" : "Чат по предложению"}
+                                            </button>
+                                          </div>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
                               </div>
                             ) : null}
                           </article>
@@ -497,6 +586,214 @@ export default function ProfilePage() {
                       })}
                     </div>
                   )}
+                </section>
+              ) : null}
+
+              <section className="panel" id="profile-data">
+                <h2 className="section-title panel-heading-sm">Мои данные</h2>
+                <p className="muted">
+                  Email: <b>{me.email}</b>
+                  {me.role !== "user" ? (
+                    <>
+                      {" "}
+                      · Роль: <b>{me.role}</b>
+                    </>
+                  ) : null}
+                </p>
+                {me.must_change_password && (
+                  <div className="alert alert--warn">Вам нужно сменить временный пароль.</div>
+                )}
+                <div className="profile-field-grid">
+                  <label className="muted form-label">
+                    Имя (ФИО)
+                    <input
+                      className="input"
+                      placeholder="Как к вам обращаться"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </label>
+                  <label className="muted form-label">
+                    Имя в чатах
+                    <input
+                      className="input"
+                      placeholder="Как вас видят клиенты и дилеры"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                    />
+                  </label>
+                  {me.role === "dealer" ? (
+                    <label className="muted form-label">
+                      Название компании
+                      <input
+                        className="input"
+                        placeholder="Для публичного профиля и чатов"
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                      />
+                    </label>
+                  ) : null}
+                  <label className="muted form-label">
+                    Телефон
+                    <input
+                      className="input"
+                      placeholder="+7 …"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </label>
+                  <button type="button" className="btn btn-primary" onClick={saveProfile}>
+                    Сохранить профиль
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={logout}>
+                    Выйти
+                  </button>
+                </div>
+              </section>
+
+              <section className="panel" id="security">
+                <h2 className="section-title panel-heading-sm">Безопасность</h2>
+                <p className="muted section-title--flush-top">
+                  Пароль, PIN приложения и биометрия на этом устройстве.
+                </p>
+
+                <div className="profile-security-block">
+                  <h3 className="profile-security-block__title">Пароль</h3>
+                  <div className="profile-field-grid">
+                    <input
+                      className="input"
+                      type="password"
+                      placeholder="Старый пароль"
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      autoComplete="current-password"
+                    />
+                    <input
+                      className="input"
+                      type="password"
+                      placeholder="Новый пароль (минимум 8 символов)"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                    <button type="button" className="btn btn-secondary" onClick={changePassword}>
+                      Сменить пароль
+                    </button>
+                  </div>
+                </div>
+
+                <div className="profile-security-block">
+                  <h3 className="profile-security-block__title">PIN приложения</h3>
+                  {pinEnabled ? (
+                    <>
+                      <p className="muted">PIN включён на этом устройстве.</p>
+                      <div className="profile-security-block__actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            lockApp();
+                            window.dispatchEvent(new Event("avt-app-lock-changed"));
+                          }}
+                        >
+                          Заблокировать сейчас
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setShowPinSetup((v) => !v)}
+                        >
+                          {showPinSetup ? "Скрыть смену PIN" : "Сменить PIN"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="muted">PIN ещё не настроен — можно включить защиту приложения.</p>
+                      {!showPinSetup ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setShowPinSetup(true)}
+                        >
+                          Настроить PIN
+                        </button>
+                      ) : null}
+                    </>
+                  )}
+                  {showPinSetup ? (
+                    <div className="profile-pin-setup">
+                      <PinSetupPanel
+                        hideStepLabel
+                        onComplete={async () => {
+                          setShowPinSetup(false);
+                          await refreshPinState();
+                          setMessage("PIN сохранён.");
+                        }}
+                        onSkip={() => setShowPinSetup(false)}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+
+                {supportsPasskey ? (
+                  <div className="profile-security-block">
+                    <h3 className="profile-security-block__title">Биометрия</h3>
+                    <p className="muted">
+                      Face ID, Touch ID, отпечаток или системный PIN устройства для быстрого входа.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={enablePasskey}
+                      disabled={passkeyBusy}
+                    >
+                      {passkeyBusy ? "Настраиваем..." : "Включить биометрию"}
+                    </button>
+                  </div>
+                ) : null}
+              </section>
+
+              {(isStaffRole(me.role) || canCreateListings(me.role) || me.role === "dealer") && (
+                <div id="staff-tools" className="profile-staff-anchor">
+                  <h2 className="profile-staff-anchor__title">Рабочие инструменты</h2>
+                  <p className="muted profile-staff-anchor__lead">
+                    Функции вашей роли — всегда доступны под меню аккаунта.
+                  </p>
+                </div>
+              )}
+
+              {isStaffRole(me.role) && <AdminRequestsWidget token={token} />}
+
+              {isAdminRole(me.role) && (
+                <section className="panel" id="admin-settings">
+                  <h2 className="section-title panel-heading-sm">Управление учётными записями</h2>
+                  <p className="muted section-title--flush-top">
+                    Список пользователей, создание, редактирование и сброс пароля.
+                  </p>
+                  <Link href="/staff/admin-users" className="btn btn-primary btn-inline">
+                    Открыть управление УЗ
+                  </Link>
+                  <div className="profile-admin-links">
+                    <Link href="/staff/admin-brands" className="btn btn-secondary btn-inline">
+                      Справочник марок и логотипы
+                    </Link>
+                    <Link href="/staff/admin-customs-calculator" className="btn btn-secondary btn-inline">
+                      Редактировать коэффициенты
+                    </Link>
+                    <Link href="/staff/admin-faq" className="btn btn-secondary btn-inline">
+                      Редактировать FAQ
+                    </Link>
+                    <Link href="/staff/import-plan" className="btn btn-secondary btn-inline">
+                      План импорта
+                    </Link>
+                    <Link href="/staff/search-profiles" className="btn btn-secondary btn-inline">
+                      URL отбора (che168)
+                    </Link>
+                    <Link href="/staff/import-candidates" className="btn btn-secondary btn-inline">
+                      Кандидаты агента
+                    </Link>
+                  </div>
                 </section>
               )}
 
@@ -561,7 +858,7 @@ export default function ProfilePage() {
                   <p className="muted section-title--flush-top">
                     Подготовка ответа клиенту (сумма, срок, условия) — на отдельной рабочей странице.
                   </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <div className="profile-admin-links">
                     <Link href="/staff/open-requests" className="btn btn-primary btn-inline">
                       Открыть рабочие заявки
                     </Link>
