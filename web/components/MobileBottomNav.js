@@ -114,27 +114,46 @@ export default function MobileBottomNav() {
     const root = document.documentElement;
     const vv = window.visualViewport;
 
+    const isEditingField = () => {
+      const ae = document.activeElement;
+      return Boolean(
+        ae &&
+          (ae.tagName === "INPUT" ||
+            ae.tagName === "TEXTAREA" ||
+            ae.tagName === "SELECT" ||
+            ae.isContentEditable)
+      );
+    };
+
+    /**
+     * Держим dock у нижнего края visual viewport.
+     * На iOS при фокусе в поле страница сдвигается (offsetTop > 0); если учесть
+     * только innerHeight - height, bottom получается завышенным и меню «висит»
+     * посреди экрана (как на publish-telegram с открытой клавиатурой).
+     */
     const updateViewportOffset = () => {
       const visual = window.visualViewport;
-      const ae = document.activeElement;
-      const editing =
-        ae &&
-        (ae.tagName === "INPUT" ||
-          ae.tagName === "TEXTAREA" ||
-          ae.tagName === "SELECT" ||
-          ae.isContentEditable);
-      if (!visual || !editing) {
+      if (!visual || !isEditingField()) {
         root.style.setProperty("--mobile-viewport-offset", "0px");
         return;
       }
-      const keyboardHeight = Math.max(0, Math.round(window.innerHeight - visual.height));
-      root.style.setProperty("--mobile-viewport-offset", `${keyboardHeight}px`);
+      const bottomInset = Math.max(
+        0,
+        Math.round(window.innerHeight - visual.height - visual.offsetTop)
+      );
+      // Мелкий шум visualViewport не поднимаем — иначе dock дёргается.
+      root.style.setProperty(
+        "--mobile-viewport-offset",
+        `${bottomInset < 8 ? 0 : bottomInset}px`
+      );
     };
 
     updateViewportOffset();
     window.addEventListener("resize", updateViewportOffset);
     window.addEventListener("orientationchange", updateViewportOffset);
     vv?.addEventListener("resize", updateViewportOffset);
+    // offsetTop меняется, когда iOS подскролливает поле ввода к клавиатуре
+    vv?.addEventListener("scroll", updateViewportOffset);
     document.addEventListener("focusin", updateViewportOffset);
     document.addEventListener("focusout", updateViewportOffset);
 
@@ -142,6 +161,7 @@ export default function MobileBottomNav() {
       window.removeEventListener("resize", updateViewportOffset);
       window.removeEventListener("orientationchange", updateViewportOffset);
       vv?.removeEventListener("resize", updateViewportOffset);
+      vv?.removeEventListener("scroll", updateViewportOffset);
       document.removeEventListener("focusin", updateViewportOffset);
       document.removeEventListener("focusout", updateViewportOffset);
       root.style.removeProperty("--mobile-viewport-offset");
