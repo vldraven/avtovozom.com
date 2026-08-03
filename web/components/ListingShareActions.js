@@ -99,9 +99,9 @@ function useIsMobileShare() {
 }
 
 /**
- * @param {{ car: object, totalRubRf?: number | null }} props
+ * @param {{ car: object, totalRubRf?: number | null, variant?: "chip" | "labeled" }} props
  */
-export default function ListingShareActions({ car, totalRubRf = null }) {
+export default function ListingShareActions({ car, totalRubRf = null, variant = "chip" }) {
   const rootRef = useRef(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
@@ -165,17 +165,20 @@ export default function ListingShareActions({ car, totalRubRf = null }) {
     };
   }, [menuOpen, isMobile]);
 
+  const isLabeled = variant === "labeled";
+
   return (
-    <div className="listing-share" ref={rootRef}>
+    <div className={`listing-share${isLabeled ? " listing-share--labeled" : ""}`} ref={rootRef}>
       <button
         type="button"
-        className="listing-action-btn listing-share__trigger"
+        className={`listing-action-btn listing-share__trigger${isLabeled ? " listing-action-btn--labeled" : ""}`}
         aria-label="Поделиться"
         aria-expanded={!isMobile && menuOpen}
         aria-haspopup={!isMobile ? "menu" : undefined}
         onClick={handleTriggerClick}
       >
         <IconShare />
+        {isLabeled ? <span className="listing-action-btn__text">Поделиться</span> : null}
       </button>
 
       {!isMobile && menuOpen ? (

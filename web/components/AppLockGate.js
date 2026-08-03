@@ -22,7 +22,7 @@ function isPinGatePath(pathname) {
   const path = pathname || "";
   return (
     path === "/auth" ||
-    /^(?:\/profile|\/messages|\/favorites)(?:\/|$)/.test(path) ||
+    /^(?:\/profile|\/favorites)(?:\/|$)/.test(path) ||
     path.startsWith("/staff/")
   );
 }
@@ -151,9 +151,11 @@ export default function AppLockGate({ children }) {
     <div className="app-lock">
       <div className="app-lock__card">
         <div className="pin-panel__hero">
-          <div className="pin-panel__app-icon">A</div>
-          <h1>Введите ПИН-код</h1>
-          <p>Разблокируйте avtovozom на этом устройстве.</p>
+          <div className="pin-panel__app-icon" aria-hidden>
+            A
+          </div>
+          <h1>Введите PIN-код</h1>
+          <p>Быстрый вход в avtovozom на этом устройстве.</p>
         </div>
         {error ? <div className="alert alert--danger">{error}</div> : null}
         <form className="app-lock__desktop-form" onSubmit={unlockWithPinSubmit}>
@@ -164,7 +166,7 @@ export default function AppLockGate({ children }) {
             autoFocus
             type="password"
             maxLength={6}
-            placeholder="ПИН-код"
+            placeholder="PIN-код"
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
           />

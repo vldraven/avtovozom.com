@@ -22,7 +22,7 @@ function IconHeart({ filled }) {
 }
 
 /**
- * @param {{ carId: number, car?: object | null, variant?: "chip" | "overlay" }} props
+ * @param {{ carId: number, car?: object | null, variant?: "chip" | "overlay" | "labeled" }} props
  */
 export default function ListingFavoriteButton({ carId, car = null, variant = "chip" }) {
   const router = useRouter();
@@ -108,9 +108,11 @@ export default function ListingFavoriteButton({ carId, car = null, variant = "ch
 
   const label = favorited ? "Убрать из избранного" : "Добавить в избранное";
   const isOverlay = variant === "overlay";
+  const isLabeled = variant === "labeled";
   const btnClass = [
     "listing-favorite__btn",
-    isOverlay ? "listing-favorite__btn--overlay" : "listing-action-btn",
+    isLabeled ? "listing-action-btn listing-action-btn--labeled" : null,
+    isOverlay ? "listing-favorite__btn--overlay" : isLabeled ? null : "listing-action-btn",
     favorited ? "listing-favorite__btn--on" : "",
     !ready ? "listing-favorite__btn--loading" : "",
   ]
@@ -130,13 +132,17 @@ export default function ListingFavoriteButton({ carId, car = null, variant = "ch
         title={label}
       >
         <IconHeart filled={favorited} />
+        {isLabeled ? (
+          <span className="listing-action-btn__text">{favorited ? "В избранном" : "В избранное"}</span>
+        ) : null}
       </button>
       <AuthPromptModal
         open={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         title="Войдите, чтобы сохранить в избранное"
-        description="После входа объявление можно добавить в список избранного — он доступен в вашем аккаунте."
+        description="После входа объявление можно добавить в список избранного — сообщим, если цена снизится."
         nextPath={nextPath}
+        showQuoteCta
       />
     </>
   );

@@ -8,6 +8,7 @@ import { clearToken, getStoredToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
 import { fuelTypeSelectOptions } from "../../lib/fuelTypes";
 import { canCreateListings, isAdminRole } from "../../lib/roles";
+import SiteHeader from "../../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -275,19 +276,12 @@ export default function StaffNewListingPage() {
 
   return (
     <div className="layout">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
-          </Link>
-          <div className="auth-bar" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
-              Выйти
-            </button>
-          </div>
-        </div>
-      </header>
+      <SiteHeader authBarStyle={{display: "flex", gap: 12, alignItems: "center"}}>
+          <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
+            Выйти
+          </button>
+        </SiteHeader>
       <main className="site-main">
         <div className="container" style={{ maxWidth: 640 }}>
           <h1 className="section-title">Новое объявление</h1>
