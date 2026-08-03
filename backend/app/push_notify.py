@@ -94,6 +94,8 @@ def notify_new_offer(
 
 def chat_message_recipient_user_id(chat, sender_user_id: int) -> int | None:
     """Определяет получателя push для чата."""
+    if chat.chat_type == "guest":
+        return None
     if chat.chat_type == "platform":
         if sender_user_id == chat.user_id:
             return None

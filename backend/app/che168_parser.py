@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -709,8 +710,12 @@ def _is_che168_bot_challenge_html(html: str) -> bool:
         or ("document.cookie" in head and "_0x649a" in head)
     ):
         return True
-    # Урезанная оболочка без контента карточки (типично с VPS вне Китая).
-    if len(html) < 80_000 and "表显里程" not in html and "二手车之家" not in html:
+    # Если в HTML уже есть ссылки на объявления — это не challenge.
+    if DEALER_LISTING_RE.search(html) or CAR_DETAIL_ID_RE.search(html):
+        return False
+    # Урезанная оболочка без контента (типично challenge с VPS вне Китая).
+    # Не используем «нет 表显里程» — на витрине series этого поля нет.
+    if len(html) < 12_000 and "二手车之家" not in html:
         if re.search(r"<title>\s*</title>", head, re.I):
             return True
         if "Vehicle Details" not in html and not re.search(
@@ -794,6 +799,13 @@ def _raise_if_captcha(url: str, html: str) -> None:
         )
 
 
+def _http_timeout(timeout: float) -> httpx.Timeout:
+    """Жёсткий connect, чтобы не висеть минутами при антиботе/фильтре VPS."""
+    t = max(3.0, float(timeout))
+    connect = min(8.0, t)
+    return httpx.Timeout(t, connect=connect)
+
+
 def _http_get_text(url: str, timeout: float = 45.0) -> str:
     headers = {
         "User-Agent": UA,
@@ -801,7 +813,7 @@ def _http_get_text(url: str, timeout: float = 45.0) -> str:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Referer": http_referer_for_request_url(url),
     }
-    with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
+    with httpx.Client(timeout=_http_timeout(timeout), follow_redirects=True, headers=headers) as client:
         r = client.get(url)
         r.raise_for_status()
         text = _decode_http_response_text(r)
@@ -811,6 +823,11 @@ def _http_get_text(url: str, timeout: float = 45.0) -> str:
 
 def _pw_launch_timeout_ms() -> int:
     return int(os.getenv("CHE168_PLAYWRIGHT_LAUNCH_TIMEOUT_MS", "90000"))
+
+
+def _listing_pw_timeout_ms() -> int:
+    """Таймаут goto для витрины series (раньше было жёстко 35s)."""
+    return int(os.getenv("CHE168_LIST_PW_GOTO_TIMEOUT_MS", "60000"))
 
 
 def _pw_page_navigation_timeout_ms(detail_url: str) -> int:
@@ -1358,9 +1375,10 @@ def fetch_autohome_spec_id_from_detail_url(detail_url: str) -> int | None:
     return extract_autohome_spec_id(html)
 
 
-def _listing_links_playwright(series_url: str, max_items: int) -> list[str]:
+def _listing_links_playwright(series_url: str, max_items: int, *, nav_timeout_ms: int | None = None) -> list[str]:
     links: list[str] = []
     seen: set[str] = set()
+    nav_ms = int(nav_timeout_ms) if nav_timeout_ms is not None else _listing_pw_timeout_ms()
 
     def push_from_href(href: str) -> None:
         abs_url = _normalize_listing_href(href)
@@ -1380,10 +1398,10 @@ def _listing_links_playwright(series_url: str, max_items: int) -> list[str]:
             locale="zh-CN",
             extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
         )
-        context.set_default_timeout(35000)
+        context.set_default_timeout(nav_ms)
         page = context.new_page()
-        page.set_default_timeout(35000)
-        page.goto(series_url, wait_until="commit", timeout=35000)
+        page.set_default_timeout(nav_ms)
+        page.goto(series_url, wait_until="commit", timeout=nav_ms)
         page.wait_for_timeout(2500)
         if "captcha" in page.url.lower():
             raise RuntimeError(
@@ -1426,6 +1444,30 @@ def _listing_links_playwright(series_url: str, max_items: int) -> list[str]:
         browser.close()
 
     return links[:max_items]
+
+
+def _listing_links_playwright_with_retry(series_url: str, max_items: int) -> list[str]:
+    attempts = max(1, int(os.getenv("CHE168_LIST_PW_RETRIES", "2")))
+    last_err: Exception | None = None
+    for i in range(attempts):
+        try:
+            return _listing_links_playwright(series_url, max_items)
+        except Exception as e:
+            last_err = e
+            msg = str(e).lower()
+            retriable = (
+                "timeout" in msg
+                or "timed out" in msg
+                or "502" in msg
+                or "503" in msg
+                or "net::" in msg
+            )
+            if (not retriable) or i >= attempts - 1:
+                raise
+            time.sleep(1.5 * (i + 1))
+    if last_err:
+        raise last_err
+    return []
 
 
 def _forced_detail_urls() -> list[str]:
@@ -1491,14 +1533,27 @@ def _single_listing_url_from_input(url: str) -> str | None:
     return None
 
 
-def parse_che168_listing_links(series_url: str, max_items: int = 20) -> list[str]:
+def _allow_playwright_default() -> bool:
+    return os.getenv("CHE168_SKIP_PLAYWRIGHT", "").lower() not in ("1", "true", "yes")
+
+
+def parse_che168_listing_links(
+    series_url: str,
+    max_items: int = 20,
+    *,
+    allow_playwright: bool | None = None,
+    http_timeout: float | None = None,
+    http_retries: int | None = None,
+) -> list[str]:
     """
     Сначала HTTP (ссылки часто есть в HTML/скриптах без JS).
-    Если ссылок нет и не отключён Playwright — один проход браузером.
-    CHE168_FORCE_DETAIL_URLS — прямые URL карточек (через запятую), если список недоступен.
-    Если в series_url уже ссылка на одно объявление (/dealer/…/….html или i.che168.com/car/…),
-    возвращаем только её — не полагаемся на разбор HTML витрины серии.
+    Если ссылок нет и allow_playwright — один проход браузером.
+    Для Agent API лучше allow_playwright=False: с VPS вне Китая Playwright
+    обычно тоже таймаутится на 60–120с и убивает весь прогон (n8n ~300с).
     """
+    if allow_playwright is None:
+        allow_playwright = _allow_playwright_default()
+
     forced = _forced_detail_urls()
     if forced:
         return forced[:max_items]
@@ -1508,21 +1563,65 @@ def parse_che168_listing_links(series_url: str, max_items: int = 20) -> list[str
         return [single][:max_items]
 
     links: list[str] = []
-    try:
-        html = _http_get_text(series_url, timeout=45.0)
-        links = _car_urls_from_html(html, max_items)
-    except RuntimeError:
-        raise
-    except Exception:
-        links = []
+    http_attempts = max(
+        1,
+        int(http_retries)
+        if http_retries is not None
+        else int(os.getenv("CHE168_LIST_HTTP_RETRIES", "3")),
+    )
+    http_timeout_sec = float(
+        http_timeout
+        if http_timeout is not None
+        else os.getenv("CHE168_LIST_HTTP_TIMEOUT_SEC", "45")
+    )
+    last_http_err: Exception | None = None
+    for i in range(http_attempts):
+        try:
+            html = _http_get_text(series_url, timeout=http_timeout_sec)
+            links = _car_urls_from_html(html, max_items)
+            if links:
+                return links[:max_items]
+            break
+        except RuntimeError as e:
+            # captcha / antibot — сразу в Playwright (если разрешён), без HTTP-ретраев
+            last_http_err = e
+            msg = str(e).lower()
+            if "антибот" in msg or "captcha" in msg or "проверк" in msg:
+                links = []
+                break
+            if i >= http_attempts - 1:
+                break
+            time.sleep(0.6 * (i + 1))
+        except Exception as e:
+            last_http_err = e
+            msg = str(e).lower()
+            retriable = (
+                "timeout" in msg
+                or "timed out" in msg
+                or "502" in msg
+                or "503" in msg
+                or "504" in msg
+                or "connect" in msg
+            )
+            if (not retriable) or i >= http_attempts - 1:
+                links = []
+                break
+            time.sleep(0.6 * (i + 1))
 
     if len(links) >= 1:
         return links[:max_items]
 
-    if os.getenv("CHE168_SKIP_PLAYWRIGHT", "").lower() in ("1", "true", "yes"):
-        return []
+    if not allow_playwright:
+        if last_http_err:
+            raise RuntimeError(
+                f"listing HTTP недоступен (Playwright отключён для быстрого режима): {last_http_err}"
+            ) from last_http_err
+        raise RuntimeError(
+            "listing: в HTTP-HTML нет ссылок на объявления "
+            "(витрина JS/антибот; Playwright отключён для быстрого режима)"
+        )
 
-    return _listing_links_playwright(series_url, max_items)
+    return _listing_links_playwright_with_retry(series_url, max_items)
 
 
 def _parse_che168_detail_playwright(
@@ -1669,13 +1768,25 @@ def _parse_che168_detail_playwright(
     return parsed
 
 
-def parse_che168_detail(detail_url: str) -> ParsedCar:
+def parse_che168_detail(
+    detail_url: str,
+    *,
+    allow_playwright: bool | None = None,
+    http_timeout: float = 30.0,
+) -> ParsedCar:
     """
     Сначала HTTP (кроме dongchedi — сразу браузер); при неполных данных — Playwright.
-    Поддерживаются карточки che168, global.che168.com/detail/… и dongchedi.com/usedcar/…
+    allow_playwright=False — быстрый режим Agent API: не ждать браузер 60–120с на антиботе.
     """
+    if allow_playwright is None:
+        allow_playwright = _allow_playwright_default()
+
     source_listing_id = source_listing_id_from_url(detail_url)
     is_dongchedi = marketplace_from_detail_url(detail_url) == "dongchedi"
+    if is_dongchedi and not allow_playwright:
+        raise RuntimeError(
+            "dongchedi требует Playwright; быстрый HTTP-режим недоступен для этой площадки"
+        )
     fetch_urls = [detail_url] if is_dongchedi else _detail_fetch_urls(detail_url)
 
     best: ParsedCar | None = None
@@ -1699,7 +1810,7 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
     if not is_dongchedi:
         for url in fetch_urls:
             try:
-                html = _http_get_text(url, timeout=30.0)
+                html = _http_get_text(url, timeout=http_timeout)
                 if _is_global_che168_stub_html(html):
                     continue
                 parsed = _parse_detail_from_html(html, source_listing_id)
@@ -1715,7 +1826,7 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
                 # Цена есть, но без specId — не выходим: Playwright чаще достаёт комплектацию.
                 if _parse_is_complete(parsed):
                     merged = _merge_parsed_cars(parsed, best) or parsed
-                    if merged.autohome_spec_id:
+                    if merged.autohome_spec_id or not allow_playwright:
                         return merged
                     best = merged
                     best_score = _parse_quality_score(best)
@@ -1723,6 +1834,11 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
                 msg = str(exc)
                 if "антибот" in msg or "captcha" in msg.lower():
                     captcha_hits += 1
+                    if not allow_playwright:
+                        # Не тянем 60–120с браузер — сразу ошибка для Agent API.
+                        raise RuntimeError(
+                            f"che168 антибот на HTTP (быстрый режим без Playwright): {detail_url}"
+                        ) from exc
                 if "Парсер попробует открыть карточку через браузер" not in msg:
                     raise
             except httpx.HTTPStatusError as exc:
@@ -1732,11 +1848,12 @@ def parse_che168_detail(detail_url: str) -> ParsedCar:
             except Exception:
                 pass
 
-    if os.getenv("CHE168_SKIP_PLAYWRIGHT", "").lower() in ("1", "true", "yes"):
+    if not allow_playwright:
         if best and best_score > 0:
             return best
         raise RuntimeError(
-            "CHE168_SKIP_PLAYWRIGHT включён: страница объявления не разобрана по HTTP."
+            "Карточка не разобрана по HTTP (Playwright отключён для быстрого режима): "
+            f"{detail_url}"
         )
 
     last_err: Exception | None = None

@@ -97,6 +97,49 @@ def notify_platform_chat_message(
     _send_admin_message("\n".join(lines))
 
 
+def notify_guest_chat_started(
+    *,
+    chat_id: int,
+    message_text: str | None = None,
+    messages_url: str | None = None,
+) -> None:
+    """Уведомление админу при старте нового гостевого чата (как по заявкам)."""
+    lines = [
+        f"Новый гостевой чат #{chat_id}",
+        "Клиент: гость (без аккаунта)",
+    ]
+    text = (message_text or "").strip()
+    if text:
+        lines.append(f"Сообщение: {text[:1200]}")
+    url = (messages_url or "").strip()
+    if url:
+        lines.append(f"Открыть чат: {url}")
+    _send_admin_message("\n".join(lines))
+
+
+def notify_guest_chat_message(
+    *,
+    chat_id: int,
+    message_text: str | None = None,
+    attachment_name: str | None = None,
+    messages_url: str | None = None,
+) -> None:
+    lines = [
+        f"Новое сообщение в гостевом чате (#{chat_id})",
+        "Клиент: гость (без аккаунта)",
+    ]
+    text = (message_text or "").strip()
+    if text:
+        lines.append(f"Сообщение: {text[:1200]}")
+    att = (attachment_name or "").strip()
+    if att:
+        lines.append(f"Вложение: {att}")
+    url = (messages_url or "").strip()
+    if url:
+        lines.append(f"Открыть чат: {url}")
+    _send_admin_message("\n".join(lines))
+
+
 def notify_new_calculation_request(
     *,
     request_id: int,
