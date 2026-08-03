@@ -1546,17 +1546,18 @@ export default function Home({ initialData = null }) {
 
             <section className="home-m-hero" aria-label="Витрина">
               <p className="home-m-hero__eyebrow">Авто из Китая</p>
-              <h1 className="home-m-hero__title">Цена под ключ до вашего города</h1>
+              <h1 className="home-m-hero__title">Весь путь автомобиля — под вашим контролем</h1>
               <p className="home-m-hero__subtitle">
-                Подбор, проверка, доставка и растаможка. Считаем сразу с доставкой до Москвы,
-                а не до Владивостока — доплат по факту нет.
+                Подбираем предложения проверенных китайских дилеров, сопровождаем прямую сделку и
+                организуем таможенное оформление в России. Статусы, расчёты и документы доступны в
+                личном кабинете.
               </p>
               <div className="home-m-hero__cta-row">
-                <Link href="/request-quote" className="btn btn-primary home-m-hero__cta">
-                  Рассчитать
+                <Link href="/catalog" className="btn btn-primary home-m-hero__cta">
+                  Выбрать автомобиль
                 </Link>
-                <Link href="/catalog" className="btn home-m-hero__cta home-m-hero__cta--ghost">
-                  Каталог
+                <Link href="/request-quote" className="btn home-m-hero__cta home-m-hero__cta--ghost">
+                  Рассчитать стоимость
                 </Link>
               </div>
             </section>
@@ -1710,12 +1711,21 @@ export default function Home({ initialData = null }) {
           {/* ===================== DESKTOP showcase ===================== */}
           <div className="home-d home-only-desktop">
             <section className="home-d-hero" aria-label="Витрина">
-              <p className="home-d-hero__eyebrow">Китай · под ключ</p>
-              <h1 className="home-d-hero__title">Цена под ключ до вашего города</h1>
+              <p className="home-d-hero__eyebrow">Авто из Китая</p>
+              <h1 className="home-d-hero__title">Весь путь автомобиля — под вашим контролем</h1>
               <p className="home-d-hero__subtitle">
-                Подбор, диагностика на месте, доставка и растаможка. Считаем сразу с доставкой
-                до Москвы, а не до Владивостока — без доплат по факту.
+                Подбираем предложения проверенных китайских дилеров, сопровождаем прямую сделку и
+                организуем таможенное оформление в России. Статусы, расчёты и документы доступны в
+                личном кабинете.
               </p>
+              <div className="home-d-hero__cta-row">
+                <Link href="/catalog" className="btn btn-primary home-d-hero__cta">
+                  Выбрать автомобиль
+                </Link>
+                <Link href="/request-quote" className="btn home-d-hero__cta home-d-hero__cta--ghost">
+                  Рассчитать стоимость
+                </Link>
+              </div>
               <form className="home-d-filters" onSubmit={onHeroFiltersSubmit}>
                 <div className="home-d-filters__field">
                   <SiteSelectDropdown

@@ -9618,17 +9618,17 @@ html.page-messages body {
 
 .home-m-hero__title {
   margin: 0 0 8px;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.03em;
-  line-height: 1.1;
+  line-height: 1.15;
   color: #f8fafc;
 }
 
 .home-m-hero__subtitle {
   margin: 0 0 16px;
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.45;
   color: #94a3b8;
 }
 
@@ -9642,7 +9642,11 @@ html.page-messages body {
   min-height: 46px;
   border-radius: 12px;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 13px;
+  padding-left: 10px;
+  padding-right: 10px;
+  text-align: center;
+  line-height: 1.25;
 }
 
 .home-m-hero__cta--ghost {
@@ -10037,7 +10041,7 @@ html.page-messages body {
   letter-spacing: -0.032em;
   line-height: 1.12;
   color: #f8fafc;
-  max-width: 22ch;
+  max-width: 28ch;
 }
 
 .home-d-hero__subtitle {
@@ -10045,7 +10049,37 @@ html.page-messages body {
   font-size: 0.9375rem;
   line-height: 1.45;
   color: #94a3b8;
-  max-width: 54ch;
+  max-width: 62ch;
+}
+
+.home-d-hero__cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 1.1rem;
+}
+
+.home-d-hero__cta {
+  min-height: 48px;
+  min-width: 11.5rem;
+  padding: 0 1.25rem;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 0.9375rem;
+}
+
+.home-d-hero__cta--ghost {
+  background: rgba(248, 250, 252, 0.1);
+  border: 1px solid rgba(248, 250, 252, 0.22);
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+.home-d-hero__cta--ghost:hover {
+  background: rgba(248, 250, 252, 0.16);
+  border-color: rgba(248, 250, 252, 0.35);
+  color: #fff;
+  text-decoration: none;
 }
 
 .home-d-filters {
