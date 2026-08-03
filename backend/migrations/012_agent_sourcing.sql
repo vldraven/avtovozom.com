@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS import_candidates (
     year INTEGER NULL,
     price_cny DOUBLE PRECISION NULL,
     mileage_km INTEGER NULL,
+    registration_date VARCHAR(32) NULL,
     title VARCHAR(512) NOT NULL DEFAULT '',
     score DOUBLE PRECISION NULL,
     reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -80,11 +81,14 @@ INSERT INTO search_profiles (name, enabled, criteria, brief, max_select, created
 SELECT
     'Ежедневный отбор',
     TRUE,
-    '{"year_min": 2019, "mileage_max": 100000, "marketplaces": ["che168"]}'::jsonb,
-    'Ищи наиболее востребованные и ликвидные варианты под заказ из Китая на рынок РФ. Учитывай спрос, ликвидность перепродажи, адекватность цены. Не выдумывай URL.',
+    '{"mileage_max": 50000, "reg_age_years_min": 3, "reg_age_years_max": 5, "price_band": "mid_upper", "marketplaces": ["che168"], "series_urls": []}'::jsonb,
+    'Ищи наиболее востребованные и ликвидные варианты под заказ из Китая на рынок РФ. Учитывай спрос, ликвидность перепродажи, адекватность цены. Предпочти пробег до 50 тыс. км, возраст по регистрации 3–5 лет, внутри модели — средний и верхний ценовой сегмент. Не выдумывай URL. Источник объявлений — series_urls профиля.',
     20,
     NOW(),
     NOW()
 WHERE NOT EXISTS (
     SELECT 1 FROM search_profiles WHERE name = 'Ежедневный отбор'
 );
+
+ALTER TABLE import_candidates
+  ADD COLUMN IF NOT EXISTS registration_date VARCHAR(32) NULL;

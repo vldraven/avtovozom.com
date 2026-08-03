@@ -20,6 +20,7 @@ import {
   subscribeImportPlan,
 } from "../../lib/importPlanStore";
 import { isAdminRole, isStaffRole } from "../../lib/roles";
+import SiteHeader from "../../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -351,19 +352,12 @@ export default function StaffImportPlanPage() {
 
   return (
     <div className="layout">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
-          </Link>
-          <div className="auth-bar" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
-              Выйти
-            </button>
-          </div>
-        </div>
-      </header>
+      <SiteHeader authBarStyle={{display: "flex", gap: 12, alignItems: "center"}}>
+          <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
+            Выйти
+          </button>
+        </SiteHeader>
       <main className="site-main">
         <div className="container import-plan-page">
           <p className="muted" style={{ marginBottom: "0.5rem" }}>
@@ -376,7 +370,9 @@ export default function StaffImportPlanPage() {
             Составьте список ссылок, затем запустите обход. При ошибке — до {IMPORT_PLAN_MAX_RETRIES} попыток на
             строку, затем следующая. План и прогресс хранятся на сервере — можно закрыть сайт; с другого
             устройства под admin/moderator виден тот же статус. Кандидаты агента со score:{" "}
-            <Link href="/staff/import-candidates">открыть</Link>.
+            <Link href="/staff/import-candidates">открыть</Link>
+            {" · "}
+            <Link href="/staff/search-profiles">URL отбора</Link>
             {isAdminRole(me?.role)
               ? " Нет нужной марки/модели/поколения — введите название в поиске выпадающего списка и нажмите «Добавить»."
               : ""}

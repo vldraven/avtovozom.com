@@ -20,8 +20,11 @@ X-Agent-Secret: <тот же, что AGENT_API_SECRET в backend .env>
 | GET | `/profiles` | Профили отбора (`?enabled_only=true`) |
 | PATCH | `/profiles/{id}` | Обновить criteria / brief / max_select |
 | GET | `/quota?profile_id=` | Дневная квота: `already_today`, `needed` (MSK) |
-| POST | `/discover` | Сбор ссылок che168 (Playwright на сервере) |
-| POST | `/filter` | Hard filter: год/пробег/дубли каталога |
+| POST | `/discover` | Сбор ссылок с `criteria.series_urls` (whitelist по умолчанию **выкл.**) |
+| POST | `/enrich` | Парсинг карточек: year / price / mileage / registration_date |
+| POST | `/filter` | Hard filter: возраст рег. 3–5 лет, пробег, mid/upper цена, дубли каталога |
+| POST | `/collect` | **Рекомендуемый** one-shot: discover(+ретраи)→enrich→filter → компактный `listings[]` + статус |
+| GET/PUT | `/profiles/{id}/market-research` | `market_research_at` + `market_hot_models` (раз в ≥7 дней) |
 | GET | `/candidates?profile_id=&status=` | Staging |
 | POST | `/candidates/score` | Запись score/reasons от LLM |
 | POST | `/apply-to-import-plan` | Добор в `/staff/import-plan` (учитывает quota) |
@@ -31,19 +34,21 @@ X-Agent-Secret: <тот же, что AGENT_API_SECRET в backend .env>
 | GET/POST | `/memory?agent_key=sourcing` | Долгосрочная память |
 | POST/GET/PATCH | `/approval-sessions` | Сессия апрува (переживает рестарт n8n) |
 
-Staff UI (JWT): `/staff/import-candidates`, `/staff/import-plan`.  
-Admin: `GET /admin/import-candidates`, `GET /admin/search-profiles`.
+Staff UI (JWT): `/staff/search-profiles` (series URL), `/staff/import-candidates`, `/staff/import-plan`.  
+Admin: `GET/PATCH /admin/search-profiles`, `GET /admin/import-candidates`.
 
 ## Рекомендуемый прогон n8n
 
 1. Cron **16:00 и 17:00 Europe/Moscow** + Telegram `/run` (allowlist ваш user id).
 2. `GET /quota` → если `needed=0`, выйти («квота на сегодня закрыта»).
-3. `GET /memory` + `GET /profiles` → контекст LLM.
-4. `POST /discover` (whitelist / series) → `POST /filter`.
-5. Web-research (Tavily/Serper) + LLM score → `POST /candidates/score`.
-6. `POST /apply-to-import-plan` с `limit=needed`.
-7. TG сводка + кнопки ✅ / ✏️ / ❌.
-8. ✅ → `POST /import-plan/start`; ✏️ → memory lesson + повтор apply; ❌ → memory + cancel session.
+3. `GET /profiles/{id}/market-research` → если `stale`, Tavily + `PUT .../market-research` (иначе **не** ходить в интернет).
+4. **`POST /collect`** один раз (discover+ретраи → enrich → filter) → компактный `listings[]`.
+5. Если `status=empty` → LLM возвращает **статус запуска**, без score/apply.
+6. LLM shortlist → `POST /candidates/score` → `POST /apply-to-import-plan` с `candidate_ids`.
+7. TG сводка + ✅ → `POST /import-plan/start`.
+
+Лимиты (`parse_limit`, `filter_limit`, `llm_shortlist_limit`, `discover_retries`, …) задаются в **Настройки workflow** n8n и пробрасываются в `/collect`.  
+Устаревший ручной путь: `discover` → `enrich` → `filter` по отдельности (для отладки).
 
 Импорт / актуальный workflow: [n8n-sourcing-agent.workflow.json](n8n-sourcing-agent.workflow.json)
 

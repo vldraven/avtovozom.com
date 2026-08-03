@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import uuid
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from typing import Any, Literal
+from urllib.parse import urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -18,9 +20,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload
 
+from .catalog_resolve import (
+    ensure_candidate_catalog,
+    resolve_catalog,
+)
 from .che168_parser import (
     marketplace_from_detail_url,
     normalize_import_detail_url,
+    parse_che168_detail,
     parse_che168_listing_links,
     source_listing_id_from_url,
 )
@@ -40,6 +47,7 @@ from .models import (
     SearchProfile,
     SourcingApprovalSession,
 )
+from .sourcing_defaults import DEFAULT_SOURCING_SERIES_URLS
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +124,7 @@ class ImportCandidateOut(BaseModel):
     year: int | None = None
     price_cny: float | None = None
     mileage_km: int | None = None
+    registration_date: str | None = None
     title: str = ""
     score: float | None = None
     reasons: list[Any] = Field(default_factory=list)
@@ -133,12 +142,30 @@ class DiscoverIn(BaseModel):
     series_urls: list[str] = Field(default_factory=list)
     model_ids: list[int] = Field(default_factory=list)
     limit_per_series: int = Field(default=40, ge=1, le=100)
-    use_whitelist: bool = True
+    use_whitelist: bool = False
+    """Whitelist сайта — НЕ источник discover. Только criteria.series_urls / явный список."""
 
 
 class DiscoverOut(BaseModel):
     created: int
     skipped_existing: int
+    candidates: list[ImportCandidateOut]
+    series_ok: int = 0
+    series_failed: int = 0
+    series_errors: list[str] = Field(default_factory=list)
+
+
+class EnrichIn(BaseModel):
+    profile_id: int
+    candidate_ids: list[int] | None = None
+    limit: int = Field(default=30, ge=1, le=80)
+    only_missing: bool = True
+    """Если true — обогащать только карточки без year/price/mileage."""
+
+
+class EnrichOut(BaseModel):
+    enriched: int
+    failed: int
     candidates: list[ImportCandidateOut]
 
 
@@ -153,6 +180,65 @@ class FilterOut(BaseModel):
     rejected: list[ImportCandidateOut]
 
 
+class CompactListingOut(BaseModel):
+    """Компактная строка для LLM-shortlist (минимум токенов)."""
+
+    id: int
+    brand: str = ""
+    model: str = ""
+    year: int | None = None
+    mileage_km: int | None = None
+    price_cny: float | None = None
+    url: str = ""
+
+
+class MarketResearchOut(BaseModel):
+    profile_id: int
+    market_research_at: str | None = None
+    market_hot_models: list[str] = Field(default_factory=list)
+    stale: bool = True
+    max_age_days: int = 7
+
+
+class MarketResearchIn(BaseModel):
+    market_hot_models: list[str] = Field(default_factory=list)
+    market_research_at: str | None = None
+    """ISO date YYYY-MM-DD; если пусто — сегодня (MSK)."""
+
+
+class CollectIn(BaseModel):
+    profile_id: int
+    parse_limit: int = Field(default=100, ge=1, le=300)
+    """Сколько ссылок максимум собрать (сумма по series)."""
+    limit_per_series: int = Field(default=20, ge=1, le=100)
+    filter_limit: int = Field(default=50, ge=1, le=200)
+    """Сколько прошедших hard-filter вернуть в shortlist_pool."""
+    llm_shortlist_limit: int = Field(default=40, ge=1, le=100)
+    discover_retries: int = Field(default=3, ge=1, le=5)
+    discover_retry_pause_sec: float = Field(default=45.0, ge=0, le=300)
+    market_research_max_age_days: int = Field(default=7, ge=1, le=90)
+
+
+class CollectOut(BaseModel):
+    status: Literal["ok", "empty", "quota_closed", "error"]
+    message: str = ""
+    profile_id: int
+    needed: int = 0
+    already_today: int = 0
+    discover_attempts: int = 0
+    created: int = 0
+    enriched: int = 0
+    enrich_failed: int = 0
+    passed: int = 0
+    rejected: int = 0
+    series_ok: int = 0
+    series_failed: int = 0
+    series_errors: list[str] = Field(default_factory=list)
+    listings: list[CompactListingOut] = Field(default_factory=list)
+    """Компактный пул для LLM (до llm_shortlist_limit)."""
+    market_research: MarketResearchOut | None = None
+
+
 class ScoreItemIn(BaseModel):
     id: int
     score: float = Field(..., ge=0, le=100)
@@ -160,7 +246,10 @@ class ScoreItemIn(BaseModel):
     year: int | None = None
     price_cny: float | None = None
     mileage_km: int | None = None
+    registration_date: str | None = None
     title: str | None = None
+    brand_name: str | None = None
+    model_name: str | None = None
 
 
 class ScoreIn(BaseModel):
@@ -182,6 +271,7 @@ class ApplyOut(BaseModel):
     already_today: int
     plan_rows: int
     candidates: list[ImportCandidateOut]
+    skipped_missing_model: int = 0
 
 
 class MemoryOut(BaseModel):
@@ -264,7 +354,7 @@ def _msk_today() -> date:
 
 def _msk_day_bounds_utc(day: date | None = None) -> tuple[datetime, datetime]:
     d = day or _msk_today()
-    start_local = datetime.combine(d, time.min, tzinfo=MSK)
+    start_local = datetime.combine(d, dt_time.min, tzinfo=MSK)
     end_local = start_local + timedelta(days=1)
     return (
         start_local.astimezone(timezone.utc).replace(tzinfo=None),
@@ -316,6 +406,54 @@ def quota_for_profile(db: Session, profile: SearchProfile) -> QuotaOut:
     )
 
 
+def _parse_iso_date(raw: str | None) -> date | None:
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError:
+        return None
+
+
+def market_research_for_profile(
+    profile: SearchProfile,
+    *,
+    max_age_days: int = 7,
+) -> MarketResearchOut:
+    criteria = profile.criteria or {}
+    at_raw = criteria.get("market_research_at")
+    at = _parse_iso_date(str(at_raw) if at_raw is not None else None)
+    hot_raw = criteria.get("market_hot_models")
+    hot: list[str] = []
+    if isinstance(hot_raw, list):
+        hot = [str(x).strip() for x in hot_raw if str(x).strip()][:40]
+    elif isinstance(hot_raw, str) and hot_raw.strip():
+        hot = [p.strip() for p in hot_raw.split(",") if p.strip()][:40]
+    stale = True
+    if at is not None:
+        stale = (_msk_today() - at).days >= max(1, int(max_age_days))
+    return MarketResearchOut(
+        profile_id=profile.id,
+        market_research_at=at.isoformat() if at else None,
+        market_hot_models=hot,
+        stale=stale,
+        max_age_days=max(1, int(max_age_days)),
+    )
+
+
+def _compact_listing(c: ImportCandidate) -> CompactListingOut:
+    return CompactListingOut(
+        id=c.id,
+        brand=(c.brand_name or "")[:64],
+        model=(c.model_name or "")[:64],
+        year=c.year,
+        mileage_km=c.mileage_km,
+        price_cny=float(c.price_cny) if c.price_cny is not None else None,
+        url=(c.url or "")[:512],
+    )
+
+
 def _merge_criteria(
     base: dict[str, Any] | None, overlay: dict[str, Any] | None
 ) -> dict[str, Any]:
@@ -325,17 +463,63 @@ def _merge_criteria(
     return out
 
 
+def normalize_series_url(url: str) -> str:
+    """Убирает query/hash, нормализует trailing slash."""
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    try:
+        p = urlparse(raw)
+    except Exception:
+        return raw.split("?")[0].split("#")[0].strip()
+    if not p.netloc and not p.path:
+        return ""
+    scheme = p.scheme or "https"
+    netloc = p.netloc or "www.che168.com"
+    path = p.path or "/"
+    if not path.endswith("/"):
+        path = f"{path}/"
+    return urlunparse((scheme, netloc, path, "", "", ""))
+
+
+def _registration_age_years(reg: str | None, *, today: date | None = None) -> float | None:
+    """Возраст по registration_date (YYYY-MM-DD или YYYY-MM)."""
+    s = (reg or "").strip()
+    if not s:
+        return None
+    parts = s.split("-")
+    try:
+        y = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 1
+        d = int(parts[2]) if len(parts) > 2 else 1
+        reg_d = date(y, m, d)
+    except (TypeError, ValueError):
+        return None
+    ref = today or _msk_today()
+    days = (ref - reg_d).days
+    if days < 0:
+        return 0.0
+    return days / 365.25
+
+
 def hard_filter_candidate(
     c: ImportCandidate,
     criteria: dict[str, Any],
     *,
     existing_listing_ids: set[str],
 ) -> list[str]:
-    """Возвращает список причин отклонения (пусто = прошёл)."""
+    """Возвращает список причин отклонения (пусто = прошёл). Без price_band."""
     reasons: list[str] = []
     lid = (c.listing_id or "").strip()
     if lid and lid in existing_listing_ids:
         reasons.append("already_in_catalog")
+
+    require_fields = bool(criteria.get("require_year_price", True))
+    if require_fields:
+        if c.year is None:
+            reasons.append("missing_year")
+        if c.price_cny is None or float(c.price_cny) <= 0:
+            reasons.append("missing_price")
 
     year_min = criteria.get("year_min")
     if year_min is not None and c.year is not None and c.year < int(year_min):
@@ -346,12 +530,23 @@ def hard_filter_candidate(
         reasons.append(f"year>{year_max}")
 
     mileage_max = criteria.get("mileage_max")
-    if (
-        mileage_max is not None
-        and c.mileage_km is not None
-        and c.mileage_km > int(mileage_max)
-    ):
-        reasons.append(f"mileage>{mileage_max}")
+    if mileage_max is not None:
+        if c.mileage_km is None:
+            reasons.append("missing_mileage")
+        elif c.mileage_km > int(mileage_max):
+            reasons.append(f"mileage>{mileage_max}")
+
+    age_min = criteria.get("reg_age_years_min")
+    age_max = criteria.get("reg_age_years_max")
+    if age_min is not None or age_max is not None:
+        age = _registration_age_years(c.registration_date)
+        if age is None:
+            reasons.append("missing_registration_date")
+        else:
+            if age_min is not None and age < float(age_min):
+                reasons.append(f"reg_age<{age_min}")
+            if age_max is not None and age > float(age_max):
+                reasons.append(f"reg_age>{age_max}")
 
     brands = criteria.get("brands")
     if brands and isinstance(brands, list) and brands:
@@ -367,8 +562,45 @@ def hard_filter_candidate(
         if allowed_mp and mp and mp not in allowed_mp:
             reasons.append("marketplace_not_allowed")
 
-    # max_total_rub — без расчёта таможни на listing-level skip; агент может overlay
     return reasons
+
+
+def _price_band_reject_ids(
+    candidates: list[ImportCandidate],
+    criteria: dict[str, Any],
+) -> set[int]:
+    """
+    mid_upper: внутри группы (brand|model) отсечь нижний терциль цены.
+    Нужно ≥3 машин с ценой в группе; иначе band не применяем.
+    """
+    band = str(criteria.get("price_band") or "").strip().lower()
+    if band not in ("mid_upper", "mid-upper", "upper_mid"):
+        return set()
+
+    groups: dict[str, list[ImportCandidate]] = {}
+    for c in candidates:
+        key = f"{(c.brand_name or '').strip().lower()}|{(c.model_name or '').strip().lower()}"
+        if not key.strip("|"):
+            key = f"title:{(c.title or '')[:40].lower()}"
+        groups.setdefault(key, []).append(c)
+
+    reject: set[int] = set()
+    for rows in groups.values():
+        priced = [
+            c
+            for c in rows
+            if c.price_cny is not None and float(c.price_cny) > 0
+        ]
+        if len(priced) < 3:
+            continue
+        prices = sorted(float(c.price_cny) for c in priced)
+        # нижняя граница среднего терциля ≈ 33-й перцентиль
+        cut_idx = max(0, len(prices) // 3 - 1)
+        threshold = prices[cut_idx]
+        for c in priced:
+            if float(c.price_cny) <= threshold:
+                reject.add(c.id)
+    return reject
 
 
 def _catalog_listing_ids(db: Session) -> set[str]:
@@ -436,17 +668,32 @@ def _series_targets(
         model_id: int | None,
         model_name: str,
     ) -> None:
-        u = (url or "").strip()
+        u = normalize_series_url(url)
         if not u or u in seen_urls:
             return
         seen_urls.add(u)
         targets.append((u, brand_id, brand_name, model_id, model_name))
 
-    for raw in payload.series_urls or []:
-        add(raw, None, "", None, "")
+    def add_series(raw: str) -> None:
+        u = normalize_series_url(raw)
+        if not u:
+            return
+        ref = resolve_catalog(db, series_url=u)
+        add(u, ref.brand_id, ref.brand_name, ref.model_id, ref.model_name)
+
+    # Если агент явно передал series_urls — только они (не дублируем весь профиль).
+    criteria = profile.criteria or {}
+    explicit_urls = [str(u) for u in (payload.series_urls or []) if str(u).strip()]
+    if explicit_urls:
+        for raw in explicit_urls:
+            add_series(raw)
+    else:
+        crit_urls = criteria.get("series_urls")
+        if isinstance(crit_urls, list):
+            for raw in crit_urls:
+                add_series(str(raw))
 
     model_ids = list(payload.model_ids or [])
-    criteria = profile.criteria or {}
     crit_ids = criteria.get("model_ids")
     if isinstance(crit_ids, list):
         for mid in crit_ids:
@@ -476,6 +723,12 @@ def _series_targets(
                     m.id,
                     m.name or "",
                 )
+
+    # Fallback только если в профиле ещё нет series_urls (bootstrap)
+    crit_urls = criteria.get("series_urls")
+    if not targets and not explicit_urls and not (isinstance(crit_urls, list) and crit_urls):
+        for raw in DEFAULT_SOURCING_SERIES_URLS:
+            add_series(raw)
 
     if payload.use_whitelist and not targets:
         wls = (
@@ -580,6 +833,38 @@ def patch_profile(
     return profile
 
 
+@router.get("/profiles/{profile_id}/market-research", response_model=MarketResearchOut)
+def get_market_research(
+    profile_id: int,
+    max_age_days: int = Query(default=7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_secret),
+):
+    profile = _get_profile(db, profile_id)
+    return market_research_for_profile(profile, max_age_days=max_age_days)
+
+
+@router.put("/profiles/{profile_id}/market-research", response_model=MarketResearchOut)
+def put_market_research(
+    profile_id: int,
+    payload: MarketResearchIn,
+    max_age_days: int = Query(default=7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_secret),
+):
+    profile = _get_profile(db, profile_id)
+    criteria = dict(profile.criteria or {})
+    at = _parse_iso_date(payload.market_research_at) or _msk_today()
+    hot = [str(x).strip() for x in (payload.market_hot_models or []) if str(x).strip()][:40]
+    criteria["market_research_at"] = at.isoformat()
+    criteria["market_hot_models"] = hot
+    profile.criteria = criteria
+    profile.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+    return market_research_for_profile(profile, max_age_days=max_age_days)
+
+
 @router.get("/quota", response_model=QuotaOut)
 def get_quota(
     profile_id: int = Query(...),
@@ -603,24 +888,44 @@ def discover(
     if not targets:
         raise HTTPException(
             status_code=400,
-            detail="Нет series URL: укажите series_urls / model_ids или включите whitelist",
+            detail=(
+                "Нет series URL: заполните criteria.series_urls в профиле "
+                "(админка /staff/search-profiles) или передайте series_urls в запросе"
+            ),
         )
 
     created = 0
     skipped = 0
     created_ids: list[int] = []
+    series_ok = 0
+    series_errors: list[str] = []
+
+    # Быстрый режим: без Playwright (на VPS он часто висит 60–120с на антиботе).
+    budget_sec = float(os.getenv("AGENT_DISCOVER_BUDGET_SEC", "90"))
+    deadline = time.monotonic() + budget_sec
+    http_timeout = float(os.getenv("AGENT_DISCOVER_HTTP_TIMEOUT_SEC", "12"))
+    http_retries = int(os.getenv("AGENT_DISCOVER_HTTP_RETRIES", "2"))
 
     for series_url, brand_id, brand_name, model_id, model_name in targets:
+        if time.monotonic() >= deadline:
+            series_errors.append(
+                f"budget_exceeded ({int(budget_sec)}s): остановились до {series_url}"
+            )
+            break
         try:
             links = parse_che168_listing_links(
-                series_url, max_items=payload.limit_per_series
+                series_url,
+                max_items=payload.limit_per_series,
+                allow_playwright=False,
+                http_timeout=http_timeout,
+                http_retries=http_retries,
             )
+            series_ok += 1
         except Exception as e:
-            logger.exception("discover failed for %s", series_url)
-            raise HTTPException(
-                status_code=502,
-                detail=f"discover failed for {series_url}: {e}",
-            ) from e
+            logger.warning("discover failed for %s: %s", series_url, e)
+            # Не валим весь прогон из‑за одной витрины (che168 502/timeout/антибот).
+            series_errors.append(f"{series_url}: {e}")
+            continue
 
         for link in links:
             norm = normalize_import_detail_url(link) or link
@@ -648,6 +953,15 @@ def discover(
             else:
                 skipped += 1
 
+    if series_ok == 0 and series_errors:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "discover: ни одна series URL не открылась. "
+                + "; ".join(series_errors[:3])
+            ),
+        )
+
     db.commit()
     candidates = []
     if created_ids:
@@ -662,6 +976,92 @@ def discover(
         created=created,
         skipped_existing=skipped,
         candidates=[_candidate_out(c) for c in candidates],
+        series_ok=series_ok,
+        series_failed=len(series_errors),
+        series_errors=series_errors[:20],
+    )
+
+
+@router.post("/enrich", response_model=EnrichOut)
+def enrich_candidates(
+    payload: EnrichIn,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_secret),
+):
+    """Парсит карточки che168 → year / price / mileage / registration_date / title."""
+    profile = _get_profile(db, payload.profile_id)
+    q = select(ImportCandidate).where(ImportCandidate.profile_id == profile.id)
+    if payload.candidate_ids:
+        q = q.where(ImportCandidate.id.in_(payload.candidate_ids))
+    else:
+        q = q.where(ImportCandidate.status.in_(("new", "scored")))
+    q = q.order_by(ImportCandidate.id.desc()).limit(payload.limit * 3)
+    rows = list(db.execute(q).scalars().all())
+
+    to_enrich: list[ImportCandidate] = []
+    for c in rows:
+        if len(to_enrich) >= payload.limit:
+            break
+        if payload.only_missing:
+            missing = (
+                c.year is None
+                or c.price_cny is None
+                or c.mileage_km is None
+                or not (c.registration_date or "").strip()
+            )
+            if not missing:
+                continue
+        to_enrich.append(c)
+
+    enriched = 0
+    failed = 0
+    budget_sec = float(os.getenv("AGENT_ENRICH_BUDGET_SEC", "90"))
+    deadline = time.monotonic() + budget_sec
+    http_timeout = float(os.getenv("AGENT_ENRICH_HTTP_TIMEOUT_SEC", "15"))
+    for c in to_enrich:
+        if time.monotonic() >= deadline:
+            logger.warning(
+                "enrich budget %ss exceeded after %s ok / %s fail",
+                int(budget_sec),
+                enriched,
+                failed,
+            )
+            break
+        try:
+            parsed = parse_che168_detail(
+                c.url,
+                allow_playwright=False,
+                http_timeout=http_timeout,
+            )
+        except Exception as e:
+            logger.warning("enrich failed for %s: %s", c.url, e)
+            failed += 1
+            continue
+        if parsed.year is not None:
+            c.year = parsed.year
+        if parsed.price_cny is not None:
+            c.price_cny = float(parsed.price_cny)
+        if parsed.mileage_km is not None:
+            c.mileage_km = int(parsed.mileage_km)
+        if parsed.registration_date:
+            c.registration_date = str(parsed.registration_date)[:32]
+        if parsed.title:
+            c.title = str(parsed.title)[:512]
+        if parsed.series_raw and not c.model_name:
+            c.model_name = str(parsed.series_raw)[:128]
+        ensure_candidate_catalog(
+            db,
+            c,
+            series_raw=parsed.series_raw,
+        )
+        c.updated_at = datetime.utcnow()
+        enriched += 1
+
+    db.commit()
+    return EnrichOut(
+        enriched=enriched,
+        failed=failed,
+        candidates=[_candidate_out(c) for c in to_enrich],
     )
 
 
@@ -681,7 +1081,7 @@ def filter_candidates(
     rows = list(db.execute(q).scalars().all())
     existing = _catalog_listing_ids(db)
 
-    passed: list[ImportCandidate] = []
+    prelim_pass: list[ImportCandidate] = []
     rejected: list[ImportCandidate] = []
     for c in rows:
         reasons = hard_filter_candidate(c, criteria, existing_listing_ids=existing)
@@ -690,15 +1090,172 @@ def filter_candidates(
             c.filter_reasons = reasons
             rejected.append(c)
         else:
+            prelim_pass.append(c)
+        c.updated_at = datetime.utcnow()
+
+    band_reject = _price_band_reject_ids(prelim_pass, criteria)
+    passed: list[ImportCandidate] = []
+    for c in prelim_pass:
+        if c.id in band_reject:
+            c.status = "filtered"
+            reasons = list(c.filter_reasons or [])
+            if "price_band_bottom" not in reasons:
+                reasons.append("price_band_bottom")
+            c.filter_reasons = reasons
+            rejected.append(c)
+        else:
             if c.status == "filtered":
                 c.status = "new"
             c.filter_reasons = []
             passed.append(c)
         c.updated_at = datetime.utcnow()
+
     db.commit()
     return FilterOut(
         passed=[_candidate_out(c) for c in passed],
         rejected=[_candidate_out(c) for c in rejected],
+    )
+
+
+@router.post("/collect", response_model=CollectOut)
+def collect_listings(
+    payload: CollectIn,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_secret),
+):
+    """
+    Детерминированный прогон без LLM: discover (с ретраями) → enrich → filter.
+    Возвращает компактный пул для shortlist + статус для TG.
+    """
+    profile = _get_profile(db, payload.profile_id)
+    quota = quota_for_profile(db, profile)
+    market = market_research_for_profile(
+        profile, max_age_days=payload.market_research_max_age_days
+    )
+    if quota.needed <= 0:
+        return CollectOut(
+            status="quota_closed",
+            message="Дневная квота закрыта (needed=0).",
+            profile_id=profile.id,
+            needed=0,
+            already_today=quota.already_today,
+            market_research=market,
+        )
+
+    per_series = max(1, min(payload.limit_per_series, payload.parse_limit))
+    last_discover: DiscoverOut | None = None
+    attempts = 0
+    for attempt in range(max(1, payload.discover_retries)):
+        attempts = attempt + 1
+        try:
+            last_discover = discover(
+                DiscoverIn(
+                    profile_id=profile.id,
+                    use_whitelist=False,
+                    limit_per_series=per_series,
+                ),
+                db=db,
+                _=None,
+            )
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, str) else str(e.detail)
+            last_discover = DiscoverOut(
+                created=0,
+                skipped_existing=0,
+                candidates=[],
+                series_ok=0,
+                series_failed=1,
+                series_errors=[detail],
+            )
+        except Exception as e:
+            last_discover = DiscoverOut(
+                created=0,
+                skipped_existing=0,
+                candidates=[],
+                series_ok=0,
+                series_failed=1,
+                series_errors=[str(e)],
+            )
+        if last_discover and (last_discover.created > 0 or last_discover.series_ok > 0):
+            break
+        if attempt < payload.discover_retries - 1 and payload.discover_retry_pause_sec > 0:
+            time.sleep(float(payload.discover_retry_pause_sec))
+
+    assert last_discover is not None
+    if last_discover.series_ok == 0 and last_discover.created == 0:
+        return CollectOut(
+            status="empty",
+            message=(
+                f"Discover пуст после {attempts} попыток. "
+                "Источник che168 недоступен или series_urls без объявлений."
+            ),
+            profile_id=profile.id,
+            needed=quota.needed,
+            already_today=quota.already_today,
+            discover_attempts=attempts,
+            created=0,
+            series_ok=last_discover.series_ok,
+            series_failed=last_discover.series_failed,
+            series_errors=last_discover.series_errors[:20],
+            market_research=market,
+        )
+
+    enrich_limit = min(payload.parse_limit, max(last_discover.created * 2, 30))
+    enrich_out = enrich_candidates(
+        EnrichIn(
+            profile_id=profile.id,
+            limit=enrich_limit,
+            only_missing=True,
+        ),
+        db=db,
+        _=None,
+    )
+    filter_out = filter_candidates(
+        FilterIn(profile_id=profile.id),
+        db=db,
+        _=None,
+    )
+    # Берём свежие passed с полями, ограничиваем для LLM
+    passed_sorted = sorted(
+        filter_out.passed,
+        key=lambda c: (
+            0 if c.price_cny is not None else 1,
+            0 if c.year is not None else 1,
+            -(c.id or 0),
+        ),
+    )
+    pool = passed_sorted[: payload.filter_limit]
+    listings = [_compact_listing(c) for c in pool[: payload.llm_shortlist_limit]]
+
+    status: Literal["ok", "empty", "quota_closed", "error"] = (
+        "ok" if listings else "empty"
+    )
+    message = (
+        f"Собрано: created={last_discover.created}, enriched={enrich_out.enriched}, "
+        f"passed={len(filter_out.passed)}, shortlist_pool={len(listings)}."
+        if listings
+        else (
+            f"После filter пусто (created={last_discover.created}, "
+            f"enriched={enrich_out.enriched}, rejected={len(filter_out.rejected)})."
+        )
+    )
+    return CollectOut(
+        status=status,
+        message=message,
+        profile_id=profile.id,
+        needed=quota.needed,
+        already_today=quota.already_today,
+        discover_attempts=attempts,
+        created=last_discover.created,
+        enriched=enrich_out.enriched,
+        enrich_failed=enrich_out.failed,
+        passed=len(filter_out.passed),
+        rejected=len(filter_out.rejected),
+        series_ok=last_discover.series_ok,
+        series_failed=last_discover.series_failed,
+        series_errors=last_discover.series_errors[:20],
+        listings=listings,
+        market_research=market,
     )
 
 
@@ -751,8 +1308,15 @@ def score_candidates(
             c.price_cny = item.price_cny
         if item.mileage_km is not None:
             c.mileage_km = item.mileage_km
+        if item.registration_date is not None:
+            c.registration_date = item.registration_date[:32]
         if item.title is not None:
             c.title = item.title[:512]
+        if item.brand_name is not None:
+            c.brand_name = item.brand_name[:128]
+        if item.model_name is not None:
+            c.model_name = item.model_name[:128]
+        ensure_candidate_catalog(db, c)
         if c.status in ("new", "filtered", "scored"):
             c.status = "scored"
         c.updated_at = datetime.utcnow()
@@ -779,6 +1343,7 @@ def apply_to_import_plan(
             already_today=quota.already_today,
             plan_rows=len(plan.items),
             candidates=[],
+            skipped_missing_model=0,
         )
 
     plan = ensure_import_plan(db)
@@ -798,31 +1363,74 @@ def apply_to_import_plan(
     q = q.order_by(
         ImportCandidate.score.desc().nullslast(),
         ImportCandidate.id.asc(),
-    ).limit(limit)
+    ).limit(max(limit * 4, limit + 20))
 
-    selected = list(db.execute(q).scalars().all())
-    if not selected:
+    pool = list(db.execute(q).scalars().all())
+    if not pool:
         return ApplyOut(
             applied=0,
             needed=quota.needed,
             already_today=quota.already_today,
             plan_rows=len(plan.items),
             candidates=[],
+            skipped_missing_model=0,
         )
 
     now = datetime.utcnow()
     if payload.replace_plan:
         db.execute(delete(ImportPlanItem).where(ImportPlanItem.plan_id == plan.id))
         sort_base = 0
+        existing_urls: set[str] = set()
     else:
-        # Удаляем только pending без успеха, чтобы не дублировать URL агента
         existing_urls = {
             (i.url or "").strip()
             for i in plan.items
             if (i.url or "").strip()
         }
         sort_base = max((i.sort_order for i in plan.items), default=-1) + 1
-        selected = [c for c in selected if (c.url or "").strip() not in existing_urls]
+
+    selected: list[ImportCandidate] = []
+    skipped_missing_model = 0
+    for c in pool:
+        if len(selected) >= limit:
+            break
+        url = (c.url or "").strip()
+        if url and url in existing_urls:
+            continue
+        if not ensure_candidate_catalog(db, c):
+            # Последняя попытка: допарсить карточку, если title пустой
+            if not (c.title or "").strip() and url:
+                try:
+                    parsed = parse_che168_detail(
+                        url, allow_playwright=False, http_timeout=15.0
+                    )
+                    if parsed.title:
+                        c.title = str(parsed.title)[:512]
+                    if parsed.series_raw and not c.model_name:
+                        c.model_name = str(parsed.series_raw)[:128]
+                    ensure_candidate_catalog(db, c, series_raw=parsed.series_raw)
+                except Exception as e:
+                    logger.warning("apply catalog resolve failed for %s: %s", url, e)
+        if not c.model_id:
+            skipped_missing_model += 1
+            logger.info(
+                "skip candidate %s for import-plan: no model_id (title=%r)",
+                c.id,
+                (c.title or "")[:80],
+            )
+            continue
+        selected.append(c)
+
+    if not selected:
+        db.commit()
+        return ApplyOut(
+            applied=0,
+            needed=quota.needed,
+            already_today=quota.already_today,
+            plan_rows=len(plan.items),
+            candidates=[],
+            skipped_missing_model=skipped_missing_model,
+        )
 
     for idx, c in enumerate(selected):
         db.add(
@@ -859,6 +1467,7 @@ def apply_to_import_plan(
         already_today=quota2.already_today,
         plan_rows=len(plan.items),
         candidates=[_candidate_out(c) for c in selected],
+        skipped_missing_model=skipped_missing_model,
     )
 
 

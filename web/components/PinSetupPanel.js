@@ -3,7 +3,7 @@ import { useState } from "react";
 import { canUseWebAuthn, getStoredToken, registerPasskey, setupPin } from "../lib/auth";
 import PinPad from "./PinPad";
 
-export default function PinSetupPanel({ onComplete }) {
+export default function PinSetupPanel({ onComplete, onSkip, hideStepLabel = false }) {
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
   const [step, setStep] = useState("create");
@@ -14,11 +14,11 @@ export default function PinSetupPanel({ onComplete }) {
 
   function validatePinPair() {
     if (!/^\d{4,6}$/.test(pin)) {
-      setError("Введите ПИН из 4-6 цифр.");
+      setError("Введите PIN из 4-6 цифр.");
       return false;
     }
     if (pin !== pinConfirm) {
-      setError("ПИН-коды не совпадают.");
+      setError("PIN-коды не совпадают.");
       return false;
     }
     return true;
@@ -34,14 +34,14 @@ export default function PinSetupPanel({ onComplete }) {
         } catch (err) {
           setBioWarning(
             err?.message ||
-              "ПИН сохранён, но биометрию не удалось включить. Её можно включить позже в профиле."
+              "PIN сохранён, но биометрию не удалось включить. Её можно включить позже в профиле."
           );
           return;
         }
       }
       onComplete?.();
     } catch (err) {
-      setError(err?.message || "Не удалось сохранить ПИН-код");
+      setError(err?.message || "Не удалось сохранить PIN-код");
     } finally {
       setBusy(false);
     }
@@ -52,7 +52,7 @@ export default function PinSetupPanel({ onComplete }) {
     setBioWarning("");
     if (step === "create") {
       if (!/^\d{4,6}$/.test(pin)) {
-        setError("Введите ПИН из 4-6 цифр.");
+        setError("Введите PIN из 4-6 цифр.");
         return;
       }
       setStep("confirm");
@@ -78,15 +78,20 @@ export default function PinSetupPanel({ onComplete }) {
     setBioWarning("");
   }
 
+  const skip = onSkip || onComplete;
+
   return (
     <div className="pin-panel">
       <div className="pin-panel__hero">
-        <div className="pin-panel__app-icon">A</div>
-        <h2>{step === "confirm" ? "Повторите ПИН" : "Создайте ПИН-код"}</h2>
+        <div className="pin-panel__app-icon" aria-hidden>
+          A
+        </div>
+        {hideStepLabel ? null : <p className="pin-panel__step muted">Шаг 2</p>}
+        <h2>{step === "confirm" ? "Повторите PIN-код" : "Придумайте PIN-код"}</h2>
         <p>
           {step === "confirm"
             ? "Введите тот же код ещё раз."
-            : "Для быстрого входа в приложение на этом устройстве."}
+            : "4–6 цифр для быстрого входа в приложение вместо пароля."}
         </p>
       </div>
       {error ? <div className="alert alert--danger">{error}</div> : null}
@@ -104,7 +109,7 @@ export default function PinSetupPanel({ onComplete }) {
           inputMode="numeric"
           autoComplete="new-password"
           maxLength={6}
-          placeholder="ПИН-код"
+          placeholder="PIN-код"
           type="password"
           value={pin}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
@@ -114,7 +119,7 @@ export default function PinSetupPanel({ onComplete }) {
           inputMode="numeric"
           autoComplete="new-password"
           maxLength={6}
-          placeholder="Повторите ПИН"
+          placeholder="Повторите PIN"
           type="password"
           value={pinConfirm}
           onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ""))}
@@ -130,7 +135,7 @@ export default function PinSetupPanel({ onComplete }) {
           </label>
         ) : null}
         <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? "Сохраняем..." : "Сохранить ПИН"}
+          {busy ? "Сохраняем..." : "Сохранить PIN"}
         </button>
       </form>
       <PinPad
@@ -141,23 +146,28 @@ export default function PinSetupPanel({ onComplete }) {
         submitLabel={busy ? "Сохраняем..." : step === "confirm" ? "Сохранить" : "Продолжить"}
         disabled={busy}
       />
-      {step === "confirm" ? (
-        <div className="pin-panel__footer">
+      <div className="pin-panel__footer">
+        {step === "confirm" ? (
           <button type="button" className="btn btn-ghost btn-sm" onClick={resetPin} disabled={busy}>
-            Изменить ПИН
+            Изменить PIN
           </button>
-          {canUseWebAuthn() ? (
-            <label className="pin-panel__check">
-              <input
-                type="checkbox"
-                checked={enableBio}
-                onChange={(e) => setEnableBio(e.target.checked)}
-              />
-              Вход по Face ID / Touch ID / биометрии
-            </label>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+        {canUseWebAuthn() && step === "confirm" ? (
+          <label className="pin-panel__check">
+            <input
+              type="checkbox"
+              checked={enableBio}
+              onChange={(e) => setEnableBio(e.target.checked)}
+            />
+            Вход по Face ID / Touch ID / биометрии
+          </label>
+        ) : null}
+        {skip ? (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={skip} disabled={busy}>
+            Позже
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

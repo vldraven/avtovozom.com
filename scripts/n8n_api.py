@@ -47,7 +47,16 @@ def get_workflow(workflow_id: str) -> dict[str, Any]:
 
 
 PLACEHOLDER_MARKERS = ("ЗАМЕНИТЕ", "REPLACE_", "your-api-key", "CHANGE_ME")
-PRESERVE_ASSIGNMENTS = frozenset({"backendApiSecret"})
+# Секреты/операторские id из live n8n не затирать локальным JSON при sync.
+PRESERVE_ASSIGNMENTS = frozenset(
+    {
+        "backendApiSecret",
+        "agentApiSecret",
+        "operatorTelegramUserId",
+        "operatorChatId",
+        "defaultProfileId",
+    }
+)
 
 
 def _is_placeholder(value: Any) -> bool:

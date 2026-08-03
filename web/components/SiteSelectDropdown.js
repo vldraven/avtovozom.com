@@ -49,6 +49,8 @@ export default function SiteSelectDropdown({
   busy = false,
   /** Рендерить меню через portal поверх родителя с overflow */
   portal = false,
+  /** Мин. ширина меню в portal-режиме (px) */
+  menuMinWidth = 180,
 }) {
   const autoId = useId();
   const baseId = id ?? `site-dd-${autoId}`;
@@ -95,7 +97,8 @@ export default function SiteSelectDropdown({
     const maxH = Math.min(320, Math.max(160, window.innerHeight - rect.bottom - gap - 12));
     const spaceBelow = window.innerHeight - rect.bottom - gap;
     const openUp = spaceBelow < 180 && rect.top > spaceBelow;
-    const width = Math.max(rect.width, 180);
+    const preferred = Math.max(rect.width, Number(menuMinWidth) || 180);
+    const width = Math.min(preferred, Math.max(160, window.innerWidth - 16));
     const left =
       menuAlign === "right"
         ? Math.min(window.innerWidth - width - 8, Math.max(8, rect.right - width))
@@ -122,7 +125,7 @@ export default function SiteSelectDropdown({
         zIndex: 5000,
       });
     }
-  }, [portal, open, menuAlign]);
+  }, [portal, open, menuAlign, menuMinWidth]);
 
   useLayoutEffect(() => {
     if (!portal || !open) {

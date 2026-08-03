@@ -7,6 +7,7 @@ import { listingCarHref } from "../../lib/carRoutes";
 import { saveListingReturnPath } from "../../lib/listingNavigation";
 import { mediaSrc } from "../../lib/media";
 import { absoluteUrl } from "../../lib/siteUrl";
+import SiteHeader from "../../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -71,24 +72,14 @@ export default function DealerPublicPage() {
           <meta property="og:url" content={absoluteUrl(`/dealers/${dealerIdStr}`)} />
         </Head>
       ) : null}
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <div className="site-header__brand">
-            <Link href="/" className="site-logo">
-              avtovozom
-            </Link>
-            <span className="site-tagline">Дилер</span>
-          </div>
-          <div className="auth-bar">
-            <Link href="/" className="btn btn-ghost btn-sm">
-              Каталог
-            </Link>
-            <Link href="/auth" className="btn btn-primary btn-sm">
-              Войти
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader tagline="Дилер">
+          <Link href="/" className="btn btn-ghost btn-sm">
+            Каталог
+          </Link>
+          <Link href="/auth" className="btn btn-primary btn-sm">
+            Войти
+          </Link>
+        </SiteHeader>
 
       <main className="site-main">
         <div className="container">

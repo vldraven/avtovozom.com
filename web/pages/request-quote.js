@@ -6,6 +6,7 @@ import { publicCarHref } from "../lib/carRoutes";
 import { saveToken } from "../lib/auth";
 import { mediaSrc } from "../lib/media";
 import { formatRuPhoneMask, normalizeRuPhoneDigits, phoneDigitsToApi } from "../lib/ruPhoneMask";
+import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -15,6 +16,15 @@ function parseApiDetail(body) {
   if (typeof d === "string") return d;
   if (Array.isArray(d)) return d.map((x) => (typeof x === "object" && x.msg ? x.msg : JSON.stringify(x))).join("; ");
   return null;
+}
+
+function packQuoteComment({ comment, city }) {
+  const parts = [];
+  if (city.trim()) parts.push(`Город получения: ${city.trim()}`);
+  const meta = parts.join("\n");
+  const body = comment.trim();
+  if (meta && body) return `${meta}\n\n${body}`;
+  return meta || body;
 }
 
 export default function RequestQuotePage() {
@@ -33,6 +43,7 @@ export default function RequestQuotePage() {
   const [email, setEmail] = useState("");
   /** Старт с «7», чтобы сразу видеть +7 и маску (можно стереть полностью). */
   const [phoneDigits, setPhoneDigits] = useState("7");
+  const [city, setCity] = useState("");
   const [comment, setComment] = useState(
     "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки."
   );
@@ -65,11 +76,12 @@ export default function RequestQuotePage() {
     setBusy(true);
     try {
       const endpoint = carId ? "/requests/lead" : "/requests/freeform-lead";
+      const packedComment = packQuoteComment({ comment, city });
       const payload = {
         email: email.trim().toLowerCase(),
         phone: phoneDigitsToApi(phoneDigits).trim(),
         full_name: fullName.trim(),
-        comment: comment.trim(),
+        comment: packedComment,
       };
       if (carId) payload.car_id = Number(carId);
       const res = await fetch(`${API_URL}${endpoint}`, {
@@ -154,27 +166,22 @@ export default function RequestQuotePage() {
 
   return (
     <div className="layout">
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <div className="site-header__brand">
-            <Link href="/" className="site-logo">
-              avtovozom
-            </Link>
-            <span className="site-tagline">Заказать расчёт</span>
-          </div>
-          <div className="auth-bar">
-            <Link href={backHref} className="btn btn-ghost btn-sm">
-              ← Назад
-            </Link>
-            <Link href="/auth" className="btn btn-secondary btn-sm">
-              Вход
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader tagline="Заявка на подбор">
+          <Link href={backHref} className="btn btn-ghost btn-sm">
+            ← Назад
+          </Link>
+          <Link href="/auth" className="btn btn-secondary btn-sm">
+            Вход
+          </Link>
+        </SiteHeader>
       <main className="site-main">
-        <div className="container page-narrow">
-          <h1 className="section-title">Заказать расчёт</h1>
+        <div className="container page-narrow request-quote-page">
+          <header className="request-quote-hero">
+            <h1 className="section-title">Заявка на подбор</h1>
+            <p className="muted request-quote-hero__lead">
+              Опишите задачу — подготовим ориентир под ключ и ответим в чате. Аккаунт не обязателен.
+            </p>
+          </header>
 
           {loadError && <div className="alert alert--danger">{loadError}</div>}
           {error && <div className="alert alert--danger">{error}</div>}
@@ -206,65 +213,87 @@ export default function RequestQuotePage() {
           )}
 
           {step === "form" && (car || !carId) && (
-            <form className="panel form-stack" onSubmit={submitLead}>
-              <label className="muted form-label">
-                Имя
-                <input
-                  className="input"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Как к вам обращаться"
-                  required
-                />
-              </label>
-              <label className="muted form-label">
-                Email
-                <input
-                  className="input"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="На этот адрес придёт код"
-                  required
-                />
-              </label>
-              <label className="muted form-label">
-                Телефон
-                <input
-                  className="input"
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="tel"
-                  value={formatRuPhoneMask(phoneDigits)}
-                  onChange={(e) => setPhoneDigits(normalizeRuPhoneDigits(e.target.value))}
-                  placeholder="+7 (999) 123-45-67"
-                />
-              </label>
-              <label className="muted form-label">
-                {carId ? "Комментарий к заявке" : "Какой автомобиль вас интересует"}
-                <textarea
-                  className="input"
-                  rows={5}
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Например: BMW X5, 2021-2023, бензин, до 5 млн ₽, нужна доставка под ключ."
-                  required={!carId}
-                />
-              </label>
-              <button type="submit" className="btn btn-primary" disabled={busy}>
-                {busy ? "Отправка…" : "Отправить заявку"}
-              </button>
-              <p className="muted request-quote-footnote">
-                Уже есть аккаунт?{" "}
-                <Link
-                  href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : "/"))}`}
-                >
-                  Войдите
-                </Link>{" "}
-                и
-                отправьте заявку в один клик.
-              </p>
-            </form>
+            <>
+              <aside className="request-quote-benefits" aria-label="Что вы получите">
+                <h2 className="request-quote-benefits__title">Что вы получите</h2>
+                <ul className="request-quote-benefits__list">
+                  <li>Ориентир стоимости под ключ до РФ</li>
+                  <li>Подбор и проверка вариантов</li>
+                  <li>Чат по сделке после заявки</li>
+                </ul>
+              </aside>
+
+              <form className="panel form-stack" onSubmit={submitLead}>
+                <label className="muted form-label">
+                  Имя
+                  <input
+                    className="input"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Как к вам обращаться"
+                    required
+                  />
+                </label>
+                <label className="muted form-label">
+                  Email
+                  <input
+                    className="input"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="На этот адрес придёт код"
+                    required
+                  />
+                </label>
+                <label className="muted form-label">
+                  Телефон
+                  <input
+                    className="input"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    value={formatRuPhoneMask(phoneDigits)}
+                    onChange={(e) => setPhoneDigits(normalizeRuPhoneDigits(e.target.value))}
+                    placeholder="+7 (999) 123-45-67"
+                  />
+                </label>
+
+                <label className="muted form-label">
+                  Город получения
+                  <input
+                    className="input"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Москва"
+                    autoComplete="address-level2"
+                  />
+                </label>
+
+                <label className="muted form-label">
+                  {carId ? "Комментарий к заявке" : "Какой автомобиль вас интересует"}
+                  <textarea
+                    className="input"
+                    rows={4}
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="Например: BMW X5, 2021-2023, бензин, нужна доставка под ключ."
+                    required={!carId}
+                  />
+                </label>
+                <button type="submit" className="btn btn-primary" disabled={busy}>
+                  {busy ? "Отправка…" : "Отправить заявку"}
+                </button>
+                <p className="muted request-quote-footnote">
+                  Нажимая кнопку, вы соглашаетесь на обработку данных для связи по заявке. Уже есть аккаунт?{" "}
+                  <Link
+                    href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : "/"))}`}
+                  >
+                    Войдите
+                  </Link>{" "}
+                  и отправьте заявку в один клик.
+                </p>
+              </form>
+            </>
           )}
 
           {step === "verify" && (

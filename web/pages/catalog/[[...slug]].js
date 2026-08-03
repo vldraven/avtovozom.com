@@ -3,11 +3,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Link from "next/link";
 import { useRouter } from "next/router";
 
-import Breadcrumbs from "../../components/Breadcrumbs";
 import CatalogCardMedia from "../../components/CatalogCardMedia";
+import CatalogFilterSheet from "../../components/CatalogFilterSheet";
+import CatalogFilterSidebar from "../../components/CatalogFilterSidebar";
 import CatalogQuickFilters from "../../components/CatalogQuickFilters";
-import CatalogSortDropdown from "../../components/CatalogSortDropdown";
-import SiteSelectDropdown from "../../components/SiteSelectDropdown";
+import HomeCarCard from "../../components/HomeCarCard";
+import SiteHeaderDesktopNav from "../../components/SiteHeaderDesktopNav";
+import CatalogSortDropdown, { CATALOG_SORT_DEFAULT } from "../../components/CatalogSortDropdown";
+import SiteHeader from "../../components/SiteHeader";
 import CarDetailView from "../../components/CarDetailView";
 import HeaderMessagesLink from "../../components/HeaderMessagesLink";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
@@ -15,6 +18,7 @@ import HeaderFavoritesLink from "../../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLink";
 import RequestConfirmModal from "../../components/RequestConfirmModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../../lib/auth";
+import { carSpecMetaBits } from "../../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../../lib/carRoutes";
 import { saveListingReturnPath, markScrollRestoreTarget, isListingBackNavigation } from "../../lib/listingNavigation";
 import { canCreateListings } from "../../lib/roles";
@@ -24,17 +28,19 @@ import {
   isCarDetailSegments,
   resolveCatalogTree,
   segmentsFromSlugParam,
+  catalogTextQueryFromRouter,
 } from "../../lib/catalogResolve";
 import {
   catalogFilterKeyFromQuery,
   catalogFiltersToQuery,
+  chipLabelForFilter,
   EMPTY_CATALOG_FILTERS,
+  fuelTypeLabel,
   parseFiltersFromQuery,
 } from "../../lib/catalogFilters";
 import {
   catalogBreadcrumbItems,
   catalogCanonicalPath,
-  catalogPageIntro,
   catalogSeoCopy,
 } from "../../lib/catalogSeo";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../../lib/schema";
@@ -43,10 +49,34 @@ import { getListingPageCache, setListingPageCache } from "../../lib/listingPageC
 import { absoluteUrl } from "../../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const CATALOG_BRANDS_COLLAPSED_LIMIT = 12;
+
+function countActiveCatalogFilters(filters) {
+  if (!filters) return 0;
+  let n = 0;
+  if (filters.yearFrom) n += 1;
+  if (filters.yearTo) n += 1;
+  if (filters.hpTo) n += 1;
+  if (filters.mileageTo) n += 1;
+  if (filters.fuelType) n += 1;
+  if (filters.rubFrom || filters.rubTo) n += 1;
+  return n;
+}
+
+function pluralizeOffers(n) {
+  const num = Math.abs(Number(n) || 0);
+  const mod10 = num % 10;
+  const mod100 = num % 100;
+  let word;
+  if (mod100 >= 11 && mod100 <= 14) word = "предложений";
+  else if (mod10 === 1) word = "предложение";
+  else if (mod10 >= 2 && mod10 <= 4) word = "предложения";
+  else word = "предложений";
+  return `${num.toLocaleString("ru-RU")} ${word}`;
+}
 
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
+const DEFAULT_CHAT_COMMENT = "Хочу уточнить по этому авто в чате — без обязательств.";
 const CATALOG_SCROLL_STORAGE_PREFIX = "avt_catalog_scroll:";
 const CATALOG_LIST_CACHE_NS = "catalog";
 
@@ -73,12 +103,15 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const [me, setMe] = useState(null);
   const [treeError, setTreeError] = useState(null);
   const [carsError, setCarsError] = useState(null);
-  const [listSort, setListSort] = useState(listInitial?.listSort ?? "date_desc");
-  const [brandsExpanded, setBrandsExpanded] = useState(false);
+  const [listSort, setListSort] = useState(listInitial?.listSort ?? CATALOG_SORT_DEFAULT);
   const [requestModalCar, setRequestModalCar] = useState(null);
   const [requestModalComment, setRequestModalComment] = useState("");
   const [requestModalBusy, setRequestModalBusy] = useState(false);
   const [filterDraft, setFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [carsLoading, setCarsLoading] = useState(false);
+  const [carsRetryTick, setCarsRetryTick] = useState(0);
+  const [similarCars, setSimilarCars] = useState([]);
 
   const { brand, model, generation, unknownSlug, badModelSlug, badGenSlug } = useMemo(() => {
     if (segments == null) {
@@ -95,10 +128,6 @@ export default function CatalogTreePage({ initialPayload = null }) {
   }, [segments, tree]);
 
   const isBrandFocus = Boolean(brand && !unknownSlug);
-  const visibleTree = brandsExpanded
-    ? tree
-    : tree.slice(0, CATALOG_BRANDS_COLLAPSED_LIMIT);
-  const hiddenBrandsCount = Math.max(0, tree.length - CATALOG_BRANDS_COLLAPSED_LIMIT);
   const isCarDetailRoute =
     initialPayload?.mode === "detail" ||
     (segments != null && isCarDetailSegments(segments));
@@ -111,8 +140,9 @@ export default function CatalogTreePage({ initialPayload = null }) {
       parseFiltersFromQuery(router.query, {
         brandId: brand?.id ?? null,
         modelId: model?.id ?? null,
+        generationId: generation?.id ?? null,
       }),
-    [router.query, brand?.id, model?.id]
+    [router.query, brand?.id, model?.id, generation?.id]
   );
 
   const catalogBrandOptions = useMemo(
@@ -133,18 +163,120 @@ export default function CatalogTreePage({ initialPayload = null }) {
     return [...row.models].sort((a, b) => a.name.localeCompare(b.name, "ru"));
   }, [filterDraft.brandId, tree]);
 
+  const quickFilterGenerationOptions = useMemo(() => {
+    const bid = filterDraft.brandId;
+    const mid = filterDraft.modelId;
+    if (!bid || !mid) return [];
+    const row = tree.find((b) => b.id === bid);
+    const modelRow = row?.models?.find((m) => m.id === mid);
+    if (!modelRow?.generations) return [];
+    return [...modelRow.generations].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  }, [filterDraft.brandId, filterDraft.modelId, tree]);
+
   const applyCatalogQuickFilters = useCallback((filtersOverride) => {
     const fd = filtersOverride || filterDraft;
     const nextBrand = tree.find((b) => b.id === fd.brandId);
     const nextModel = nextBrand?.models?.find((m) => m.id === fd.modelId);
+    const nextGeneration = nextModel?.generations?.find((g) => g.id === fd.generationId);
     const filterQuery = catalogFiltersToQuery(fd, { omitBrandModel: true });
-    if (listSort !== "date_desc") filterQuery.sort = listSort;
+    if (listSort !== CATALOG_SORT_DEFAULT) filterQuery.sort = listSort;
 
     let pathname = "/catalog";
     if (nextBrand?.slug) pathname += `/${nextBrand.slug}`;
     if (nextBrand?.slug && nextModel?.slug) pathname += `/${nextModel.slug}`;
+    if (nextBrand?.slug && nextModel?.slug && nextGeneration?.slug) pathname += `/${nextGeneration.slug}`;
     router.push({ pathname, query: filterQuery });
   }, [filterDraft, listSort, router, tree]);
+
+  const currentTextQuery = useMemo(() => catalogTextQueryFromRouter(router.query), [router.query]);
+  const [searchInput, setSearchInput] = useState(currentTextQuery);
+  useEffect(() => {
+    setSearchInput(currentTextQuery);
+  }, [currentTextQuery]);
+
+  const onCatalogSearchSubmit = useCallback(
+    (e) => {
+      e.preventDefault();
+      const { slug, q: _oldQ, ...rest } = router.query;
+      const qq = searchInput.trim();
+      const query = { ...rest };
+      if (qq) query.q = qq;
+      const pathname = router.asPath.split("?")[0].split("#")[0];
+      router.push({ pathname, query });
+    },
+    [router, searchInput]
+  );
+
+  const activeFilterTags = useMemo(() => {
+    const tags = [];
+    if (brand) {
+      tags.push({
+        key: "brand",
+        label: brand.name,
+        onRemove: () => router.push({ pathname: "/catalog", query: catalogFiltersToQuery(appliedFilters, { omitBrandModel: true }) }),
+      });
+    }
+    if (model) {
+      tags.push({
+        key: "model",
+        label: model.name,
+        onRemove: () =>
+          router.push({
+            pathname: `/catalog/${brand.slug}`,
+            query: catalogFiltersToQuery(appliedFilters, { omitBrandModel: true }),
+          }),
+      });
+    }
+    if (generation) {
+      tags.push({
+        key: "generation",
+        label: generation.name,
+        onRemove: () =>
+          router.push({
+            pathname: `/catalog/${brand.slug}/${model.slug}`,
+            query: catalogFiltersToQuery(appliedFilters, { omitBrandModel: true }),
+          }),
+      });
+    }
+    const priceLabel = chipLabelForFilter("price", appliedFilters);
+    if (priceLabel) {
+      tags.push({
+        key: "price",
+        label: priceLabel,
+        onRemove: () => applyCatalogQuickFilters({ ...appliedFilters, rubFrom: null, rubTo: null }),
+      });
+    }
+    const yearLabel = chipLabelForFilter("year", appliedFilters);
+    if (yearLabel) {
+      tags.push({
+        key: "year",
+        label: yearLabel,
+        onRemove: () => applyCatalogQuickFilters({ ...appliedFilters, yearFrom: null, yearTo: null }),
+      });
+    }
+    if (appliedFilters.hpTo) {
+      tags.push({
+        key: "hp",
+        label: chipLabelForFilter("hp", appliedFilters),
+        onRemove: () => applyCatalogQuickFilters({ ...appliedFilters, hpTo: null }),
+      });
+    }
+    if (appliedFilters.fuelType) {
+      tags.push({
+        key: "fuel",
+        label: fuelTypeLabel(appliedFilters.fuelType),
+        onRemove: () => applyCatalogQuickFilters({ ...appliedFilters, fuelType: null }),
+      });
+    }
+    if (appliedFilters.mileageTo) {
+      tags.push({
+        key: "mileage",
+        label: chipLabelForFilter("mileage", appliedFilters),
+        onRemove: () => applyCatalogQuickFilters({ ...appliedFilters, mileageTo: null }),
+      });
+    }
+    return tags;
+  }, [brand, model, generation, appliedFilters, applyCatalogQuickFilters, router]);
 
   useEffect(() => {
     if (!initialPayload) return;
@@ -162,7 +294,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
       setTree(initialPayload.tree ?? []);
       setCars(initialPayload.cars ?? []);
       setTotal(initialPayload.total ?? 0);
-      setListSort(initialPayload.listSort ?? "date_desc");
+      setListSort(initialPayload.listSort ?? CATALOG_SORT_DEFAULT);
       skipCarsFetchKeyRef.current = initialPayload.fetchKey ?? null;
       skipTreeLoadRef.current = Boolean(initialPayload.tree?.length);
       if (router.asPath && (initialPayload.cars?.length || initialPayload.tree?.length)) {
@@ -170,7 +302,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
           cars: initialPayload.cars ?? [],
           total: initialPayload.total ?? 0,
           tree: initialPayload.tree ?? [],
-          listSort: initialPayload.listSort ?? "date_desc",
+          listSort: initialPayload.listSort ?? CATALOG_SORT_DEFAULT,
           fetchKey: initialPayload.fetchKey ?? null,
         });
       }
@@ -238,6 +370,51 @@ export default function CatalogTreePage({ initialPayload = null }) {
     }
     setRequestModalCar(car);
     setRequestModalComment(DEFAULT_REQUEST_COMMENT);
+  }
+
+  function openChatForModal(car) {
+    if (!token) {
+      const carLabel = [car.brand, car.model].filter(Boolean).join(" ") + (car.year ? `, ${car.year}` : "");
+      const draft = `Здравствуйте! Хочу уточнить по авто: ${carLabel} — ${absoluteUrl(publicCarHref(car))}`;
+      router.push(`/messages?draft=${encodeURIComponent(draft)}`);
+      return;
+    }
+    // Авторизован: без промежуточной модалки — сразу создаём заявку и уходим в чат.
+    sendChatRequest(car);
+  }
+
+  async function sendChatRequest(car) {
+    try {
+      const res = await fetch(`${API_URL}/requests`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ car_id: car.id, comment: DEFAULT_CHAT_COMMENT }),
+      });
+      if (res.status === 401) {
+        const kind = await resolveAuthSessionFailure();
+        setToken("");
+        setMe(null);
+        if (kind === "pin-lock") return;
+        router.push(`/request-quote?car_id=${car.id}&next=${encodeURIComponent(publicCarHref(car))}`);
+        return;
+      }
+      if (res.status === 403) {
+        router.push(`/request-quote?car_id=${car.id}&next=${encodeURIComponent(publicCarHref(car))}`);
+        return;
+      }
+      if (!res.ok) {
+        window.alert("Не удалось открыть чат. Попробуйте ещё раз.");
+        return;
+      }
+      const body = await res.json().catch(() => ({}));
+      const chatId = body.platform_chat_id;
+      router.push(chatId != null ? `/messages?chat=${encodeURIComponent(String(chatId))}` : "/messages");
+    } catch {
+      window.alert("Сбой связи с сервером. Попробуйте ещё раз.");
+    }
   }
 
   function closeRequestModal() {
@@ -360,9 +537,10 @@ export default function CatalogTreePage({ initialPayload = null }) {
       parseFiltersFromQuery(router.query, {
         brandId: brand?.id ?? null,
         modelId: model?.id ?? null,
+        generationId: generation?.id ?? null,
       })
     );
-  }, [router.isReady, router.query, isCatalogListRoute, brand?.id, model?.id]);
+  }, [router.isReady, router.query, isCatalogListRoute, brand?.id, model?.id, generation?.id]);
 
   useEffect(() => {
     if (isCarDetailRoute) {
@@ -394,7 +572,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
       return;
     }
     const filterKey = catalogFilterKeyFromQuery(router.query);
-    const fetchKey = catalogFetchKey(segments, listSort, filterKey);
+    const textQuery = catalogTextQueryFromRouter(router.query);
+    const fetchKey = catalogFetchKey(segments, listSort, filterKey, textQuery);
     if (keepCatalogListRef.current) {
       keepCatalogListRef.current = false;
       if (cars.length > 0) {
@@ -443,11 +622,12 @@ export default function CatalogTreePage({ initialPayload = null }) {
       brandId: resolved.brand?.id ?? null,
       modelId: resolved.model?.id ?? null,
     });
-    const params = buildCatalogCarsQuery(resolved, listSort, undefined, filterQuery);
+    const params = buildCatalogCarsQuery(resolved, listSort, undefined, filterQuery, textQuery);
     if (!params) return;
     let cancelled = false;
     (async () => {
       setCarsError(null);
+      setCarsLoading(true);
       try {
         const res = await fetch(`${API_URL}/cars?${params.toString()}`);
         if (!res.ok) {
@@ -478,6 +658,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
           setTotal(0);
           setCarsError("Нет связи с API при загрузке объявлений.");
         }
+      } finally {
+        if (!cancelled) setCarsLoading(false);
       }
     })();
     return () => {
@@ -494,14 +676,30 @@ export default function CatalogTreePage({ initialPayload = null }) {
     listInitial?.cars?.length,
     listInitial?.total,
     isCatalogListRoute,
+    carsRetryTick,
   ]);
 
   useEffect(() => {
     if (!router.isReady) return;
     const rawS = router.query.sort;
     const sv = Array.isArray(rawS) ? rawS[0] : rawS;
-    if (sv && ["date_desc", "date_asc", "price_asc", "price_desc"].includes(String(sv))) {
+    if (
+      sv &&
+      [
+        "relevance",
+        "date_desc",
+        "date_asc",
+        "price_asc",
+        "price_desc",
+        "year_desc",
+        "year_asc",
+        "mileage_asc",
+        "power_desc",
+      ].includes(String(sv))
+    ) {
       setListSort(String(sv));
+    } else if (!sv) {
+      setListSort(CATALOG_SORT_DEFAULT);
     }
   }, [router.isReady, router.query.sort]);
 
@@ -563,6 +761,33 @@ export default function CatalogTreePage({ initialPayload = null }) {
     [unknownSlug, brand, model, generation]
   );
 
+  /** Похожие предложения для пустого состояния — та же марка, без остальных фильтров. */
+  useEffect(() => {
+    if (!isCatalogListRoute || carsLoading || carsError || cars.length > 0) {
+      setSimilarCars([]);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams();
+        params.set("limit", "3");
+        params.set("photo_limit", "4");
+        params.set("sort", CATALOG_SORT_DEFAULT);
+        if (brand?.id) params.set("brand_id", String(brand.id));
+        const res = await fetch(`${API_URL}/cars?${params.toString()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setSimilarCars(data.items || []);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCatalogListRoute, carsLoading, carsError, cars.length, brand?.id]);
+
   const catalogBreadcrumbLd = useMemo(
     () => breadcrumbListJsonLd(breadcrumbItems),
     [breadcrumbItems]
@@ -619,42 +844,33 @@ export default function CatalogTreePage({ initialPayload = null }) {
         <meta property="og:url" content={absoluteUrl(catalogCanon)} />
         {catalogBreadcrumbLd ? <script {...jsonLdScriptProps(catalogBreadcrumbLd)} /> : null}
       </Head>
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <div className="site-header__brand">
-            <Link href="/" className="site-logo">
-              avtovozom
-            </Link>
-            <span className="site-tagline">Доставка автомобилей из Китая и Кореи</span>
-          </div>
-          <div className="auth-bar">
-            {!token ? (
-              <>
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
-                  Войти
-                </button>
-                <TelegramChannelHeaderLink />
-              </>
-            ) : (
-              <>
-                <HeaderMessagesLink token={token} />
-                {canCreateListings(me?.role) && (
-                  <Link href="/staff/new-listing" className="btn btn-primary btn-sm">
-                    Добавить объявление
-                  </Link>
-                )}
-                <HeaderProfileLink token={token} userRole={me?.role} />
-                <HeaderFavoritesLink token={token} />
-                <TelegramChannelHeaderLink />
-              </>
+      <SiteHeader className="home-only-mobile" tagline="Доставка автомобилей из Китая и Кореи">
+        {!token ? (
+          <>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
+              Войти
+            </button>
+            <TelegramChannelHeaderLink />
+          </>
+        ) : (
+          <>
+            <HeaderMessagesLink token={token} />
+            {canCreateListings(me?.role) && (
+              <Link href="/staff/new-listing" className="btn btn-primary btn-sm">
+                Добавить объявление
+              </Link>
             )}
-          </div>
-        </div>
-      </header>
+            <HeaderProfileLink token={token} me={me} />
+            <HeaderFavoritesLink token={token} />
+            <TelegramChannelHeaderLink />
+          </>
+        )}
+      </SiteHeader>
+
+      <SiteHeaderDesktopNav active="catalog" token={token} me={me} />
 
       <main className="site-main">
         <div className="container">
-          <Breadcrumbs items={breadcrumbItems} />
 
           {treeError ? (
             <div className="alert alert--danger" style={{ marginBottom: "1rem" }}>
@@ -681,17 +897,6 @@ export default function CatalogTreePage({ initialPayload = null }) {
             </div>
           ) : (
             <>
-              <h1 className="home-hero__title" style={{ marginBottom: "0.35rem" }}>
-                {generation
-                  ? `${brand.name} · ${model.name} · ${generation.name}`
-                  : model
-                    ? `${brand.name} · ${model.name}`
-                    : brand
-                      ? brand.name
-                      : "Каталог автомобилей"}
-              </h1>
-              <p className="catalog-seo-intro muted">{catalogPageIntro({ brand, model, generation, total })}</p>
-
               {badModelSlug ? (
                 <div className="alert alert--warn" style={{ marginBottom: "1rem" }}>
                   Такой модели в каталоге нет — показаны объявления по марке «{brand.name}».
@@ -705,225 +910,201 @@ export default function CatalogTreePage({ initialPayload = null }) {
               ) : null}
 
               <div className={`catalog-layout${isBrandFocus ? " catalog-layout--brand-focus" : ""}`}>
-                <aside
-                  className={`catalog-tree-panel${isBrandFocus ? " catalog-tree-panel--focused" : ""}`}
-                  aria-label={isBrandFocus ? `Модели марки ${brand.name}` : "Дерево каталога"}
-                >
-                  {isBrandFocus ? (
-                    <>
-                      <Link href="/catalog" className="catalog-tree-back-link">
-                        ← Все марки
-                      </Link>
-                      <h2 className="catalog-tree-panel__title">Модели</h2>
-                      <p className="catalog-tree-focused-brand">{brand.name}</p>
-                      {model && !badModelSlug ? (
-                        <>
-                          <div className="catalog-tree-field">
-                            <SiteSelectDropdown
-                              className="site-dropdown--block"
-                              label="Модель"
-                              placeholder="Все модели марки"
-                              searchable
-                              value={String(model.id)}
-                              onChange={(v) => {
-                                if (v === "") {
-                                  router.push(`/catalog/${brand.slug}`);
-                                  return;
-                                }
-                                const m = brand.models.find((x) => String(x.id) === v);
-                                if (m) router.push(`/catalog/${brand.slug}/${m.slug}`);
-                              }}
-                              ariaLabel="Выбор модели"
-                              options={[
-                                { value: "", label: "Все модели марки" },
-                                ...brand.models.map((m) => ({
-                                  value: String(m.id),
-                                  label: `${m.name}${m.listings_count > 0 ? ` · ${m.listings_count}` : ""}`,
-                                })),
-                              ]}
-                            />
-                          </div>
-                          {(model.generations || []).length > 0 ? (
-                            <div className="catalog-tree-generation-step">
-                              <div className="catalog-tree-field catalog-tree-field--tight">
-                                <SiteSelectDropdown
-                                  className="site-dropdown--block"
-                                  label="Поколение"
-                                  placeholder="Все поколения"
-                                  searchable
-                                  value={generation ? String(generation.id) : ""}
-                                  onChange={(v) => {
-                                    if (v === "") {
-                                      router.push(`/catalog/${brand.slug}/${model.slug}`);
-                                      return;
-                                    }
-                                    const g = (model.generations || []).find(
-                                      (x) => String(x.id) === v
-                                    );
-                                    if (g) {
-                                      router.push(
-                                        `/catalog/${brand.slug}/${model.slug}/${g.slug}`
-                                      );
-                                    }
-                                  }}
-                                  ariaLabel="Выбор поколения"
-                                  options={[
-                                    { value: "", label: "Все поколения" },
-                                    ...(model.generations || []).map((g) => ({
-                                      value: String(g.id),
-                                      label: `${g.name}${g.listings_count > 0 ? ` · ${g.listings_count}` : ""}`,
-                                    })),
-                                  ]}
-                                />
-                              </div>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <div className="catalog-tree-field">
-                          <SiteSelectDropdown
-                            className="site-dropdown--block"
-                            label="Модель"
-                            placeholder="Все модели марки"
-                            searchable
-                            value=""
-                            onChange={(v) => {
-                              if (v === "") return;
-                              const m = brand.models.find((x) => String(x.id) === v);
-                              if (m) router.push(`/catalog/${brand.slug}/${m.slug}`);
-                            }}
-                            ariaLabel="Выбор модели марки"
-                            options={[
-                              { value: "", label: "Все модели марки" },
-                              ...brand.models.map((m) => ({
-                                value: String(m.id),
-                                label: `${m.name}${m.listings_count > 0 ? ` · ${m.listings_count}` : ""}`,
-                              })),
-                            ]}
-                          />
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <h2 className="catalog-tree-panel__title">Марки и модели</h2>
-                      {visibleTree.map((b) => (
-                        <details
-                          key={b.id}
-                          className="catalog-tree-brand"
-                          open={brand?.id === b.id}
-                        >
-                          <summary className="catalog-tree-brand__summary">
-                            <span className="catalog-tree-brand__name">{b.name}</span>
-                            <span className="catalog-tree-brand__count">{b.listings_count || "—"}</span>
-                          </summary>
-                          <ul className="catalog-tree-models">
-                            <li>
-                              <Link
-                                href={`/catalog/${b.slug}`}
-                                className={`catalog-tree-model-link${
-                                  brand?.id === b.id && !model ? " catalog-tree-model-link--active" : ""
-                                }`}
-                              >
-                                <span>Все модели марки</span>
-                                <span className="catalog-tree-model-link__count">
-                                  {b.listings_count || "—"}
-                                </span>
-                              </Link>
-                            </li>
-                            {b.models.map((m) => (
-                              <li key={m.id}>
-                                <Link
-                                  href={`/catalog/${b.slug}/${m.slug}`}
-                                  className={`catalog-tree-model-link${
-                                    model?.id === m.id && !generation ? " catalog-tree-model-link--active" : ""
-                                  }`}
-                                >
-                                  <span>{m.name}</span>
-                                  <span className="catalog-tree-model-link__count">
-                                    {m.listings_count > 0 ? m.listings_count : "—"}
-                                  </span>
-                                </Link>
-                                {(m.generations || []).length > 0 ? (
-                                  <ul className="catalog-tree-generations">
-                                    {(m.generations || []).map((g) => (
-                                      <li key={g.id}>
-                                        <Link
-                                          href={`/catalog/${b.slug}/${m.slug}/${g.slug}`}
-                                          className={`catalog-tree-generation-link${
-                                            model?.id === m.id && generation?.id === g.id
-                                              ? " catalog-tree-generation-link--active"
-                                              : ""
-                                          }`}
-                                        >
-                                          <span>{g.name}</span>
-                                          <span className="catalog-tree-model-link__count">
-                                            {g.listings_count > 0 ? g.listings_count : "—"}
-                                          </span>
-                                        </Link>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : null}
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      ))}
-                      {hiddenBrandsCount > 0 ? (
-                        <button
-                          type="button"
-                          className="catalog-tree-more"
-                          onClick={() => setBrandsExpanded((v) => !v)}
-                          aria-expanded={brandsExpanded}
-                        >
-                          {brandsExpanded ? "Свернуть марки" : `Показать ещё ${hiddenBrandsCount}`}
-                          <span className="catalog-tree-more__chev" aria-hidden>
-                            {brandsExpanded ? "▴" : "▾"}
-                          </span>
-                        </button>
-                      ) : null}
-                    </>
-                  )}
-                </aside>
+                <div className="catalog-sidebar-col">
+                {isCatalogListRoute ? (
+                  <CatalogFilterSidebar
+                    draft={filterDraft}
+                    onChangeDraft={setFilterDraft}
+                    onApply={applyCatalogQuickFilters}
+                    brands={catalogBrandOptions}
+                    models={quickFilterModelOptions}
+                    generations={quickFilterGenerationOptions}
+                    total={total}
+                  />
+                ) : null}
+                </div>
 
                 <div className="catalog-main-panel">
                   {isCatalogListRoute ? (
-                    <CatalogQuickFilters
-                      brands={catalogBrandOptions}
-                      models={quickFilterModelOptions}
-                      draft={filterDraft}
-                      applied={appliedFilters}
-                      onChangeDraft={setFilterDraft}
-                      onApply={applyCatalogQuickFilters}
-                    />
-                  ) : null}
-                  <div className="catalog-list-toolbar">
-                    <h2 className="section-title section-title--flush-top catalog-list-toolbar__title">
-                      Объявления <span className="text-muted">· {total}</span>
-                    </h2>
-                    <CatalogSortDropdown
-                      value={listSort}
-                      onChange={(v) => {
-                        setListSort(v);
-                        const q = { ...router.query };
-                        if (v === "date_desc") {
-                          delete q.sort;
-                        } else {
-                          q.sort = v;
-                        }
-                        router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true });
-                      }}
-                    />
-                  </div>
+                    <>
+                      <div className="catalog-list-toolbar">
+                        <h1 className="section-title section-title--flush-top catalog-list-toolbar__title">
+                          {generation
+                            ? `${brand.name} · ${model.name} · ${generation.name}`
+                            : model
+                              ? `${brand.name} · ${model.name}`
+                              : brand
+                                ? brand.name
+                                : "Каталог автомобилей"}
+                        </h1>
+                        <div className="catalog-sort-field catalog-sort-field--desktop">
+                          <CatalogSortDropdown
+                            variant="desktop"
+                            value={listSort}
+                            onChange={(v) => {
+                              setListSort(v);
+                              const q = { ...router.query };
+                              if (v === CATALOG_SORT_DEFAULT) {
+                                delete q.sort;
+                              } else {
+                                q.sort = v;
+                              }
+                              router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true });
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <p className="catalog-list-toolbar__count catalog-list-toolbar__count--desktop">
+                        {pluralizeOffers(total)} · цены указаны под ключ до Москвы, с растаможкой
+                      </p>
 
-                  {carsError ? (
-                    <div className="alert alert--warn" style={{ marginBottom: "1rem" }}>
-                      {carsError}
+                      <form className="catalog-search" onSubmit={onCatalogSearchSubmit} role="search">
+                        <span className="catalog-search__icon" aria-hidden>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                            <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
+                            <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                          </svg>
+                        </span>
+                        <input
+                          className="catalog-search__input"
+                          name="q"
+                          placeholder="Поиск по каталогу"
+                          value={searchInput}
+                          onChange={(e) => setSearchInput(e.target.value)}
+                          autoComplete="off"
+                          aria-label="Поиск по каталогу"
+                        />
+                      </form>
+
+                      <div className="catalog-mobile-filters-row">
+                        <button
+                          type="button"
+                          className="catalog-qf__chip catalog-qf__chip--filters"
+                          onClick={() => setFilterSheetOpen(true)}
+                        >
+                          {countActiveCatalogFilters(filterDraft) > 0
+                            ? `Фильтры · ${countActiveCatalogFilters(filterDraft)}`
+                            : "Фильтры"}
+                        </button>
+                        <CatalogQuickFilters
+                          brands={catalogBrandOptions}
+                          models={quickFilterModelOptions}
+                          draft={filterDraft}
+                          applied={appliedFilters}
+                          onChangeDraft={setFilterDraft}
+                          onApply={applyCatalogQuickFilters}
+                        />
+                        <CatalogFilterSheet
+                          open={filterSheetOpen}
+                          onClose={() => setFilterSheetOpen(false)}
+                          brands={catalogBrandOptions}
+                          models={quickFilterModelOptions}
+                          generations={quickFilterGenerationOptions}
+                          draft={filterDraft}
+                          onChangeDraft={setFilterDraft}
+                          onApply={applyCatalogQuickFilters}
+                        />
+                      </div>
+
+                      <div className="catalog-results-row catalog-results-row--mobile">
+                        <p className="catalog-list-toolbar__count">{pluralizeOffers(total)}</p>
+                        <div className="catalog-sort-field catalog-sort-field--mobile">
+                          <CatalogSortDropdown
+                            variant="mobile"
+                            value={listSort}
+                            onChange={(v) => {
+                              setListSort(v);
+                              const q = { ...router.query };
+                              if (v === CATALOG_SORT_DEFAULT) {
+                                delete q.sort;
+                              } else {
+                                q.sort = v;
+                              }
+                              router.replace({ pathname: router.pathname, query: q }, undefined, { shallow: true });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                  {isCatalogListRoute && activeFilterTags.length > 0 ? (
+                    <div className="catalog-active-tags">
+                      {activeFilterTags.map((tag) => (
+                        <button
+                          key={tag.key}
+                          type="button"
+                          className="catalog-active-tags__tag"
+                          onClick={tag.onRemove}
+                        >
+                          {tag.label}
+                          <span className="catalog-active-tags__x" aria-hidden>
+                            ✕
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   ) : null}
 
                   <section className="catalog-section">
+                    {carsLoading ? (
+                      <div className="catalog-grid" aria-label="Загрузка объявлений">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <div key={i} className="catalog-card catalog-card--skeleton" aria-hidden="true">
+                            <div className="catalog-card--skeleton__image" />
+                            <div className="catalog-card--skeleton__line catalog-card--skeleton__line--price" />
+                            <div className="catalog-card--skeleton__line catalog-card--skeleton__line--title" />
+                            <div className="catalog-card--skeleton__line catalog-card--skeleton__line--meta" />
+                          </div>
+                        ))}
+                        <p className="ui-state__loading-label">Подбираем предложения…</p>
+                      </div>
+                    ) : carsError ? (
+                      <div className="ui-state ui-state--error">
+                        <p className="ui-state__title">Не удалось загрузить</p>
+                        <p className="muted ui-state__text">
+                          Проверьте соединение — данные подтянутся автоматически.
+                        </p>
+                        <div className="ui-state__actions">
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => setCarsRetryTick((t) => t + 1)}
+                          >
+                            Повторить
+                          </button>
+                        </div>
+                      </div>
+                    ) : cars.length === 0 ? (
+                      <div className="ui-state ui-state--empty">
+                        <p className="ui-state__title">Под такие условия ничего нет</p>
+                        <p className="muted ui-state__text">
+                          Сбросьте фильтры или оставьте заявку — подберём варианты вручную.
+                        </p>
+                        <div className="ui-state__actions">
+                          <Link href="/catalog" className="btn btn-secondary btn-sm">
+                            Сбросить фильтры
+                          </Link>
+                          <Link href="/request-quote" className="btn btn-primary btn-sm">
+                            Заявка на подбор
+                          </Link>
+                        </div>
+                        {similarCars.length > 0 ? (
+                          <div className="car-detail-similar ui-state__similar">
+                            <h2 className="section-title car-detail-similar__title">Похожие предложения</h2>
+                            <div className="car-detail-similar__scroller">
+                              {similarCars.map((car) => (
+                                <HomeCarCard
+                                  key={car.id}
+                                  car={car}
+                                  variant="mobile"
+                                  className="home-m-models__card car-detail-similar__card"
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
                     <div className="catalog-grid">
                       {cars.map((car) => {
                         const totalRub =
@@ -956,13 +1137,12 @@ export default function CatalogTreePage({ initialPayload = null }) {
                                     </>
                                   ) : null}
                                 </span>
-                                <span className="catalog-card__meta-rest">
-                                  {" "}
-                                  · {car.year}
-                                  {car.mileage_km != null
-                                    ? ` · ${Number(car.mileage_km).toLocaleString("ru-RU")} км`
-                                    : ""}
-                                </span>
+                                {(() => {
+                                  const bits = carSpecMetaBits(car);
+                                  return bits.length ? (
+                                    <span className="catalog-card__meta-rest"> · {bits.join(" · ")}</span>
+                                  ) : null;
+                                })()}
                               </p>
                               <p className="catalog-card__price">
                                 {totalRub != null ? (
@@ -971,7 +1151,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                                       {Math.round(totalRub).toLocaleString("ru-RU")} ₽
                                     </strong>
                                     <span className="text-muted catalog-price-sub">
-                                      в России (расчётная)
+                                      под ключ
                                     </span>
                                   </>
                                 ) : (
@@ -983,31 +1163,35 @@ export default function CatalogTreePage({ initialPayload = null }) {
                               </p>
                             </div>
                           </Link>
-                          <div className="catalog-card__actions">
-                            {me?.role !== "dealer" ? (
+                          {me?.role !== "dealer" ? (
+                            <div className="catalog-card__actions">
                               <button
                                 type="button"
-                                className="btn btn-primary btn-sm"
+                                className="btn btn-primary"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   openRequestForModal(car);
                                 }}
                               >
-                                Получить расчёт
+                                Оставить заявку
                               </button>
-                            ) : null}
-                            <Link
-                              href={listingCarHref(car)}
-                              className="btn btn-secondary btn-sm"
-                              onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
-                            >
-                              Подробнее
-                            </Link>
-                          </div>
+                              <button
+                                type="button"
+                                className="btn btn-outline-accent"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  openChatForModal(car);
+                                }}
+                              >
+                                Задать вопрос
+                              </button>
+                            </div>
+                          ) : null}
                         </article>
                         );
                       })}
                     </div>
+                    )}
                   </section>
                 </div>
               </div>

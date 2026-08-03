@@ -1,15 +1,24 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 
+const DEFAULT_BENEFITS = [
+  "Безопасный чат с менеджером",
+  "Избранное и уведомления о снижении цены",
+  "Статус доставки и документы по сделке",
+];
+
 /**
- * Предложение войти (избранное, заявки и т.п.).
+ * Гейт входа при действии (избранное, чат и т.п.).
+ * Заявка без входа остаётся доступной отдельно.
  */
 export default function AuthPromptModal({
   open,
   onClose,
-  title = "Войдите в аккаунт",
-  description = "Чтобы сохранять объявления в избранное, нужно авторизоваться.",
+  title = "Войдите, чтобы продолжить",
+  description = "Переписка по сделке, избранное и договорённости хранятся в вашем кабинете.",
   nextPath,
+  benefits = DEFAULT_BENEFITS,
+  showQuoteCta = true,
 }) {
   const router = useRouter();
   if (!open) return null;
@@ -26,29 +35,39 @@ export default function AuthPromptModal({
       }}
     >
       <div
-        className="modal-dialog"
+        className="modal-dialog auth-prompt-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-prompt-title"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <h2 id="auth-prompt-title" className="section-title" style={{ fontSize: "1.2rem", marginTop: 0 }}>
+        <h2 id="auth-prompt-title" className="section-title auth-prompt-modal__title">
           {title}
         </h2>
-        <p className="muted" style={{ marginBottom: "1.25rem" }}>
-          {description}
-        </p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Отмена
-          </button>
+        <p className="muted auth-prompt-modal__desc">{description}</p>
+        {benefits?.length ? (
+          <ul className="auth-prompt-modal__benefits">
+            {benefits.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="auth-prompt-modal__actions">
           <Link
             href={`/auth?next=${encodeURIComponent(next)}`}
             className="btn btn-primary"
             onClick={onClose}
           >
-            Войти
+            Войти или зарегистрироваться
           </Link>
+          {showQuoteCta ? (
+            <Link href="/request-quote" className="btn btn-secondary" onClick={onClose}>
+              Оставить заявку без входа
+            </Link>
+          ) : null}
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Закрыть
+          </button>
         </div>
       </div>
     </div>

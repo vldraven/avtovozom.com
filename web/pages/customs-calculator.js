@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
 import { absoluteUrl } from "../lib/siteUrl";
+import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const CURRENCY_OPTIONS = [
@@ -119,21 +120,23 @@ export default function CustomsCalculatorPage() {
         />
         <meta property="og:url" content={absoluteUrl("/customs-calculator")} />
       </Head>
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
+      <SiteHeader tagline="Растаможка">
+          <Link href="/catalog" className="btn btn-ghost btn-sm">
+            Каталог
           </Link>
-          <div className="auth-bar">
-            <Link href="/profile" className="btn btn-ghost btn-sm">
-              Профиль
-            </Link>
-          </div>
-        </div>
-      </header>
+          <Link href="/request-quote" className="btn btn-secondary btn-sm">
+            Заявка
+          </Link>
+        </SiteHeader>
       <main className="site-main">
-        <div className="container" style={{ maxWidth: 560 }}>
-          <h1 className="section-title">Калькулятор растаможки</h1>
+        <div className="container customs-calc-page">
+          <header className="customs-calc-hero">
+            <h1 className="section-title">Калькулятор растаможки</h1>
+            <p className="muted customs-calc-hero__lead">
+              Оцените пошлину, утильсбор и оформление за минуту. Это ориентир — точный расчёт под ключ
+              дадим по заявке.
+            </p>
+          </header>
           <form className="panel form-stack" onSubmit={submit}>
             <div className="profile-field-grid">
               <label className="form-label">
@@ -174,14 +177,22 @@ export default function CustomsCalculatorPage() {
                   </span>
                 ) : null}
               </label>
-              <div className="form-label">
-                <SiteSelectDropdown
-                  className="site-dropdown--block"
-                  label="Тип двигателя"
-                  value={form.engine_type}
-                  onChange={(v) => onEngineTypeChange(String(v))}
-                  options={ENGINE_TYPE_OPTIONS}
-                />
+              <div className="form-label form-label--full">
+                <span className="form-label__text">Тип двигателя</span>
+                <div className="seg-control" role="radiogroup" aria-label="Тип двигателя">
+                  {ENGINE_TYPE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={form.engine_type === opt.value}
+                      className={`seg-control__btn${form.engine_type === opt.value ? " is-active" : ""}`}
+                      onClick={() => onEngineTypeChange(opt.value)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <label className="form-label">
                 Мощность, л.с.
@@ -218,62 +229,40 @@ export default function CustomsCalculatorPage() {
             </button>
           </form>
 
-          {error ? <div className="alert alert--danger" style={{ marginTop: "1rem" }}>{error}</div> : null}
+          {error ? <div className="alert alert--danger customs-calc-alert">{error}</div> : null}
 
           {result && summary ? (
-            <section className="panel" style={{ marginTop: "1rem" }}>
-              <h2 className="section-title panel-heading-sm" style={{ marginTop: 0 }}>
-                Результат
-              </h2>
-              <dl
-                style={{
-                  margin: 0,
-                  display: "grid",
-                  gap: "0.65rem",
-                  fontSize: "1rem",
-                }}
-              >
+            <section className="customs-calc-result customs-calc-result--ink">
+              <p className="customs-calc-result__eyebrow">Оценка платежей</p>
+              <h2 className="customs-calc-result__title">Платежи при ввозе</h2>
+              <dl className="customs-calc-result__list">
                 {[
                   ["Таможенное оформление", summary.clearance_fee_rub],
                   [isCompany ? "Пошлина, акциз и НДС (оценка)" : "Таможенная пошлина", summary.duty_rub],
                   ["Утилизационный сбор", summary.utilization_fee_rub],
                 ].map(([label, val]) => (
-                  <div
-                    key={label}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: "1rem",
-                      alignItems: "baseline",
-                      borderBottom: "1px solid var(--border-subtle, rgba(0,0,0,0.08))",
-                      paddingBottom: "0.5rem",
-                    }}
-                  >
-                    <dt style={{ margin: 0, fontWeight: 500, color: "var(--text-muted, #666)" }}>{label}</dt>
-                    <dd style={{ margin: 0, fontWeight: 600, whiteSpace: "nowrap" }}>{formatRub(val)}</dd>
+                  <div key={label} className="customs-calc-result__row">
+                    <dt>{label}</dt>
+                    <dd>{formatRub(val)}</dd>
                   </div>
                 ))}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "1rem",
-                    alignItems: "baseline",
-                    paddingTop: "0.25rem",
-                  }}
-                >
-                  <dt style={{ margin: 0, fontWeight: 700 }}>Итого</dt>
-                  <dd style={{ margin: 0, fontWeight: 700, fontSize: "1.1rem", whiteSpace: "nowrap" }}>
-                    {formatRub(summary.total_rub)}
-                  </dd>
+                <div className="customs-calc-result__row customs-calc-result__row--total">
+                  <dt>Итого</dt>
+                  <dd>{formatRub(summary.total_rub)}</dd>
                 </div>
               </dl>
-              <p className="muted" style={{ marginTop: "1rem", marginBottom: 0, fontSize: "0.9rem", lineHeight: 1.45 }}>
-                {result.disclaimer}
-              </p>
+              <p className="customs-calc-result__disclaimer">{result.disclaimer}</p>
+              <div className="customs-calc-result__actions">
+                <Link href="/catalog" className="btn btn-primary btn-sm">
+                  В каталог
+                </Link>
+                <Link href="/request-quote" className="btn btn-outline-accent btn-sm">
+                  Заявка на подбор
+                </Link>
+              </div>
             </section>
           ) : result && !summary ? (
-            <div className="alert alert--warn" style={{ marginTop: "1rem" }}>
+            <div className="alert alert--warn customs-calc-alert">
               Нет краткой разбивки в ответе API. Обновите backend.
             </div>
           ) : null}

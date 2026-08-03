@@ -207,3 +207,16 @@ def save_chat_attachment(chat_id: int, data: bytes, original_name: str) -> tuple
     path = root / fname
     path.write_bytes(data)
     return f"/media/chat/{chat_id}/{fname}", raw[:200]
+
+
+def delete_chat_attachment_dir(chat_id: int) -> None:
+    """Удаляет каталог вложений чата MEDIA_ROOT/chat/{chat_id}/, если есть."""
+    root = media_root() / "chat" / str(int(chat_id))
+    if not root.is_dir():
+        return
+    try:
+        import shutil
+
+        shutil.rmtree(root, ignore_errors=True)
+    except OSError:
+        pass

@@ -2,19 +2,8 @@ import Link from "next/link";
 
 import { TELEGRAM_CHANNEL_URL } from "../lib/telegramChannel";
 
-const FOOTER_LINKS = [
-  { href: "/catalog", label: "Каталог" },
-  { href: "/dostavka-avto-iz-kitaya", label: "Доставка из Китая" },
-  { href: "/dostavka-avto-iz-korei", label: "Доставка из Кореи" },
-  { href: "/customs-calculator", label: "Калькулятор растаможки" },
-  { href: "/faq", label: "Вопросы и ответы" },
-  { href: "/request-quote", label: "Заявка на расчёт" },
-];
-
-/** Сквозной футер с внутренними ссылками (SEO-перелинковка). */
+/** Сквозной футер по макету «35 · Главная · авторизован» (SEO-перелинковка). */
 export default function SiteFooter() {
-  const year = new Date().getFullYear();
-
   return (
     <footer className="site-footer">
       <div className="container site-footer__inner">
@@ -22,22 +11,31 @@ export default function SiteFooter() {
           <Link href="/" className="site-footer__logo">
             avtovozom
           </Link>
+          <p className="site-footer__tagline">
+            Платформа подбора и доставки автомобилей из Китая и Кореи под ключ.
+          </p>
         </div>
-        <nav className="site-footer__nav" aria-label="Разделы сайта">
-          <ul className="site-footer__links">
-            {FOOTER_LINKS.map((item) => (
-              <li key={item.href}>
-                <Link href={item.href}>{item.label}</Link>
-              </li>
-            ))}
-            <li>
-              <a href={TELEGRAM_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
-                Telegram-канал
-              </a>
-            </li>
-          </ul>
-        </nav>
-        <p className="site-footer__copy muted">© {year} avtovozom.com</p>
+
+        <div className="site-footer__cols">
+          <div className="site-footer__col">
+            <p className="site-footer__col-title">Платформа</p>
+            <Link href="/catalog">Каталог</Link>
+            <Link href="/customs-calculator">Калькулятор</Link>
+          </div>
+          <div className="site-footer__col">
+            <p className="site-footer__col-title">Помощь</p>
+            <Link href="/faq">FAQ общий</Link>
+            <Link href="/dostavka-avto-iz-kitaya">Доставка из Китая</Link>
+            <Link href="/dostavka-avto-iz-korei">Доставка из Кореи</Link>
+          </div>
+          <div className="site-footer__col">
+            <p className="site-footer__col-title">Контакты</p>
+            <a href="mailto:hello@avtovozom.com">hello@avtovozom.com</a>
+            <a href={TELEGRAM_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
+              Telegram
+            </a>
+          </div>
+        </div>
       </div>
     </footer>
   );

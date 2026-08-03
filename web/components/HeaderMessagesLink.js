@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const messagesIcon = (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
     <path
       d="M4 5.5C4 4.67 4.67 4 5.5 4h13c.83 0 1.5.67 1.5 1.5v9c0 .83-.67 1.5-1.5 1.5H9l-4 3v-3H5.5A1.5 1.5 0 0 1 4 15.5v-10Z"
       stroke="currentColor"
@@ -57,8 +57,6 @@ export default function HeaderMessagesLink({ token, variant = "header" }) {
     };
   }, [token, refresh]);
 
-  if (!token) return null;
-
   const active = router.pathname === "/messages";
 
   if (variant === "dock") {
@@ -83,7 +81,6 @@ export default function HeaderMessagesLink({ token, variant = "header" }) {
       <span className="header-messages-link__icon" aria-hidden>
         {messagesIcon}
       </span>
-      <span className="header-messages-link__label">Сообщения</span>
       {unreadTotal > 0 ? <span className="header-messages-link__badge" title="Непрочитанные" /> : null}
     </Link>
   );

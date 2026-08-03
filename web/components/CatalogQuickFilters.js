@@ -3,10 +3,10 @@ import { useEffect, useId, useRef, useState } from "react";
 import {
   chipLabelForFilter,
   filtersAreEqual,
+  FUEL_TYPE_OPTIONS,
   HP_TO_OPTIONS,
   MILEAGE_TO_OPTIONS,
   RUB_TO_PRESETS,
-  TRANSMISSION_GROUPS,
   YEAR_FROM_OPTIONS,
 } from "../lib/catalogFilters";
 
@@ -55,24 +55,18 @@ function PopoverMenu({ anchorRef, open, onClose, children, align = "left", width
     if (!open || !anchorRef?.current) return undefined;
     const update = () => {
       const rect = anchorRef.current.getBoundingClientRect();
-      const scrollY = window.scrollY || document.documentElement.scrollTop;
-      const scrollX = window.scrollX || document.documentElement.scrollLeft;
-      let left = rect.left + scrollX;
+      // position: fixed — координаты viewport, иначе меню клипится overflow-родителями (главная).
+      let left = rect.left;
       if (align === "right") {
-        left = rect.right + scrollX - width;
+        left = rect.right - width;
       }
-      // Ограничиваем поповер рамками экрана, чтобы на мобилке не выезжал за края.
-      const topDesired = rect.bottom + scrollY + 6;
+      const topDesired = rect.bottom + 6;
       const vw = window.innerWidth || 375;
       const vh = window.innerHeight || 667;
-      const maxH = Math.min(360, Math.round(vh * 0.7)); // совпадает с CSS: min(360px, 70vh)
+      const maxH = Math.min(360, Math.round(vh * 0.7));
       const pad = 8;
-      const leftMin = scrollX + pad;
-      const leftMax = scrollX + vw - width - pad;
-      const topMin = scrollY + pad;
-      const topMax = scrollY + vh - maxH - pad;
-      const leftClamped = Math.max(leftMin, Math.min(leftMax, left));
-      const topClamped = Math.max(topMin, Math.min(topMax, topDesired));
+      const leftClamped = Math.max(pad, Math.min(vw - width - pad, left));
+      const topClamped = Math.max(pad, Math.min(vh - maxH - pad, topDesired));
       setPos({ top: topClamped, left: leftClamped });
     };
     update();
@@ -147,6 +141,8 @@ export default function CatalogQuickFilters({
   onChangeDraft,
   onApply,
   applyLabel = "Применить",
+  /** Сразу применять выбор (главная mobile: кнопка «Применить» скрыта). */
+  applyOnSelect = false,
 }) {
   const rootId = useId();
   const [mobileMode, setMobileMode] = useState(false);
@@ -158,7 +154,7 @@ export default function CatalogQuickFilters({
   const modelRef = useRef(null);
   const yearRef = useRef(null);
   const hpRef = useRef(null);
-  const transRef = useRef(null);
+  const fuelRef = useRef(null);
   const mileageRef = useRef(null);
   const priceRef = useRef(null);
 
@@ -167,7 +163,7 @@ export default function CatalogQuickFilters({
     model: modelRef,
     year: yearRef,
     hp: hpRef,
-    transmission: transRef,
+    fuelType: fuelRef,
     mileage: mileageRef,
     price: priceRef,
   };
@@ -176,7 +172,8 @@ export default function CatalogQuickFilters({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const mql = window.matchMedia?.("(max-width: 640px)");
+    // Совпадает с показом mobile-главной (home-only-mobile до 1023px).
+    const mql = window.matchMedia?.("(max-width: 1023px)");
     if (!mql) return;
     const update = () => setMobileMode(Boolean(mql.matches));
     update();
@@ -206,9 +203,7 @@ export default function CatalogQuickFilters({
   const modelLabel = models.find((m) => m.id === draft.modelId)?.name || "Модель";
   const modelDisabled = !draft.brandId;
   const dirty = !filtersAreEqual(draft, applied);
-  const applyImmediately =
-    mobileMode ||
-    (typeof window !== "undefined" && window.matchMedia?.("(max-width: 640px)")?.matches);
+  const applyImmediately = Boolean(applyOnSelect || mobileMode);
 
   return (
     <div className="catalog-qf" id={rootId}>
@@ -243,11 +238,11 @@ export default function CatalogQuickFilters({
           onClick={() => toggleMenu("hp")}
         />
         <FilterChip
-          chipRef={transRef}
-          label={chipLabelForFilter("transmission", draft) || "Коробка"}
-          active={Boolean(draft.transmission)}
-          open={openKey === "transmission"}
-          onClick={() => toggleMenu("transmission")}
+          chipRef={fuelRef}
+          label={chipLabelForFilter("fuelType", draft) || "Тип топлива"}
+          active={Boolean(draft.fuelType)}
+          open={openKey === "fuelType"}
+          onClick={() => toggleMenu("fuelType")}
         />
         <FilterChip
           chipRef={mileageRef}
@@ -377,34 +372,30 @@ export default function CatalogQuickFilters({
         </div>
       </PopoverMenu>
 
-      <PopoverMenu anchorRef={anchorRefs.transmission} open={openKey === "transmission"} onClose={closeMenu} width={280}>
+      <PopoverMenu anchorRef={anchorRefs.fuelType} open={openKey === "fuelType"} onClose={closeMenu}>
         <MenuReset
-          label="Любая"
+          label="Любое"
           onClick={() => {
-            const next = patch({ transmission: null });
+            const next = patch({ fuelType: null });
             if (applyImmediately) onApply(next);
             closeMenu();
           }}
         />
-        {TRANSMISSION_GROUPS.map((group, gi) => (
-          <div key={gi} className="catalog-qf__menu-group">
-            {group.label ? <div className="catalog-qf__menu-group-title">{group.label}</div> : null}
-            {group.items.map((item) => (
-              <MenuOption
-                key={item.value}
-                active={draft.transmission === item.value}
-                sub={item.suffix}
-                onClick={() => {
-                  const next = patch({ transmission: item.value });
-                  if (applyImmediately) onApply(next);
-                  closeMenu();
-                }}
-              >
-                {item.label}
-              </MenuOption>
-            ))}
-          </div>
-        ))}
+        <div className="catalog-qf__menu-scroll">
+          {FUEL_TYPE_OPTIONS.map((opt) => (
+            <MenuOption
+              key={opt.value}
+              active={draft.fuelType === opt.value}
+              onClick={() => {
+                const next = patch({ fuelType: opt.value });
+                if (applyImmediately) onApply(next);
+                closeMenu();
+              }}
+            >
+              {opt.label}
+            </MenuOption>
+          ))}
+        </div>
       </PopoverMenu>
 
       <PopoverMenu anchorRef={anchorRefs.mileage} open={openKey === "mileage"} onClose={closeMenu}>

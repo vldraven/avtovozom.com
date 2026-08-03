@@ -24,6 +24,7 @@ import {
   setListingPageCache,
 } from "../lib/listingPageCache";
 import { isListingBackNavigation, saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
+import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const FAVORITES_SCROLL_STORAGE_PREFIX = "avt_favorites_scroll:";
@@ -242,53 +243,66 @@ export default function FavoritesPage() {
         <title>Избранное — avtovozom</title>
         <meta name="robots" content="noindex" />
       </Head>
-      <header className="site-header">
-        <div className="container site-header__inner">
-          <Link href="/" className="site-logo">
-            avtovozom
-          </Link>
-          <div className="auth-bar">
-            <HeaderMessagesLink token={token} />
-            <HeaderProfileLink token={token} userRole={me?.role} />
-            <HeaderFavoritesLink token={token} />
-            <TelegramChannelHeaderLink />
-          </div>
-        </div>
-      </header>
+      <SiteHeader tagline="Избранное">
+          <HeaderMessagesLink token={token} />
+          <HeaderProfileLink token={token} me={me} />
+          <HeaderFavoritesLink token={token} />
+          <TelegramChannelHeaderLink />
+        </SiteHeader>
       <main className="site-main">
         <div className="container">
-          <h1 className="section-title">Избранное</h1>
-          <p className="muted favorites-page__lead">
-            Сохранённые объявления. Нажмите на сердечко на карточке, чтобы убрать из списка.
-          </p>
+          <header className="favorites-page-hero">
+            <h1 className="section-title">Избранное</h1>
+            <p className="muted favorites-page__lead">
+              Сохранённые лоты. Сердечко на карточке убирает объявление из списка.
+            </p>
+          </header>
           {error ? <div className="alert alert--danger">{error}</div> : null}
           {loading ? (
             <p className="muted">Загрузка…</p>
           ) : cars.length === 0 ? (
             <div className="panel favorites-page__empty">
-              <p className="muted">Пока нет объявлений в избранном.</p>
-              <Link href="/catalog" className="btn btn-primary">
-                Перейти в каталог
-              </Link>
+              <p className="favorites-page__empty-title">Пока пусто</p>
+              <p className="muted">
+                Добавляйте понравившиеся авто из каталога — вернётесь к ним в один тап.
+              </p>
+              <div className="favorites-page__empty-actions">
+                <Link href="/catalog" className="btn btn-primary">
+                  В каталог
+                </Link>
+                <Link href="/request-quote" className="btn btn-secondary">
+                  Заявка на подбор
+                </Link>
+              </div>
             </div>
           ) : (
             <>
               <p className="muted favorites-page__count">
-                {total} {total === 1 ? "объявление" : total >= 2 && total <= 4 ? "объявления" : "объявлений"}
+                {total}{" "}
+                {total === 1 ? "авто" : total >= 2 && total <= 4 ? "авто" : "авто"}
+                {cars.some((c) => !c.is_active) ? " · есть снятые с продажи" : ""}
               </p>
               <section className="catalog-section">
                 <div className="catalog-grid">
                   {cars.map((car) => {
                     const totalRub =
                       car.estimated_total_rub != null ? car.estimated_total_rub : null;
+                    const inactive = car.is_active === false;
                     return (
-                      <article key={car.id} className="catalog-card" data-favorites-car-id={car.id}>
+                      <article
+                        key={car.id}
+                        className={`catalog-card${inactive ? " catalog-card--inactive" : ""}`}
+                        data-favorites-car-id={car.id}
+                      >
                         <Link
                           href={listingCarHref(car)}
                           className="catalog-card__main"
                           onClickCapture={(e) => saveFavoritesScrollPosition(e, car.id)}
                         >
                           <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
+                          {inactive ? (
+                            <span className="catalog-card__status-badge">Неактивно</span>
+                          ) : null}
                           <div className="catalog-card__content">
                             <h2 className="catalog-card__title">{car.title}</h2>
                             <p className="catalog-card__meta">
@@ -304,9 +318,12 @@ export default function FavoritesPage() {
                             </p>
                             <p className="catalog-card__price">
                               {totalRub != null ? (
-                                <strong className="catalog-price-rub">
-                                  {Math.round(totalRub).toLocaleString("ru-RU")} ₽
-                                </strong>
+                                <>
+                                  <strong className="catalog-price-rub">
+                                    {Math.round(totalRub).toLocaleString("ru-RU")} ₽
+                                  </strong>
+                                  <span className="text-muted catalog-price-sub">под ключ</span>
+                                </>
                               ) : (
                                 <>
                                   {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
@@ -316,7 +333,7 @@ export default function FavoritesPage() {
                             </p>
                           </div>
                         </Link>
-                        <div className="catalog-card__actions">
+                        <div className="catalog-card__actions catalog-card__actions--favorites">
                           <Link
                             href={listingCarHref(car)}
                             className="btn btn-secondary btn-sm"

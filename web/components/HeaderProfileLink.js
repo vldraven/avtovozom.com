@@ -12,11 +12,27 @@ const profileIcon = (
   </svg>
 );
 
+function profileFirstName(me) {
+  const raw = String(me?.display_name || me?.full_name || "").trim();
+  if (raw) return raw.split(/\s+/)[0];
+  const email = String(me?.email || "").trim();
+  if (email) return email.split("@")[0];
+  return "Профиль";
+}
+
+function profileInitial(me) {
+  const raw = String(me?.display_name || me?.full_name || me?.email || "П").trim();
+  return (raw[0] || "П").toUpperCase();
+}
+
 /**
- * Ссылка «Профиль» в шапке. Непрочитанные чаты — в HeaderMessagesLink.
+ * Ссылка «Профиль» в шапке.
+ * На consumer-десктопе (макет 35) — чип с именем и инициалом.
+ * variant="ghost" — текстовая кнопка для staff-шапок.
  */
 export default function HeaderProfileLink({
   token,
+  me = null,
   variant = "secondary",
   className = "",
   layout = "header",
@@ -41,14 +57,25 @@ export default function HeaderProfileLink({
     );
   }
 
-  const base =
-    variant === "ghost"
-      ? `btn btn-ghost btn-sm header-profile-link ${className}`.trim()
-      : `btn btn-secondary btn-sm header-profile-link ${className}`.trim();
+  if (variant === "ghost") {
+    const base = `btn btn-ghost btn-sm header-profile-link ${className}`.trim();
+    return (
+      <Link href="/profile" className={base} aria-label="Профиль">
+        Профиль
+      </Link>
+    );
+  }
+
+  const name = profileFirstName(me);
+  const initial = profileInitial(me);
+  const chipClass = `header-profile-chip ${className}`.trim();
 
   return (
-    <Link href="/profile" className={base} aria-label="Профиль">
-      Профиль
+    <Link href="/profile" className={chipClass} aria-label={`Профиль: ${name}`}>
+      <span className="header-profile-chip__name">{name}</span>
+      <span className="header-profile-chip__avatar" aria-hidden>
+        {initial}
+      </span>
     </Link>
   );
 }
