@@ -5568,8 +5568,8 @@ code {
   pointer-events: none;
 }
 
-/* Страница мессенджера: один экран, скролл только в ленте.
-   Shell = 100svh без клавиатуры; при клавиатуре JS задаёт --msg-h/--msg-top. */
+/* Страница мессенджера: shell = visualViewport (Chrome/Safari iOS).
+   fixed top:0 + height:var(--msg-h) + transform:translateY(var(--msg-y)). */
 html.page-messages,
 html.page-messages body {
   height: 100%;
@@ -5577,48 +5577,35 @@ html.page-messages body {
   overflow: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
+  position: relative;
 }
 
 html.page-messages .app-chrome:has(.layout--messages) {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: var(--msg-top, 0px);
-  width: 100%;
-  height: var(--msg-h, 100svh);
-  max-height: var(--msg-h, 100svh);
+  /* Keep chrome in normal flow height so body doesn't collapse; layout is the fixed shell. */
+  min-height: 100%;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
 html.page-messages .layout.layout--messages {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  max-height: 100%;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: var(--msg-h, 100%);
+  max-height: var(--msg-h, 100%);
+  transform: translate3d(0, var(--msg-y, 0px), 0);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  z-index: 30;
+  background: var(--color-bg, #f1f5f9);
 }
 
 .layout.layout--messages {
   min-height: 0;
-  height: 100svh;
-  max-height: 100svh;
+  height: 100%;
+  max-height: 100%;
   overflow: hidden;
-}
-
-@supports (height: 100dvh) {
-  .layout.layout--messages {
-    height: 100dvh;
-    max-height: 100dvh;
-  }
-
-  html.page-messages .layout.layout--messages {
-    height: 100%;
-    max-height: 100%;
-  }
 }
 
 .layout.layout--messages .site-header {
@@ -5632,6 +5619,34 @@ html.page-messages .layout.layout--messages {
   min-height: 0;
   overflow: hidden;
   padding: 0.5rem 0 0.5rem;
+}
+
+html.page-messages .site-main--messenger {
+  padding: 0;
+}
+
+html.page-messages .messenger {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+}
+
+html.page-messages .messenger__thread {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  height: auto !important;
+  max-height: none !important;
+}
+
+html.page-messages .messenger__bubble-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .layout.layout--messages.layout--no-mobile-dock {
@@ -6291,7 +6306,20 @@ html.page-messages .layout.layout--messages {
   }
 
   body.messages-thread-open .messenger__composer {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 5;
+    background: var(--color-surface, #fff);
     padding: 8px 12px var(--msg-composer-pad, max(8px, env(safe-area-inset-bottom, 0px)));
+  }
+
+  html.messages-kb-open .layout.layout--messages .site-header {
+    display: none;
+  }
+
+  /* Thread already has its own head — free vertical space on mobile. */
+  body.messages-thread-open .layout.layout--messages .site-header {
+    display: none;
   }
 
   body.messages-thread-open .messenger__composer-field {
