@@ -1,4 +1,5 @@
 import Head from "next/head";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -11,12 +12,15 @@ import HomeCarCard from "../../components/HomeCarCard";
 import SiteHeaderDesktopNav from "../../components/SiteHeaderDesktopNav";
 import CatalogSortDropdown, { CATALOG_SORT_DEFAULT } from "../../components/CatalogSortDropdown";
 import SiteHeader from "../../components/SiteHeader";
-import CarDetailView from "../../components/CarDetailView";
 import HeaderMessagesLink from "../../components/HeaderMessagesLink";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import HeaderFavoritesLink from "../../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLink";
 import RequestConfirmModal from "../../components/RequestConfirmModal";
+
+const CarDetailView = dynamic(() => import("../../components/CarDetailView"), {
+  ssr: true,
+});
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../../lib/auth";
 import { carSpecMetaBits } from "../../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../../lib/carRoutes";
