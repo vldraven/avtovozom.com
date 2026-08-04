@@ -431,12 +431,14 @@ def _to_rub(amount: float, currency: str, rub_per_cny: float) -> float:
     return float(amount)
 
 
-# Кэш компонентов ETC/ТКС: один и тот же run_estimate() для близких авто/настроек не пересчитывать.
+# Кэш компонентов ETC/ТКС: один и тот же расчёт для близких авто/настроек не пересчитывать.
 _ETC_RUBS_CACHE: dict[
     tuple[int, str, str, int, int, int], tuple[float, float, float]
 ] = {}
 _ETC_RUBS_LOCK = Lock()
-_ETC_RUBS_CACHE_MAX = 3000
+_ETC_RUBS_CACHE_MAX = 8000
+_TARIFFS_CFG_CACHE: dict[int, dict[str, Any]] = {}
+_TARIFFS_CFG_LOCK = Lock()
 
 
 def _estimate_fingerprint(row: CustomsCalcSettings) -> int:
@@ -450,7 +452,38 @@ def _estimate_fingerprint(row: CustomsCalcSettings) -> int:
     return h & 0xFFFFFFFF
 
 
+def _tariffs_dict_for_settings(row: CustomsCalcSettings) -> dict[str, Any]:
+    """YAML тарифов + util JSON физлица — без tempfile/CustomsCalculator."""
+    import yaml
+    from .customs_util_json import ALLOWED_PP_KEYS_INDIVIDUAL, apply_util_json_to_pp
+
+    fp = _estimate_fingerprint(row)
+    with _TARIFFS_CFG_LOCK:
+        hit = _TARIFFS_CFG_CACHE.get(fp)
+        if hit is not None:
+            return hit
+    tariffs_cfg = yaml.safe_load(row.config_yaml or "") or {}
+    tariffs = dict(tariffs_cfg.get("tariffs") or {})
+    pp_cfg = dict(tariffs.get("physical_person") or {})
+    if row.util_coefficients_individual and str(row.util_coefficients_individual).strip():
+        apply_util_json_to_pp(
+            pp_cfg,
+            row.util_coefficients_individual,
+            allowed=ALLOWED_PP_KEYS_INDIVIDUAL,
+        )
+    tariffs["physical_person"] = pp_cfg
+    with _TARIFFS_CFG_LOCK:
+        if len(_TARIFFS_CFG_CACHE) > 8:
+            _TARIFFS_CFG_CACHE.clear()
+        _TARIFFS_CFG_CACHE[fp] = tariffs
+    return tariffs
+
+
 def _get_etc_customs_rubs(car: Car, row: CustomsCalcSettings) -> tuple[float, float, float] | None:
+    """Компоненты ЕТС для карточек/фильтров — быстрый путь без tks tempfile."""
+    from .cbr_rates import get_cbr_official_daily_rates
+    from .customs_physical import compute_etc_individual
+
     engine_type = _car_engine_type_for_calc(car)
     age_group = _car_age_group_for_calc(car)
     engine_capacity = normalize_passenger_engine_volume_cc(int(car.engine_volume_cc or 0))
@@ -465,24 +498,25 @@ def _get_etc_customs_rubs(car: Car, row: CustomsCalcSettings) -> tuple[float, fl
     if hit is not None:
         return hit
     try:
-        estimate = run_estimate(
-            row.config_yaml,
-            CustomsCalcEstimateIn(
-                age=age_group,
-                engine_capacity=engine_capacity,
-                engine_type=engine_type,
-                power=power,
-                price=float(car.price_cny),
-                owner_type="individual",
-                currency="CNY",
-            ),
-            util_individual_json=row.util_coefficients_individual,
-            util_company_json=row.util_coefficients_company,
-        )
-        if estimate.summary is None:
+        daily, derr = get_cbr_official_daily_rates()
+        if derr or not daily:
             return None
-        s = estimate.summary
-        hit = (float(s.clearance_fee_rub), float(s.duty_rub), float(s.utilization_fee_rub))
+        tariffs = _tariffs_dict_for_settings(row)
+        etc, _meta = compute_etc_individual(
+            age=age_group,
+            engine_type=engine_type,
+            engine_capacity=engine_capacity,
+            power=power,
+            price=float(car.price_cny),
+            currency="CNY",
+            daily=daily,
+            tariffs=tariffs,
+        )
+        hit = (
+            float(etc.get("Clearance Fee (RUB)") or 0),
+            float(etc.get("Duty (RUB)") or 0),
+            float(etc.get("Utilization Fee (RUB)") or 0),
+        )
     except Exception:
         return None
     with _ETC_RUBS_LOCK:
@@ -490,6 +524,13 @@ def _get_etc_customs_rubs(car: Car, row: CustomsCalcSettings) -> tuple[float, fl
             _ETC_RUBS_CACHE.clear()
         _ETC_RUBS_CACHE[key] = hit
     return hit
+
+
+def _invalidate_etc_estimate_caches() -> None:
+    with _ETC_RUBS_LOCK:
+        _ETC_RUBS_CACHE.clear()
+    with _TARIFFS_CFG_LOCK:
+        _TARIFFS_CFG_CACHE.clear()
 
 
 def _compute_estimated_total_rub(
@@ -2585,11 +2626,6 @@ def list_cars(
 ):
     stmt = (
         select(Car)
-        .options(
-            joinedload(Car.brand),
-            joinedload(Car.model),
-            joinedload(Car.generation),
-        )
         .where(Car.is_active.is_(True))
     )
     qs = (q or "").strip()
@@ -2663,8 +2699,14 @@ def list_cars(
 
     s = (sort or "date_desc").strip().lower()
     est_by_id: dict[int, float] = {}
+    list_load_opts = (
+        joinedload(Car.brand),
+        joinedload(Car.model),
+        joinedload(Car.generation),
+    )
 
     if filter_by_turnkey:
+        # Без joinedload: только поля Car для расчёта «под ключ», затем hydrate страницы.
         candidates = db.execute(stmt).unique().scalars().all()
         scored: list[tuple[Car, float]] = []
         if snap is not None:
@@ -2730,8 +2772,22 @@ def list_cars(
         total = len(scored)
         start = max(0, (page - 1) * limit)
         page_slice = scored[start : start + limit]
-        cars = [c for c, _ in page_slice]
+        page_ids = [c.id for c, _ in page_slice]
         est_by_id = {c.id: e for c, e in page_slice}
+        cars: list[Car] = []
+        if page_ids:
+            hydrated = (
+                db.execute(
+                    select(Car)
+                    .options(*list_load_opts)
+                    .where(Car.id.in_(page_ids))
+                )
+                .unique()
+                .scalars()
+                .all()
+            )
+            by_id = {c.id: c for c in hydrated}
+            cars = [by_id[i] for i in page_ids if i in by_id]
     else:
         total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         if s == "price_asc":
@@ -2752,11 +2808,17 @@ def list_cars(
             order = (Car.is_popular.desc(), Car.created_at.desc(), Car.id.desc())
         else:
             order = (Car.created_at.desc(), Car.id.desc())
-        cars = db.execute(
-            stmt.order_by(*order)
-            .offset((page - 1) * limit)
-            .limit(limit)
-        ).unique().scalars().all()
+        cars = list(
+            db.execute(
+                stmt.options(*list_load_opts)
+                .order_by(*order)
+                .offset((page - 1) * limit)
+                .limit(limit)
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
 
     _attach_list_photos(db, list(cars), photo_limit)
 
@@ -4936,6 +4998,7 @@ def admin_update_customs_calculator_config(
     row.additional_expenses_json = _norm(payload.additional_expenses_json)
     db.commit()
     db.refresh(row)
+    _invalidate_etc_estimate_caches()
     return CustomsCalcConfigOut(
         config_yaml=row.config_yaml,
         util_coefficients_individual=row.util_coefficients_individual,
