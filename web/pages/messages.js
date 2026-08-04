@@ -62,6 +62,49 @@ function attachmentIsImage(name) {
   return /\.(jpe?g|png|webp|gif|heic)$/i.test(name || "");
 }
 
+const MESSAGE_URL_RE = /(https?:\/\/[^\s<]+)/g;
+
+function splitTrailingUrlPunctuation(url) {
+  let core = url;
+  let trailing = "";
+  while (core && /[.,;:!?)\]]$/.test(core)) {
+    trailing = core.slice(-1) + trailing;
+    core = core.slice(0, -1);
+  }
+  return { core, trailing };
+}
+
+function renderMessageText(text) {
+  if (!text) return null;
+  const nodes = [];
+  let lastIndex = 0;
+  let match;
+  const re = new RegExp(MESSAGE_URL_RE.source, "g");
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    const { core, trailing } = splitTrailingUrlPunctuation(match[1]);
+    if (core) {
+      nodes.push(
+        <a
+          key={`u-${match.index}`}
+          href={core}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="messenger__bubble-link"
+        >
+          {core}
+        </a>
+      );
+    }
+    if (trailing) nodes.push(trailing);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes.length ? nodes : text;
+}
+
 function formatListTime(iso) {
   if (!iso) return "";
   try {
@@ -757,7 +800,7 @@ export default function MessagesPage() {
                               className={`messenger__bubble-row${mine ? " messenger__bubble-row--mine" : ""}`}
                             >
                               <div className={`messenger__bubble${mine ? " messenger__bubble--mine" : ""}`}>
-                                {m.text ? <p className="messenger__bubble-text">{m.text}</p> : null}
+                                {m.text ? <p className="messenger__bubble-text">{renderMessageText(m.text)}</p> : null}
                                 {att ? (
                                   <div className="messenger__attachment">
                                     {showImg ? (

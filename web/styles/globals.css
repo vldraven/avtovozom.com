@@ -6036,6 +6036,25 @@ html.page-messages body {
   line-height: 1.45;
 }
 
+.messenger__bubble-link {
+  color: #0369a1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.messenger__bubble-link:hover {
+  color: #0c4a6e;
+}
+
+.messenger__bubble--mine .messenger__bubble-link {
+  color: #e0f2fe;
+}
+
+.messenger__bubble--mine .messenger__bubble-link:hover {
+  color: #fff;
+}
+
 .messenger__bubble--mine .messenger__bubble-text {
   color: #f8fafc;
 }
