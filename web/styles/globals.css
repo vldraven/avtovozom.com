@@ -5568,8 +5568,9 @@ code {
   pointer-events: none;
 }
 
-/* Страница мессенджера: shell = visualViewport (Chrome/Safari iOS).
-   fixed top:0 + height:var(--msg-h) + transform:translateY(var(--msg-y)). */
+/* Страница мессенджера: fixed shell по layout viewport (innerHeight).
+   Клавиатуру/chrome учитываем через padding-bottom: var(--msg-bottom-inset),
+   без transform по offsetTop (он давал «висящий» композер на iOS). */
 html.page-messages,
 html.page-messages body {
   height: 100%;
@@ -5593,7 +5594,8 @@ html.page-messages .layout.layout--messages {
   width: 100%;
   height: var(--msg-h, 100%);
   max-height: var(--msg-h, 100%);
-  transform: translate3d(0, var(--msg-y, 0px), 0);
+  padding-bottom: var(--msg-bottom-inset, 0px);
+  box-sizing: border-box;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -6303,6 +6305,11 @@ html.page-messages .messenger__bubble-wrap {
   .layout.layout--messages .messenger__thread {
     height: 100%;
     max-height: 100%;
+  }
+
+  /* Fallback until JS sets --msg-bottom-inset (Chrome/Safari toolbars). */
+  body.messages-thread-open .layout.layout--messages {
+    padding-bottom: var(--msg-bottom-inset, 72px);
   }
 
   body.messages-thread-open .messenger__composer {
