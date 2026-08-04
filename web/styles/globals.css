@@ -5568,16 +5568,15 @@ code {
   pointer-events: none;
 }
 
-/* Страница мессенджера: fixed shell по layout viewport (innerHeight).
-   Клавиатуру/chrome учитываем через padding-bottom: var(--msg-bottom-inset),
-   без transform по offsetTop (он давал «висящий» композер на iOS). */
+/* Страница мессенджера: shell = visualViewport (height + translateY(offsetTop)).
+   Не height:innerHeight при клавиатуре — на Chrome iOS композер уезжает вниз/вверх. */
 html.page-messages,
 html.page-messages body {
   height: 100%;
   width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  touch-action: manipulation;
+  touch-action: pan-y;
   position: relative;
 }
 
@@ -5596,6 +5595,7 @@ html.page-messages .layout.layout--messages {
   max-height: var(--msg-h, 100%);
   padding-bottom: var(--msg-bottom-inset, 0px);
   box-sizing: border-box;
+  transform: translate3d(0, var(--msg-y, 0px), 0);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -5646,9 +5646,16 @@ html.page-messages .messenger__thread {
 html.page-messages .messenger__bubble-wrap {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+html.page-messages .layout.layout--messages.layout--no-mobile-dock {
+  /* Keep chrome/keyboard inset; only drop the mobile-dock reserve. */
+  padding-bottom: var(--msg-bottom-inset, 0px);
 }
 
 .layout.layout--messages.layout--no-mobile-dock {
@@ -6309,7 +6316,7 @@ html.page-messages .messenger__bubble-wrap {
 
   /* Fallback until JS sets --msg-bottom-inset (Chrome/Safari toolbars). */
   body.messages-thread-open .layout.layout--messages {
-    padding-bottom: var(--msg-bottom-inset, 72px);
+    padding-bottom: var(--msg-bottom-inset, 56px);
   }
 
   body.messages-thread-open .messenger__composer {

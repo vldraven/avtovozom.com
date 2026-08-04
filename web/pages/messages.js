@@ -149,7 +149,15 @@ export default function MessagesPage() {
 
   const scrollThreadToEnd = () => {
     requestAnimationFrame(() => {
-      threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      // Never use scrollIntoView — on iOS Chrome it pans the visual viewport and
+      // the composer jumps out of sight when the keyboard is open.
+      const end = threadEndRef.current;
+      const wrap =
+        end?.closest?.(".messenger__bubble-wrap") ||
+        document.querySelector(".messenger__bubble-wrap");
+      if (wrap) {
+        wrap.scrollTop = wrap.scrollHeight;
+      }
     });
   };
 
@@ -222,7 +230,7 @@ export default function MessagesPage() {
           const prevLen = prev?.length || 0;
           if (quiet && list.length > prevLen) {
             requestAnimationFrame(() => {
-              threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+              scrollThreadToEnd();
             });
           }
           return list;
@@ -434,19 +442,20 @@ export default function MessagesPage() {
       document.documentElement.classList.remove("messages-kb-open");
       document.body.classList.remove("messages-thread-open");
       document.documentElement.style.removeProperty("--msg-h");
+      document.documentElement.style.removeProperty("--msg-y");
       document.documentElement.style.removeProperty("--msg-bottom-inset");
       document.documentElement.style.removeProperty("--msg-composer-pad");
     };
   }, [threadOpenOnMobile]);
 
   /**
-   * iOS Safari/Chrome: do NOT translate the shell by visualViewport.offsetTop.
-   * That fights interactive-widget=resizes-content and leaves the composer mid-screen.
+   * Pin the chat shell to the *visual* viewport on iOS Chrome/Safari.
+   * Using layout innerHeight + padding-bottom fails on Chrome iOS: keyboard
+   * shrinks visualViewport only, so the composer (at the bottom of a tall
+   * fixed shell) sits below the keyboard / pans out of view.
    *
-   * Same formula as MobileBottomNav:
-   *   inset = innerHeight - vv.height - vv.offsetTop
-   * Shell stays fixed at top:0 / height:innerHeight; padding-bottom lifts content
-   * above the keyboard (when inset is large) or above floating browser chrome.
+   * Pattern (Chrome docs): top:0; height:vv.height; transform:translateY(vv.offsetTop).
+   * Extra chrome pad only when the keyboard is closed. Never scrollIntoView the window.
    */
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -466,38 +475,35 @@ export default function MessagesPage() {
 
     const sync = () => {
       const vv = window.visualViewport;
-      const h = Math.max(0, Math.round(window.innerHeight));
-      root.style.setProperty("--msg-h", `${h}px`);
-
-      let inset = 0;
-      if (vv) {
-        inset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-      }
-      if (inset < 12) inset = 0;
-
-      const focused = composerFocused();
-      // Keyboard / overlay that actually covers layout (Safari classic path).
-      const keyboardLikely = focused && inset > 40;
-
-      if (keyboardLikely) {
-        root.classList.add("messages-kb-open");
-        root.style.setProperty("--msg-bottom-inset", `${inset}px`);
-        root.style.setProperty("--msg-composer-pad", "8px");
+      if (!vv) {
+        root.style.setProperty("--msg-h", `${window.innerHeight}px`);
+        root.style.setProperty("--msg-y", "0px");
+        root.style.setProperty(
+          "--msg-bottom-inset",
+          isStandalone() ? "0px" : "56px"
+        );
+        root.style.setProperty("--msg-composer-pad", "max(8px, env(safe-area-inset-bottom, 0px))");
+        root.classList.remove("messages-kb-open");
         return;
       }
 
-      root.classList.remove("messages-kb-open");
+      const y = Math.max(0, Math.round(vv.offsetTop));
+      const h = Math.max(0, Math.round(vv.height));
+      root.style.setProperty("--msg-h", `${h}px`);
+      root.style.setProperty("--msg-y", `${y}px`);
 
-      if (focused && inset <= 40) {
-        // Layout already resized (interactive-widget=resizes-content / Chrome):
-        // shell height tracks innerHeight — no extra lift, or composer floats mid-screen.
+      const focused = composerFocused();
+      if (focused) {
+        root.classList.add("messages-kb-open");
+        // Shell already matches the visible area above the keyboard.
         root.style.setProperty("--msg-bottom-inset", "0px");
         root.style.setProperty("--msg-composer-pad", "8px");
         return;
       }
 
-      // Keyboard closed: Safari/Chrome toolbars overlay the bottom of the layout viewport.
-      const chromePad = isStandalone() ? 0 : 72;
+      root.classList.remove("messages-kb-open");
+      // Floating Safari/Chrome toolbars overlay the visual viewport.
+      const chromePad = isStandalone() ? 0 : 56;
       root.style.setProperty("--msg-bottom-inset", `${chromePad}px`);
       root.style.setProperty(
         "--msg-composer-pad",
@@ -522,12 +528,11 @@ export default function MessagesPage() {
       if (!(t instanceof HTMLElement)) return;
       if (!t.classList?.contains("messenger__composer-input")) return;
       sync();
-      // iOS animates keyboard for ~250–350ms; re-sync after settle.
-      scheduleSync(80, 280);
+      scheduleSync(50, 150, 320);
     };
 
     const onFocusOut = () => {
-      scheduleSync(200);
+      scheduleSync(180);
     };
 
     sync();
@@ -547,6 +552,7 @@ export default function MessagesPage() {
       document.removeEventListener("focusout", onFocusOut);
       root.classList.remove("messages-kb-open");
       root.style.removeProperty("--msg-h");
+      root.style.removeProperty("--msg-y");
       root.style.removeProperty("--msg-bottom-inset");
       root.style.removeProperty("--msg-composer-pad");
     };
