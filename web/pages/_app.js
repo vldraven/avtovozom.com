@@ -49,6 +49,30 @@ export default function App({ Component, pageProps }) {
     };
   }, []);
 
+  // iOS «На экран Домой» / PWA: class for safe-area under status bar & notch.
+  // Scoped via html.is-standalone so in-browser layout is unchanged.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const syncStandalone = () => {
+      const standalone = Boolean(
+        window.matchMedia?.("(display-mode: standalone)")?.matches ||
+          window.matchMedia?.("(display-mode: fullscreen)")?.matches ||
+          window.navigator.standalone
+      );
+      document.documentElement.classList.toggle("is-standalone", standalone);
+    };
+    syncStandalone();
+    const mqStandalone = window.matchMedia?.("(display-mode: standalone)");
+    const mqFullscreen = window.matchMedia?.("(display-mode: fullscreen)");
+    mqStandalone?.addEventListener?.("change", syncStandalone);
+    mqFullscreen?.addEventListener?.("change", syncStandalone);
+    return () => {
+      mqStandalone?.removeEventListener?.("change", syncStandalone);
+      mqFullscreen?.removeEventListener?.("change", syncStandalone);
+      document.documentElement.classList.remove("is-standalone");
+    };
+  }, []);
+
   // MetaMask и другие расширения кидают unhandled rejection → Next.js overlay поверх страницы.
   useEffect(() => {
     if (typeof window === "undefined" || process.env.NODE_ENV === "production") {
