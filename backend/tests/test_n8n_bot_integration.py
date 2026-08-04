@@ -120,6 +120,30 @@ class N8nBotIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 403)
 
+    @patch("app.n8n_bot_integration.notify_calculation_request")
+    def test_create_request_guest_chat_source(self, notify_mock) -> None:
+        r = self.client.post(
+            "/integrations/n8n/bot/create-request",
+            json={
+                "user_name": "Гость",
+                "user_contact": "+79991112233",
+                "comment": "Нужен расчёт BYD Seal",
+                "source": "guest_chat",
+                "guest_chat_id": 42,
+            },
+            headers={"X-N8N-Webhook-Secret": "test-secret"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        req = self.db.execute(
+            select(CalculationRequest).where(
+                CalculationRequest.id == r.json()["request_id"]
+            )
+        ).scalar_one()
+        self.assertEqual(req.source, "guest_chat")
+        self.assertIn("guest_chat:42", req.comment)
+        notify_mock.assert_called_once()
+        self.assertEqual(notify_mock.call_args.kwargs["source"], "guest_chat")
+
 
 if __name__ == "__main__":
     unittest.main()

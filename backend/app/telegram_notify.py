@@ -140,6 +140,26 @@ def notify_guest_chat_message(
     _send_admin_message("\n".join(lines))
 
 
+def notify_guest_chat_handoff(
+    *,
+    chat_id: int,
+    reason: str | None = None,
+    messages_url: str | None = None,
+) -> None:
+    """ИИ-консультант передал гостевой чат живому менеджеру."""
+    lines = [
+        f"Нужен человек в гостевом чате #{chat_id}",
+        "ИИ-консультант передал диалог менеджеру.",
+    ]
+    why = (reason or "").strip()
+    if why:
+        lines.append(f"Причина: {why[:1000]}")
+    url = (messages_url or "").strip()
+    if url:
+        lines.append(f"Открыть чат: {url}")
+    _send_admin_message("\n".join(lines))
+
+
 def notify_new_calculation_request(
     *,
     request_id: int,

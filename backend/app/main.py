@@ -227,6 +227,17 @@ from .n8n_bot_integration import (
     create_bot_calculation_request,
     verify_n8n_bot_api_secret,
 )
+from .n8n_guest_chat import (
+    N8nGuestChatHandoffIn,
+    N8nGuestChatHandoffOut,
+    N8nGuestChatReplyIn,
+    N8nGuestChatReplyOut,
+    build_guest_chat_history,
+    forward_guest_message_to_n8n,
+    guest_chat_webhook_configured,
+    handoff_guest_chat,
+    post_guest_chat_reply,
+)
 from .agent_api import router as agent_api_router
 from .n8n_client import n8n_webhook_post
 from .push_notify import (
@@ -5361,6 +5372,39 @@ def n8n_bot_create_request(
     )
 
 
+@app.post(
+    "/integrations/n8n/guest-chats/{chat_id}/messages",
+    response_model=N8nGuestChatReplyOut,
+    dependencies=[Depends(verify_n8n_bot_api_secret)],
+)
+def n8n_guest_chat_reply(
+    chat_id: int,
+    payload: N8nGuestChatReplyIn,
+    db: Session = Depends(get_db),
+):
+    """Ответ ИИ-консультанта (n8n) в гостевой чат на сайте."""
+    return post_guest_chat_reply(db, chat_id, payload)
+
+
+@app.post(
+    "/integrations/n8n/guest-chats/{chat_id}/handoff",
+    response_model=N8nGuestChatHandoffOut,
+    dependencies=[Depends(verify_n8n_bot_api_secret)],
+)
+def n8n_guest_chat_handoff(
+    chat_id: int,
+    payload: N8nGuestChatHandoffIn,
+    db: Session = Depends(get_db),
+):
+    """Передача гостевого чата живому менеджеру (уведомление в Telegram)."""
+    return handoff_guest_chat(
+        db,
+        chat_id,
+        payload,
+        messages_url=_platform_chat_messages_url(chat_id),
+    )
+
+
 @app.post("/requests/{request_id}/offers", response_model=DealerOfferOut)
 def create_dealer_offer(
     request_id: int,
@@ -5944,6 +5988,7 @@ def delete_chat(
 @app.post("/public/guest-chats/messages", response_model=GuestChatSessionOut)
 def public_guest_chat_send(
     payload: GuestChatSendIn,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     text_clean = (payload.text or "").strip()
@@ -5978,6 +6023,18 @@ def public_guest_chat_send(
         notify_guest_chat_message(
             chat_id=chat.id,
             message_text=text_clean,
+            messages_url=url,
+        )
+
+    if guest_chat_webhook_configured():
+        history = build_guest_chat_history(db, chat.id, limit=20)
+        background_tasks.add_task(
+            forward_guest_message_to_n8n,
+            chat_id=chat.id,
+            guest_token=token,
+            text=text_clean,
+            created=created,
+            history=history,
             messages_url=url,
         )
 

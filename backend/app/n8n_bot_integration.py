@@ -24,6 +24,9 @@ class N8nBotCreateRequestIn(BaseModel):
     comment: str = Field(..., min_length=3, max_length=4000)
     telegram_chat_id: str | None = Field(default=None, max_length=64)
     telegram_username: str | None = Field(default=None, max_length=64)
+    # telegram_bot (default) | guest_chat | website
+    source: str | None = Field(default=None, max_length=32)
+    guest_chat_id: int | None = None
 
 
 class N8nBotCreateRequestOut(BaseModel):
@@ -89,13 +92,24 @@ def create_bot_calculation_request(
         telegram_username=payload.telegram_username,
     )
 
+    raw_source = (payload.source or "").strip().lower()
+    if raw_source in ("guest_chat", "website", "telegram_bot", "freeform"):
+        source = raw_source
+    elif payload.guest_chat_id is not None:
+        source = "guest_chat"
+    else:
+        source = "telegram_bot"
+
+    if payload.guest_chat_id is not None and f"guest_chat:{payload.guest_chat_id}" not in comment:
+        comment = f"{comment}\n[guest_chat:{payload.guest_chat_id}]".strip()
+
     req = CalculationRequest(
         user_name=user_name,
         user_contact=user_contact,
         user_id=None,
         car_id=car_id,
         comment=comment,
-        source="telegram_bot",
+        source=source,
         status="open",
     )
     db.add(req)
@@ -110,6 +124,6 @@ def create_bot_calculation_request(
         user_contact=user_contact,
         comment=comment,
         car_page_url=car_page_url,
-        source="telegram_bot",
+        source=source,
     )
     return N8nBotCreateRequestOut(ok=True, request_id=req.id)
