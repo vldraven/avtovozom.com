@@ -25,6 +25,11 @@ import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { organizationAndWebSiteJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { scheduleListScrollRestore } from "../lib/listScrollRestore";
 import { getListingPageCache, setListingPageCache } from "../lib/listingPageCache";
+import {
+  fetchCatalogBrandsCached,
+  fetchCatalogTreeCached,
+  setCatalogMetaCache,
+} from "../lib/catalogMetaCache";
 import { absoluteUrl } from "../lib/siteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
 import {
@@ -1171,13 +1176,10 @@ export default function Home({ initialData = null }) {
 
   const loadCatalogBrandsOnly = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/catalog/brands`, { cache: "no-store" });
-      if (res.ok) {
-        const brands = await res.json();
-        setCatalogBrands(brands);
-        if (router.isReady && router.asPath) {
-          setListingPageCache(HOME_LIST_CACHE_NS, router.asPath, { brands });
-        }
+      const brands = await fetchCatalogBrandsCached(API_URL);
+      setCatalogBrands(brands);
+      if (router.isReady && router.asPath) {
+        setListingPageCache(HOME_LIST_CACHE_NS, router.asPath, { brands });
       }
     } catch {
       /* ignore */
@@ -1186,14 +1188,19 @@ export default function Home({ initialData = null }) {
 
   /** SSR-фетч /catalog/tree иногда не успевает (холодный старт backend) — без этого фильтр «Модель» остаётся пустым на весь сеанс. */
   useEffect(() => {
+    if (initialData?.brands?.length) {
+      setCatalogMetaCache("brands", initialData.brands);
+    }
+    if (initialData?.tree?.length) {
+      setCatalogMetaCache("tree", initialData.tree);
+    }
     if (catalogTree.length > 0) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/catalog/tree`, { cache: "no-store" });
-        if (!cancelled && res.ok) {
-          const nextTree = await res.json();
-          if (Array.isArray(nextTree) && nextTree.length > 0) setCatalogTree(nextTree);
+        const nextTree = await fetchCatalogTreeCached(API_URL);
+        if (!cancelled && Array.isArray(nextTree) && nextTree.length > 0) {
+          setCatalogTree(nextTree);
         }
       } catch {
         /* ignore */

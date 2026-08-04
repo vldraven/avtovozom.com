@@ -307,6 +307,14 @@ _slug_maps_cached_at = 0.0
 _slug_maps_cached: tuple[dict[int, str], dict[tuple[int, int], str]] | None = None
 _SLUG_MAPS_TTL_SECONDS = 120.0
 
+# Публичная навигация каталога (brands/tree): один расчёт на воркер, TTL как у Cache-Control.
+_catalog_meta_lock = Lock()
+_catalog_brands_cached_at = 0.0
+_catalog_brands_cached: list[CatalogBrandOut] | None = None
+_catalog_tree_cached_at = 0.0
+_catalog_tree_cached: list[CatalogTreeBrandOut] | None = None
+_CATALOG_META_TTL_SECONDS = 120.0
+
 # Календарь для возраста авто: полные годы от даты первой регистрации до сегодня (день/месяц важны).
 try:
     MSK = ZoneInfo("Europe/Moscow")
@@ -357,9 +365,20 @@ def _get_cached_slug_maps(db: Session) -> tuple[dict[int, str], dict[tuple[int, 
 
 
 def _invalidate_slug_maps_cache() -> None:
-    global _slug_maps_cached
+    global _slug_maps_cached, _catalog_brands_cached, _catalog_tree_cached
     with _slug_maps_lock:
         _slug_maps_cached = None
+    with _catalog_meta_lock:
+        _catalog_brands_cached = None
+        _catalog_tree_cached = None
+
+
+def _invalidate_catalog_meta_cache() -> None:
+    """Сброс brands/tree (счётчики лотов) без обязательного сброса slug maps."""
+    global _catalog_brands_cached, _catalog_tree_cached
+    with _catalog_meta_lock:
+        _catalog_brands_cached = None
+        _catalog_tree_cached = None
 
 
 def _car_age_group_for_calc(car: Car) -> str:
@@ -1349,9 +1368,7 @@ def public_customs_calculator_estimate(payload: CustomsCalcEstimateIn, db: Sessi
         raise HTTPException(status_code=400, detail=f"Ошибка расчёта: {e}") from e
 
 
-@app.get("/catalog/brands", response_model=list[CatalogBrandOut])
-def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
-    """Публичный список марок с числом объявлений (главная страница, сценарий как на auto.ru)."""
+def _build_catalog_brands(db: Session) -> list[CatalogBrandOut]:
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
     bmap, _ = _get_cached_slug_maps(db)
     car_counts = {
@@ -1384,6 +1401,29 @@ def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
         for b in brands
     ]
     items.sort(key=lambda x: (-x.listings_count, x.name.lower()))
+    return items
+
+
+def _get_cached_catalog_brands(db: Session) -> list[CatalogBrandOut]:
+    global _catalog_brands_cached_at, _catalog_brands_cached
+    now = time.monotonic()
+    with _catalog_meta_lock:
+        if (
+            _catalog_brands_cached is not None
+            and (now - _catalog_brands_cached_at) <= _CATALOG_META_TTL_SECONDS
+        ):
+            return _catalog_brands_cached
+    fresh = _build_catalog_brands(db)
+    with _catalog_meta_lock:
+        _catalog_brands_cached = fresh
+        _catalog_brands_cached_at = now
+    return fresh
+
+
+@app.get("/catalog/brands", response_model=list[CatalogBrandOut])
+def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
+    """Публичный список марок с числом объявлений (главная страница, сценарий как на auto.ru)."""
+    items = _get_cached_catalog_brands(db)
     response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return items
 
@@ -1395,7 +1435,11 @@ def public_catalog_body_colors():
 
 
 @app.get("/catalog/models", response_model=list[CatalogModelOut])
-def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_db)):
+def public_catalog_models(
+    response: Response,
+    brand_id: int = Query(...),
+    db: Session = Depends(get_db),
+):
     brand = db.execute(select(CarBrand).where(CarBrand.id == brand_id)).scalar_one_or_none()
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
@@ -1417,6 +1461,7 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
             .group_by(Car.model_id)
         ).all()
     }
+    response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return [
         CatalogModelOut(
             id=m.id,
@@ -1430,9 +1475,7 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
     ]
 
 
-@app.get("/catalog/tree", response_model=list[CatalogTreeBrandOut])
-def public_catalog_tree(response: Response, db: Session = Depends(get_db)):
-    """Дерево марок и моделей с ЧПУ-слагами для навигации /catalog/…"""
+def _build_catalog_tree(db: Session) -> list[CatalogTreeBrandOut]:
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
     # Bulk-load: без N+1 на каждую марку/модель (форма ответа прежняя).
     all_models = db.execute(select(CarModel).order_by(CarModel.name)).scalars().all()
@@ -1514,6 +1557,29 @@ def public_catalog_tree(response: Response, db: Session = Depends(get_db)):
             )
         )
     out.sort(key=lambda x: (-x.listings_count, x.name.lower()))
+    return out
+
+
+def _get_cached_catalog_tree(db: Session) -> list[CatalogTreeBrandOut]:
+    global _catalog_tree_cached_at, _catalog_tree_cached
+    now = time.monotonic()
+    with _catalog_meta_lock:
+        if (
+            _catalog_tree_cached is not None
+            and (now - _catalog_tree_cached_at) <= _CATALOG_META_TTL_SECONDS
+        ):
+            return _catalog_tree_cached
+    fresh = _build_catalog_tree(db)
+    with _catalog_meta_lock:
+        _catalog_tree_cached = fresh
+        _catalog_tree_cached_at = now
+    return fresh
+
+
+@app.get("/catalog/tree", response_model=list[CatalogTreeBrandOut])
+def public_catalog_tree(response: Response, db: Session = Depends(get_db)):
+    """Дерево марок и моделей с ЧПУ-слагами для навигации /catalog/…"""
+    out = _get_cached_catalog_tree(db)
     response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return out
 
@@ -3606,6 +3672,7 @@ async def staff_create_car(
     for i, url in enumerate(paths):
         db.add(CarPhoto(car_id=car.id, storage_url=url, sort_order=i))
     db.commit()
+    _invalidate_catalog_meta_cache()
 
     car = (
         db.execute(
@@ -3752,6 +3819,7 @@ def staff_delete_own_car(
         return {"ok": True}
     car.is_active = False
     db.commit()
+    _invalidate_catalog_meta_cache()
     # Снятое объявление вернёт 404 на каноническом URL — просим поисковики перепроверить и выкинуть из индекса.
     _ping_indexnow_for_car(db, car)
     car_dir = MEDIA_ROOT / "cars" / str(car_id)
@@ -4563,6 +4631,7 @@ def admin_delete_car(
         raise HTTPException(status_code=404, detail="Car not found")
     car.is_active = False
     db.commit()
+    _invalidate_catalog_meta_cache()
     # Снятое объявление вернёт 404 на каноническом URL — просим поисковики перепроверить и выкинуть из индекса.
     _ping_indexnow_for_car(db, car)
     car_dir = MEDIA_ROOT / "cars" / str(car_id)
