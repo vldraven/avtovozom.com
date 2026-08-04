@@ -98,8 +98,11 @@ export default function MessagesPage() {
   const [listVisible, setListVisible] = useState(true);
   const [chatQuery, setChatQuery] = useState("");
   const [deletingChatId, setDeletingChatId] = useState(null);
+  /** После отправки ждём ответ бота: быстрый poll + индикатор «печатает». */
+  const [awaitingBotReply, setAwaitingBotReply] = useState(false);
   const threadEndRef = useRef(null);
   const draftFromQueryAppliedRef = useRef(false);
+  const awaitingBotUntilRef = useRef(0);
 
   const scrollThreadToEnd = () => {
     requestAnimationFrame(() => {
@@ -112,7 +115,8 @@ export default function MessagesPage() {
     setGuestTokenState(value || "");
   }, []);
 
-  const loadGuestThread = useCallback(async (gToken) => {
+  const loadGuestThread = useCallback(async (gToken, opts = {}) => {
+    const silent = Boolean(opts.silent);
     const gt = (gToken || "").trim();
     if (!gt) {
       setChats([
@@ -135,8 +139,10 @@ export default function MessagesPage() {
       setListVisible(false);
       return;
     }
-    setLoadingThread(true);
-    setSendErr("");
+    if (!silent) {
+      setLoadingThread(true);
+      setSendErr("");
+    }
     try {
       const [metaRes, msgRes] = await Promise.all([
         fetch(`${API_URL}/public/guest-chats/${encodeURIComponent(gt)}`),
@@ -144,6 +150,8 @@ export default function MessagesPage() {
       ]);
       if (metaRes.status === 404) {
         persistGuestToken("");
+        setAwaitingBotReply(false);
+        awaitingBotUntilRef.current = 0;
         setChats([
           {
             id: GUEST_CHAT_PLACEHOLDER_ID,
@@ -169,12 +177,19 @@ export default function MessagesPage() {
         setActiveId(meta.id);
       }
       if (msgRes.ok) {
-        setMessages((await msgRes.json()) || []);
+        const next = (await msgRes.json()) || [];
+        setMessages(next);
+        const last = next.length ? next[next.length - 1] : null;
+        // Ответ бота: sender_user_id != null (гость пишет с null).
+        if (last && last.sender_user_id != null && Date.now() < awaitingBotUntilRef.current) {
+          setAwaitingBotReply(false);
+          awaitingBotUntilRef.current = 0;
+        }
         scrollThreadToEnd();
       }
       setListVisible(false);
     } finally {
-      setLoadingThread(false);
+      if (!silent) setLoadingThread(false);
       setLoadingList(false);
     }
   }, [persistGuestToken]);
@@ -326,13 +341,22 @@ export default function MessagesPage() {
   useEffect(() => {
     if (guestMode) {
       if (!guestToken) return undefined;
-      const id = setInterval(() => loadGuestThread(guestToken), 26000);
+      // Пока ждём ответ бота — опрашиваем чаще, иначе клиент увидит ответ через ~26 с.
+      const ms = awaitingBotReply ? 2500 : 26000;
+      const id = setInterval(() => loadGuestThread(guestToken, { silent: true }), ms);
       return () => clearInterval(id);
     }
     if (!token) return undefined;
     const id = setInterval(() => loadChats(token), 26000);
     return () => clearInterval(id);
-  }, [token, loadChats, guestMode, guestToken, loadGuestThread]);
+  }, [token, loadChats, guestMode, guestToken, loadGuestThread, awaitingBotReply]);
+
+  useEffect(() => {
+    if (!awaitingBotReply) return undefined;
+    const left = Math.max(0, awaitingBotUntilRef.current - Date.now());
+    const id = setTimeout(() => setAwaitingBotReply(false), left || 1);
+    return () => clearTimeout(id);
+  }, [awaitingBotReply]);
 
   useEffect(() => {
     scrollThreadToEnd();
@@ -438,6 +462,9 @@ export default function MessagesPage() {
       setDraft("");
       setAttachFile(null);
       setActiveId(errBody.chat_id);
+      // Бот отвечает асинхронно через n8n → API; ускоряем poll и показываем «печатает».
+      awaitingBotUntilRef.current = Date.now() + 90000;
+      setAwaitingBotReply(true);
       await loadGuestThread(errBody.guest_token);
       return;
     }
@@ -741,6 +768,19 @@ export default function MessagesPage() {
                             </div>
                           );
                         })}
+                        {guestMode && awaitingBotReply ? (
+                          <div
+                            className="messenger__bubble-row"
+                            aria-live="polite"
+                            aria-label="Консультант печатает"
+                          >
+                            <div className="messenger__bubble messenger__bubble--typing">
+                              <span className="messenger__typing-dot" />
+                              <span className="messenger__typing-dot" />
+                              <span className="messenger__typing-dot" />
+                            </div>
+                          </div>
+                        ) : null}
                         <div ref={threadEndRef} />
                       </div>
                     )}

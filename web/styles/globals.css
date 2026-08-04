@@ -5944,6 +5944,43 @@ html.page-messages body {
   color: #475569;
 }
 
+.messenger__bubble--typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 10px 14px;
+}
+
+.messenger__typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+  animation: messenger-typing-bounce 1.2s ease-in-out infinite;
+}
+
+.messenger__typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.messenger__typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes messenger-typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
 .messenger__guest-prompts {
   display: grid;
   gap: 8px;
