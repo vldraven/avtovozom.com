@@ -1830,7 +1830,9 @@ a:hover {
     margin-bottom: 1.25rem;
   }
 
-  .detail-cta-pair--sidebar,
+  /* Выше специфичность, чем у .detail-cta-pair { display: grid } ниже по файлу —
+     иначе на мобилке снова показываются кнопки из сайдбара и дублируют sticky bar. */
+  .detail-cta-pair.detail-cta-pair--sidebar,
   .detail-sidebar__actions--desktop,
   .detail-consult-card,
   .detail-panel--specs,
