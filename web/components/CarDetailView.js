@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import Breadcrumbs from "./Breadcrumbs";
 import CarPhotoLightbox from "./CarPhotoLightbox";
@@ -177,6 +177,8 @@ export default function CarDetailView({
   const [similarError, setSimilarError] = useState("");
   const [trimModalOpen, setTrimModalOpen] = useState(false);
   const [breakdownExpanded, setBreakdownExpanded] = useState(false);
+  const galleryTouchRef = useRef(null);
+  const gallerySwipedRef = useRef(false);
 
   const isListingOwner =
     car != null &&
@@ -241,6 +243,42 @@ export default function CarDetailView({
     const overflow = Math.max(0, nPhotos - DESKTOP_THUMB_SLOTS);
     return { visible, overflow };
   }, [sortedPhotos, nPhotos]);
+
+  const onGalleryTouchStart = useCallback((e) => {
+    if (nPhotos <= 1 || e.touches.length !== 1) return;
+    gallerySwipedRef.current = false;
+    galleryTouchRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+  }, [nPhotos]);
+
+  const onGalleryTouchEnd = useCallback(
+    (e) => {
+      const start = galleryTouchRef.current;
+      galleryTouchRef.current = null;
+      if (!start || nPhotos <= 1 || e.changedTouches.length !== 1) return;
+      const dx = e.changedTouches[0].clientX - start.x;
+      const dy = e.changedTouches[0].clientY - start.y;
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
+      gallerySwipedRef.current = true;
+      if (dx > 0) {
+        setActivePhoto((i) => Math.max(0, i - 1));
+      } else {
+        setActivePhoto((i) => Math.min(nPhotos - 1, i + 1));
+      }
+    },
+    [nPhotos]
+  );
+
+  const openGalleryLightbox = useCallback(() => {
+    if (gallerySwipedRef.current) {
+      gallerySwipedRef.current = false;
+      return;
+    }
+    setPhotoLightboxIndex(safeIndex);
+    setPhotoLightboxOpen(true);
+  }, [safeIndex]);
 
   const keySpecRows = useMemo(() => {
     if (!car) return [];
@@ -734,17 +772,15 @@ export default function CarDetailView({
                     className="photo-gallery__stage-wrap photo-gallery__stage-wrap--openable"
                     role="button"
                     tabIndex={0}
-                    onClick={() => {
-                      setPhotoLightboxIndex(safeIndex);
-                      setPhotoLightboxOpen(true);
-                    }}
+                    onClick={openGalleryLightbox}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        setPhotoLightboxIndex(safeIndex);
-                        setPhotoLightboxOpen(true);
+                        openGalleryLightbox();
                       }
                     }}
+                    onTouchStart={onGalleryTouchStart}
+                    onTouchEnd={onGalleryTouchEnd}
                   >
                     <MediaImage
                       className="photo-gallery__stage"
@@ -753,6 +789,7 @@ export default function CarDetailView({
                       fill
                       sizes="(max-width: 767px) 100vw, 900px"
                       priority
+                      draggable={false}
                       style={{ objectFit: "cover" }}
                     />
                     <button
