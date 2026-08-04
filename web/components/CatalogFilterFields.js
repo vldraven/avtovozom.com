@@ -53,6 +53,8 @@ export default function CatalogFilterFields({
               label="Марка"
               placeholder="Любая"
               searchable
+              portal
+              menuMinWidth={280}
               value={draft.brandId ? String(draft.brandId) : ""}
               onChange={(v) => patch({ brandId: v ? Number(v) : null, modelId: null, generationId: null })}
               options={[
@@ -68,6 +70,8 @@ export default function CatalogFilterFields({
               label="Модель"
               placeholder={draft.brandId ? "Любая" : "Сначала марка"}
               searchable
+              portal
+              menuMinWidth={280}
               disabled={!draft.brandId}
               value={draft.modelId ? String(draft.modelId) : ""}
               onChange={(v) => patch({ modelId: v ? Number(v) : null })}
@@ -191,6 +195,7 @@ export default function CatalogFilterFields({
           className="site-dropdown--block"
           label="Мощность, л.с."
           placeholder="Любая"
+          portal
           value={draft.hpTo ? String(draft.hpTo) : ""}
           onChange={(v) => patch({ hpTo: v ? Number(v) : null })}
           options={[{ value: "", label: "Любая" }, ...HP_TO_OPTIONS]}
