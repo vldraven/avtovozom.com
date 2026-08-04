@@ -29,6 +29,7 @@ import { absoluteUrl } from "../lib/siteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
 import {
   appendFiltersToSearchParams,
+  catalogFiltersToQuery,
   EMPTY_CATALOG_FILTERS,
   FUEL_TYPE_OPTIONS,
   homeHasListingQuery,
@@ -47,23 +48,31 @@ const HOME_PRICE_OPTIONS = [
 ];
 
 const HOME_DEAL_STEPS = [
-  { n: 1, title: "Заявка и расчёт", text: "Смета под ключ за 2 часа" },
-  { n: 2, title: "Проверка и выкуп", text: "Диагностика с фото до оплаты" },
-  { n: 3, title: "Доставка", text: "Статус — в чате сделки" },
-  { n: 4, title: "Растаможка и ключи", text: "ЭПТС, учёт и передача авто" },
+  { n: 1, title: "Выбор и расчёт", text: "Поможем выбрать авто и подготовим расчёт до вашего города" },
+  {
+    n: 2,
+    title: "Договор",
+    text: "Проверяем авто, согласуем условия и сопровождаем договор с дилером.",
+  },
+  { n: 3, title: "Доставка", text: "Организуем перевозку. Статусы — в личном кабинете." },
+  {
+    n: 4,
+    title: "Оформление",
+    text: "Таможенное оформление, ЭПТС и передача автомобиля.",
+  },
 ];
 
 const HOME_BENEFITS = [
   {
-    title: "Одна цена в договоре",
-    text: "Стоимость под ключ до города фиксируется до предоплаты — доплат по факту нет.",
+    title: "Прозрачная стоимость",
+    text: "Автомобиль, доставка, таможенное оформление",
     icon: (
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v4a1 1 0 0 0 1 1h4 M9 13h6M9 17h4" />
     ),
   },
   {
-    title: "Отчёты бесплатно",
-    text: "Диагностика с фото, история по АТС и видео-осмотр — по заявке, без оплаты.",
+    title: "Проверка до сделки",
+    text: "Фото, видео и доступные отчёты по автомобилю — до решения о покупке.",
     icon: (
       <>
         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
@@ -72,8 +81,8 @@ const HOME_BENEFITS = [
     ),
   },
   {
-    title: "Всё в кабинете",
-    text: "Чат по сделке, статус доставки и документы — в одном месте после входа.",
+    title: "Вся сделка — в кабинете",
+    text: "Статусы, расчёты, документы и чат с менеджером — в одном месте.",
     icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
   },
 ];
@@ -399,8 +408,23 @@ export default function Home({ initialData = null }) {
       rubTo: heroRubTo ? Number(heroRubTo) : null,
       fuelType: heroFuelType || null,
     };
-    setHomeFilterDraft(fd);
-    setHomeFilterApplied(fd);
+    const nextBrand =
+      catalogTree.find((b) => b.id === fd.brandId) || catalogBrands.find((b) => b.id === fd.brandId);
+    const nextModel =
+      nextBrand?.models?.find((m) => m.id === fd.modelId) ||
+      heroModels.find((m) => m.id === fd.modelId);
+    const filterQuery = catalogFiltersToQuery(fd, { omitBrandModel: true });
+
+    let pathname = "/catalog";
+    if (nextBrand?.slug) pathname += `/${nextBrand.slug}`;
+    if (nextBrand?.slug && nextModel?.slug) pathname += `/${nextModel.slug}`;
+
+    // Если slug марки нет, но выбран brand/model id — пробросим query.
+    if (!nextBrand?.slug && (fd.brandId || fd.modelId)) {
+      Object.assign(filterQuery, catalogFiltersToQuery(fd));
+    }
+
+    router.push({ pathname, query: filterQuery });
   }
 
   useEffect(() => {
@@ -1548,16 +1572,15 @@ export default function Home({ initialData = null }) {
               <p className="home-m-hero__eyebrow">Авто из Китая</p>
               <h1 className="home-m-hero__title">Весь путь автомобиля — под вашим контролем</h1>
               <p className="home-m-hero__subtitle">
-                Подбираем предложения проверенных китайских дилеров, сопровождаем прямую сделку и
-                организуем таможенное оформление в России. Статусы, расчёты и документы доступны в
-                личном кабинете.
+                Проверенные китайские дилеры, сопровождение сделки и таможенное оформление в России.
+                Весь процесс — в личном кабинете.
               </p>
               <div className="home-m-hero__cta-row">
-                <Link href="/catalog" className="btn btn-primary home-m-hero__cta">
-                  Выбрать автомобиль
+                <Link href="/request-quote" className="btn btn-primary home-m-hero__cta">
+                  Рассчитать
                 </Link>
-                <Link href="/request-quote" className="btn home-m-hero__cta home-m-hero__cta--ghost">
-                  Рассчитать стоимость
+                <Link href="/catalog" className="btn home-m-hero__cta home-m-hero__cta--ghost">
+                  Каталог
                 </Link>
               </div>
             </section>
@@ -1714,18 +1737,9 @@ export default function Home({ initialData = null }) {
               <p className="home-d-hero__eyebrow">Авто из Китая</p>
               <h1 className="home-d-hero__title">Весь путь автомобиля — под вашим контролем</h1>
               <p className="home-d-hero__subtitle">
-                Подбираем предложения проверенных китайских дилеров, сопровождаем прямую сделку и
-                организуем таможенное оформление в России. Статусы, расчёты и документы доступны в
-                личном кабинете.
+                Проверенные китайские дилеры, сопровождение сделки и таможенное оформление в России.
+                Весь процесс — в личном кабинете.
               </p>
-              <div className="home-d-hero__cta-row">
-                <Link href="/catalog" className="btn btn-primary home-d-hero__cta">
-                  Выбрать автомобиль
-                </Link>
-                <Link href="/request-quote" className="btn home-d-hero__cta home-d-hero__cta--ghost">
-                  Рассчитать стоимость
-                </Link>
-              </div>
               <form className="home-d-filters" onSubmit={onHeroFiltersSubmit}>
                 <div className="home-d-filters__field">
                   <SiteSelectDropdown
@@ -1784,18 +1798,23 @@ export default function Home({ initialData = null }) {
                 </button>
               </form>
               <div className="home-d-stats" aria-label="Цифры платформы">
-                <div className="home-d-stats__item">
-                  <strong>{total ? Number(total).toLocaleString("ru-RU") : "—"}</strong>
-                  <span>авто в подборе</span>
+                <div className="home-d-stats__metrics">
+                  <div className="home-d-stats__item">
+                    <strong>{total ? Number(total).toLocaleString("ru-RU") : "—"}</strong>
+                    <span>авто в подборе</span>
+                  </div>
+                  <div className="home-d-stats__item">
+                    <strong>6–8 нед.</strong>
+                    <span>доставка</span>
+                  </div>
+                  <div className="home-d-stats__item">
+                    <strong>0 ₽</strong>
+                    <span>за расчёт и отчёты</span>
+                  </div>
                 </div>
-                <div className="home-d-stats__item">
-                  <strong>6–8 нед.</strong>
-                  <span>доставка</span>
-                </div>
-                <div className="home-d-stats__item">
-                  <strong>0 ₽</strong>
-                  <span>за расчёт и отчёты</span>
-                </div>
+                <Link href="/request-quote" className="btn home-d-stats__quote">
+                  Рассчитать стоимость
+                </Link>
               </div>
             </section>
 
@@ -1896,6 +1915,36 @@ export default function Home({ initialData = null }) {
               )}
             </section>
 
+            <div className="home-d-steps-row">
+              <section className="home-d-steps" aria-label="Как проходит покупка">
+                <h2 className="home-d-steps__title">Как проходит покупка</h2>
+                <div className="home-d-steps__grid">
+                  <div className="home-d-steps__connector" aria-hidden />
+                  {HOME_DEAL_STEPS.map((s, i) => (
+                    <article key={s.n} className="home-d-step">
+                      <span className="home-d-step__icon" aria-hidden>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          {HOME_STEP_ICONS[i]}
+                        </svg>
+                      </span>
+                      <p className="home-d-step__n">Шаг {s.n}</p>
+                      <p className="home-d-step__title">{s.title}</p>
+                      <p className="home-d-step__text">{s.text}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+              <aside className="home-d-steps-cta">
+                <p className="home-d-steps-cta__title">Не нашли нужное авто?</p>
+                <p className="home-d-steps-cta__text">
+                  Оставьте заявку — подберём варианты у проверенных дилеров и подготовим расчёт.
+                </p>
+                <Link href="/request-quote" className="btn btn-primary home-d-steps-cta__btn">
+                  Подобрать автомобиль
+                </Link>
+              </aside>
+            </div>
+
             {popularCars.length > 0 ? (
               <section className="home-d-models" aria-label="Популярные модели">
                 <div className="home-d-models__head">
@@ -1918,36 +1967,6 @@ export default function Home({ initialData = null }) {
                 </div>
               </section>
             ) : null}
-
-            <div className="home-d-steps-row">
-              <section className="home-d-steps" aria-label="Как проходит сделка">
-                <h2 className="home-d-steps__title">Как проходит сделка</h2>
-                <div className="home-d-steps__grid">
-                  <div className="home-d-steps__connector" aria-hidden />
-                  {HOME_DEAL_STEPS.map((s, i) => (
-                    <article key={s.n} className="home-d-step">
-                      <span className="home-d-step__icon" aria-hidden>
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          {HOME_STEP_ICONS[i]}
-                        </svg>
-                      </span>
-                      <p className="home-d-step__n">Шаг {s.n}</p>
-                      <p className="home-d-step__title">{s.title}</p>
-                      <p className="home-d-step__text">{s.text}</p>
-                    </article>
-                  ))}
-                </div>
-              </section>
-              <aside className="home-d-steps-cta">
-                <p className="home-d-steps-cta__title">Не нашли нужное авто?</p>
-                <p className="home-d-steps-cta__text">
-                  Оставьте заявку — подберём под бюджет и пришлём 3 варианта со сметой.
-                </p>
-                <Link href="/request-quote" className="btn btn-primary home-d-steps-cta__btn">
-                  Заявка на подбор
-                </Link>
-              </aside>
-            </div>
 
             <section className="home-d-benefits" aria-label="Преимущества">
               {HOME_BENEFITS.map((b) => (
