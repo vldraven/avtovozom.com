@@ -50,6 +50,7 @@ import {
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../../lib/schema";
 import { scheduleListScrollRestore } from "../../lib/listScrollRestore";
 import { getListingPageCache, setListingPageCache } from "../../lib/listingPageCache";
+import { fetchCatalogTreeCached, setCatalogMetaCache } from "../../lib/catalogMetaCache";
 import { absoluteUrl } from "../../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -316,26 +317,28 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const loadTree = useCallback(async () => {
     setTreeError(null);
     try {
-      const res = await fetch(`${API_URL}/catalog/tree`);
-      if (!res.ok) {
-        setTreeError(
-          `Каталог не отвечает (${res.status}). Убедитесь, что backend запущен: ${API_URL}`
-        );
-        setTree([]);
-        return;
+      if (listInitial?.tree?.length) {
+        setCatalogMetaCache("tree", listInitial.tree);
       }
-      const nextTree = await res.json();
+      const nextTree = await fetchCatalogTreeCached(API_URL);
       setTree(nextTree);
       if (router.asPath) {
         setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, { tree: nextTree });
       }
-    } catch {
-      setTreeError(
-        `Нет связи с API (${API_URL}). Запустите backend (docker compose / uvicorn) и проверьте адрес в NEXT_PUBLIC_API_URL.`
-      );
+    } catch (err) {
+      const statusMatch = String(err?.message || "").match(/tree\s+(\d+)/);
+      if (statusMatch) {
+        setTreeError(
+          `Каталог не отвечает (${statusMatch[1]}). Убедитесь, что backend запущен: ${API_URL}`
+        );
+      } else {
+        setTreeError(
+          `Нет связи с API (${API_URL}). Запустите backend (docker compose / uvicorn) и проверьте адрес в NEXT_PUBLIC_API_URL.`
+        );
+      }
       setTree([]);
     }
-  }, [router.asPath]);
+  }, [router.asPath, listInitial?.tree]);
 
   useEffect(() => {
     if (skipTreeLoadRef.current) {
