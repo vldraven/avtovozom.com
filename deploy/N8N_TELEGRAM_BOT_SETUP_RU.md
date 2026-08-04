@@ -4,6 +4,8 @@ Workflow для **входящих сообщений** клиентам в ли
 
 Импорт: n8n → **Import from File** → [n8n-telegram-consultant.workflow.json](n8n-telegram-consultant.workflow.json)
 
+Один workflow на два канала: **Telegram** и **гостевой чат на сайте** (узел **Webhook (сайт)**). Подробнее: [N8N_GUEST_CHAT_BOT_SETUP_RU.md](N8N_GUEST_CHAT_BOT_SETUP_RU.md).
+
 Существующие workflow для **канала** (черновик + публикация) описаны в [N8N_TELEGRAM_SETUP_RU.md](N8N_TELEGRAM_SETUP_RU.md).
 
 ---

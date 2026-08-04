@@ -98,6 +98,8 @@ export default function MessagesPage() {
   const [listVisible, setListVisible] = useState(true);
   const [chatQuery, setChatQuery] = useState("");
   const [deletingChatId, setDeletingChatId] = useState(null);
+  const [guestAwaitingAi, setGuestAwaitingAi] = useState(false);
+  const guestAwaitTimerRef = useRef(null);
   const threadEndRef = useRef(null);
   const draftFromQueryAppliedRef = useRef(false);
 
@@ -112,7 +114,8 @@ export default function MessagesPage() {
     setGuestTokenState(value || "");
   }, []);
 
-  const loadGuestThread = useCallback(async (gToken) => {
+  const loadGuestThread = useCallback(async (gToken, opts = {}) => {
+    const quiet = Boolean(opts.quiet);
     const gt = (gToken || "").trim();
     if (!gt) {
       setChats([
@@ -135,7 +138,7 @@ export default function MessagesPage() {
       setListVisible(false);
       return;
     }
-    setLoadingThread(true);
+    if (!quiet) setLoadingThread(true);
     setSendErr("");
     try {
       const [metaRes, msgRes] = await Promise.all([
@@ -161,6 +164,7 @@ export default function MessagesPage() {
         setActiveId(GUEST_CHAT_PLACEHOLDER_ID);
         setMessages([]);
         setListVisible(false);
+        setGuestAwaitingAi(false);
         return;
       }
       if (metaRes.ok) {
@@ -169,12 +173,31 @@ export default function MessagesPage() {
         setActiveId(meta.id);
       }
       if (msgRes.ok) {
-        setMessages((await msgRes.json()) || []);
-        scrollThreadToEnd();
+        const list = (await msgRes.json()) || [];
+        setMessages((prev) => {
+          const prevLen = prev?.length || 0;
+          if (quiet && list.length > prevLen) {
+            requestAnimationFrame(() => {
+              threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            });
+          }
+          return list;
+        });
+        setGuestAwaitingAi((waiting) => {
+          if (!waiting) return false;
+          for (let i = list.length - 1; i >= 0; i -= 1) {
+            const m = list[i];
+            if (m.message_type === "system") continue;
+            // Peer reply arrived (AI or staff)
+            return !(m.message_type === "assistant" || m.sender_user_id != null);
+          }
+          return true;
+        });
+        if (!quiet) scrollThreadToEnd();
       }
       setListVisible(false);
     } finally {
-      setLoadingThread(false);
+      if (!quiet) setLoadingThread(false);
       setLoadingList(false);
     }
   }, [persistGuestToken]);
@@ -326,13 +349,31 @@ export default function MessagesPage() {
   useEffect(() => {
     if (guestMode) {
       if (!guestToken) return undefined;
-      const id = setInterval(() => loadGuestThread(guestToken), 26000);
+      const ms = guestAwaitingAi ? 2500 : 26000;
+      const id = setInterval(() => loadGuestThread(guestToken, { quiet: true }), ms);
       return () => clearInterval(id);
     }
     if (!token) return undefined;
     const id = setInterval(() => loadChats(token), 26000);
     return () => clearInterval(id);
-  }, [token, loadChats, guestMode, guestToken, loadGuestThread]);
+  }, [token, loadChats, guestMode, guestToken, loadGuestThread, guestAwaitingAi]);
+
+  useEffect(() => {
+    if (!guestAwaitingAi) {
+      if (guestAwaitTimerRef.current) {
+        clearTimeout(guestAwaitTimerRef.current);
+        guestAwaitTimerRef.current = null;
+      }
+      return undefined;
+    }
+    guestAwaitTimerRef.current = setTimeout(() => setGuestAwaitingAi(false), 90000);
+    return () => {
+      if (guestAwaitTimerRef.current) {
+        clearTimeout(guestAwaitTimerRef.current);
+        guestAwaitTimerRef.current = null;
+      }
+    };
+  }, [guestAwaitingAi]);
 
   useEffect(() => {
     scrollThreadToEnd();
@@ -438,6 +479,7 @@ export default function MessagesPage() {
       setDraft("");
       setAttachFile(null);
       setActiveId(errBody.chat_id);
+      setGuestAwaitingAi(true);
       await loadGuestThread(errBody.guest_token);
       return;
     }
@@ -700,8 +742,12 @@ export default function MessagesPage() {
                             );
                           }
                           const mine = guestMode
-                            ? m.sender_user_id == null
-                            : me && m.sender_user_id === me.id;
+                            ? m.sender_user_id == null && m.message_type !== "assistant"
+                            : Boolean(
+                                me &&
+                                  (m.sender_user_id === me.id ||
+                                    (activeChat?.chat_type === "guest" && m.message_type === "assistant"))
+                              );
                           const att = m.attachment_url;
                           const attName = m.attachment_original_name || "файл";
                           const showImg = att && attachmentIsImage(attName);
@@ -748,6 +794,11 @@ export default function MessagesPage() {
 
                   <form className="messenger__composer" onSubmit={sendMessage}>
                     {sendErr ? <p className="messenger__composer-err">{sendErr}</p> : null}
+                    {guestMode && guestAwaitingAi ? (
+                      <p className="messenger__composer-hint muted" aria-live="polite">
+                        Консультант печатает…
+                      </p>
+                    ) : null}
                     {attachFile && !guestMode ? (
                       <p className="messenger__attach-picked muted">
                         Вложение: <strong>{attachFile.name}</strong>{" "}

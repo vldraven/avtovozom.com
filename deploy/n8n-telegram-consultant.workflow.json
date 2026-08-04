@@ -3,26 +3,34 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Настройка\n\nВсе параметры — в узле **«Настройки workflow»**.\n\n**backendApiSecret** = `N8N_TELEGRAM_BOT_API_SECRET` в `.env` бэкенда (общий пароль, чтобы n8n мог создавать заявки через API).\n\nCredentials: Telegram и OpenAI — в соответствующих узлах.",
-        "height": 200,
-        "width": 400
+        "content": "## Настройка\n\nОдин workflow: **Telegram** + **гостевой чат на сайте**.\n\nВсе параметры — в узле **«Настройки workflow»**.\n\n**backendApiSecret** = `N8N_TELEGRAM_BOT_API_SECRET` в `.env` бэкенда.\n\nWebhook path: `avtovozom-guest-consultant` → URL в `N8N_GUEST_CHAT_WEBHOOK_URL`.\n\nCredentials: Telegram и OpenAI — в соответствующих узлах.\n\nСм. deploy/N8N_TELEGRAM_BOT_SETUP_RU.md и deploy/N8N_GUEST_CHAT_BOT_SETUP_RU.md",
+        "height": 280,
+        "width": 440
       },
       "id": "bot-sticky-note-00",
       "name": "Sticky Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [200, 80]
+      "position": [
+        200,
+        80
+      ]
     },
     {
       "parameters": {
-        "updates": ["message"],
+        "updates": [
+          "message"
+        ],
         "additionalFields": {}
       },
       "id": "bot-tg-trigger-01",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.1,
-      "position": [240, 360],
+      "position": [
+        240,
+        360
+      ],
       "webhookId": "avtovozom-bot-consultant",
       "credentials": {
         "telegramApi": {
@@ -30,6 +38,23 @@
           "name": "Avtovozom Bot"
         }
       }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "avtovozom-guest-consultant",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "bot-webhook-guest-01",
+      "name": "Webhook (сайт)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        560
+      ],
+      "webhookId": "avtovozom-guest-consultant"
     },
     {
       "parameters": {
@@ -86,7 +111,7 @@
             {
               "id": "cfg-systemPrompt",
               "name": "systemPrompt",
-              "value": "Ты консультант avtovozom.com — сервиса подбора и доставки автомобилей из Китая и азиатского рынка под ключ до РФ.\n\nПеред вызовом инструмента переводи фразу клиента в параметры API. Не передавай в инструменты сырой текст клиента целиком.\n\nФормат инструментов avtovozom:\n• search_cars — q: марка/модель латиницей как в каталоге (Audi, BMW). Марки на русском переводи: Ауди→Audi, БМВ→BMW, Тойота→Toyota, Мерседес→Mercedes-Benz. Без бюджета в q. max_total_rub в ₽ (3 млн = 3000000). Пример: «Ауди до 3 млн» → {\"q\":\"Audi\",\"max_total_rub\":3000000}\n• get_car — listing_id: только цифры ID объявления с сайта.\n• get_faq — без параметров ({}).\n• create_lead — user_name, user_contact, comment обязательны; car_id опционально (цифры ID лота).\n\nПравила:\n1. Отвечай на русском, дружелюбно и по делу.\n2. Если в памяти диалога ещё нет твоих ответов — один раз коротко поприветствуй. Не дублируй абзацы.\n3. Только факты из инструментов. Не выдумывай цены и наличие.\n4. Бюджет клиента — всегда max_total_rub, не в q. Марка/модель — в q, без бюджета.\n5. «Другие марки» / «не BMW» — новый q или только max_total_rub без старой марки.\n6. Варианты из search_cars — каждый с listing_url отдельной строкой + estimated_total_rub.\n7. Пустой каталог — предложи create_lead без car_id.\n8. create_lead только при имени, контакте и описании авто.\n9. После create_lead с ok и request_id — номер заявки. При error — не говори что принята.\n10. Цены — ориентир по estimated_total_rub.\n11. Не обсуждай конкурентов и не давай юридических гарантий.",
+              "value": "Ты консультант avtovozom.com — сервиса подбора и доставки автомобилей из Китая и азиатского рынка под ключ до РФ. Отвечаешь в Telegram и в чате на сайте (гость без аккаунта).\n\nПеред вызовом инструмента переводи фразу клиента в параметры API. Не передавай в инструменты сырой текст клиента целиком.\n\nФормат инструментов avtovozom:\n• search_cars — q: марка/модель латиницей как в каталоге (Audi, BMW). Марки на русском переводи: Ауди→Audi, БМВ→BMW, Тойота→Toyota, Мерседес→Mercedes-Benz. Без бюджета в q. max_total_rub в ₽ (3 млн = 3000000). Пример: «Ауди до 3 млн» → {\"q\":\"Audi\",\"max_total_rub\":3000000}\n• get_car — listing_id: только цифры ID объявления с сайта.\n• get_faq — без параметров ({}).\n• create_lead — user_name, user_contact, comment обязательны; car_id опционально (цифры ID лота).\n\nПравила:\n1. Отвечай на русском, дружелюбно и по делу. Без HTML. В web-чате без markdown-заголовков.\n2. Если в памяти диалога ещё нет твоих ответов — один раз коротко поприветствуй. Не дублируй абзацы.\n3. Только факты из инструментов. Не выдумывай цены и наличие.\n4. Бюджет клиента — всегда max_total_rub, не в q. Марка/модель — в q, без бюджета.\n5. «Другие марки» / «не BMW» — новый q или только max_total_rub без старой марки.\n6. Варианты из search_cars — каждый с listing_url отдельной строкой + estimated_total_rub.\n7. Пустой каталог — предложи create_lead без car_id.\n8. create_lead только при имени, контакте и описании авто.\n9. После create_lead с ok и request_id — номер заявки. При error — не говори что принята.\n10. Цены — ориентир по estimated_total_rub.\n11. Не обсуждай конкурентов и не давай юридических гарантий.\n12. Если клиент уже в чате на сайте — не предлагай писать в Telegram-бота. Если в Telegram — не предлагай открыть чат на сайте.",
               "type": "string"
             }
           ]
@@ -97,20 +122,43 @@
       "name": "Настройки workflow",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [480, 360],
+      "position": [
+        480,
+        360
+      ],
       "notesInFlow": true,
       "notes": "Редактируйте здесь: apiBaseUrl, backendApiSecret, llmModel, systemPrompt и др."
     },
     {
       "parameters": {
+        "jsCode": "const settings = $('Настройки workflow').first().json;\n\nfunction fromTelegram() {\n  try {\n    const root = $('Telegram Trigger').first().json;\n    const msg = root.message || {};\n    const chat = msg.chat || {};\n    if (!chat.id && !msg.text) return null;\n    const chatType = String(chat.type || '');\n    return {\n      channel: 'telegram',\n      isPrivate: chatType === 'private',\n      chatId: String(chat.id || ''),\n      guestToken: '',\n      memoryKey: 'tg:' + String(chat.id || ''),\n      username: String((msg.from && msg.from.username) || ''),\n      firstName: String((msg.from && msg.from.first_name) || '') || 'Клиент',\n      userText: String(msg.text || ''),\n      llmModel: String(settings.llmModel || 'gpt-5.5'),\n      systemPrompt: String(settings.systemPrompt || ''),\n      leadSource: 'telegram_bot',\n    };\n  } catch (e) {\n    return null;\n  }\n}\n\nfunction fromWebhook() {\n  try {\n    const root = $('Webhook (сайт)').first().json;\n    const body = root.body && typeof root.body === 'object' ? root.body : root;\n    const guestToken = String(body.guest_token || '').trim();\n    const text = String(body.text || '').trim();\n    if (!guestToken && !text) return null;\n    return {\n      channel: 'guest_web',\n      isPrivate: true,\n      chatId: String(body.chat_id || ''),\n      guestToken,\n      memoryKey: 'guest:' + guestToken,\n      username: '',\n      firstName: 'Гость',\n      userText: text,\n      llmModel: String(settings.llmModel || 'gpt-5.5'),\n      systemPrompt: String(settings.systemPrompt || ''),\n      leadSource: 'guest_web',\n    };\n  } catch (e) {\n    return null;\n  }\n}\n\nconst ctx = fromTelegram() || fromWebhook();\nif (!ctx) {\n  return [{ json: { error: 'unknown_trigger', userText: '', channel: '', isPrivate: false } }];\n}\nreturn [{ json: ctx }];\n"
+      },
+      "id": "bot-set-context-04",
+      "name": "Контекст чата",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        360
+      ]
+    },
+    {
+      "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "only-private",
-              "leftValue": "={{ $('Telegram Trigger').item.json.message.chat.type }}",
-              "rightValue": "private",
-              "operator": { "type": "string", "operation": "equals" }
+              "leftValue": "={{ String($json.isPrivate) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -121,57 +169,10 @@
       "name": "Только личка",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [720, 360]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "ctx-chatId",
-              "name": "chatId",
-              "value": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
-              "type": "string"
-            },
-            {
-              "id": "ctx-username",
-              "name": "username",
-              "value": "={{ $('Telegram Trigger').item.json.message.from.username || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "ctx-userText",
-              "name": "userText",
-              "value": "={{ $('Telegram Trigger').item.json.message.text || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "ctx-firstName",
-              "name": "firstName",
-              "value": "={{ $('Telegram Trigger').item.json.message.from.first_name || '' }}",
-              "type": "string"
-            },
-            {
-              "id": "ctx-llmModel",
-              "name": "llmModel",
-              "value": "={{ $('Настройки workflow').first().json.llmModel || 'gpt-5.5' }}",
-              "type": "string"
-            },
-            {
-              "id": "ctx-systemPrompt",
-              "name": "systemPrompt",
-              "value": "={{ $('Настройки workflow').first().json.systemPrompt }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "bot-set-context-04",
-      "name": "Контекст чата",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [960, 280]
+      "position": [
+        1180,
+        360
+      ]
     },
     {
       "parameters": {
@@ -181,7 +182,10 @@
       "name": "OpenAI Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.2,
-      "position": [1180, 520],
+      "position": [
+        1420,
+        480
+      ],
       "credentials": {
         "openAiApi": {
           "id": "REPLACE_OPENAI_CREDENTIAL",
@@ -194,13 +198,16 @@
     {
       "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "={{ $('Контекст чата').item.json.chatId }}"
+        "sessionKey": "={{ $('Контекст чата').item.json.memoryKey }}"
       },
       "id": "bot-memory-06",
       "name": "Память диалога",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
-      "position": [1180, 680]
+      "position": [
+        1420,
+        640
+      ]
     },
     {
       "parameters": {
@@ -216,7 +223,10 @@
       "name": "search_cars",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
-      "position": [1400, 520]
+      "position": [
+        1640,
+        480
+      ]
     },
     {
       "parameters": {
@@ -232,7 +242,10 @@
       "name": "get_car",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
-      "position": [1400, 660]
+      "position": [
+        1640,
+        620
+      ]
     },
     {
       "parameters": {
@@ -248,7 +261,10 @@
       "name": "get_faq",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
-      "position": [1400, 800]
+      "position": [
+        1640,
+        760
+      ]
     },
     {
       "parameters": {
@@ -258,13 +274,16 @@
         "specifyInputSchema": true,
         "schemaType": "manual",
         "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"user_name\": { \"type\": \"string\", \"description\": \"Имя клиента\" },\n    \"user_contact\": { \"type\": \"string\", \"description\": \"Телефон или email\" },\n    \"comment\": { \"type\": \"string\", \"description\": \"Описание авто и пожелания к расчёту\" },\n    \"car_id\": { \"type\": \"string\", \"description\": \"Опционально: ID лота с сайта\" }\n  },\n  \"required\": [\"user_name\", \"user_contact\", \"comment\"]\n}",
-        "jsCode": "const settings = $('Настройки workflow').first().json;\nlet ctx = {};\ntry { ctx = $('Контекст чата').first().json; } catch (e) { ctx = {}; }\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nconst secret = String(settings.backendApiSecret || '').trim();\nif (!secret || secret.includes('ЗАМЕНИТЕ')) {\n  return JSON.stringify({ error: 'config', body: 'backendApiSecret не настроен в узле «Настройки workflow»' });\n}\nconst user_name = String(input.user_name || ctx.firstName || 'Клиент').trim();\nconst user_contact = String(input.user_contact || '').trim();\nconst comment = String(input.comment || '').trim();\nif (!user_contact) {\n  return JSON.stringify({ error: 'Нужен user_contact (телефон или email)' });\n}\nif (comment.length < 3) {\n  return JSON.stringify({ error: 'Нужен comment — описание авто (минимум 3 символа)' });\n}\nconst payload = {\n  user_name,\n  user_contact,\n  comment,\n  telegram_chat_id: String(ctx.chatId || ''),\n  telegram_username: String(ctx.username || ''),\n};\nconst rawCarId = input.car_id;\nif (rawCarId !== null && rawCarId !== undefined && String(rawCarId).trim() !== '') {\n  const n = Number(String(rawCarId).replace(/\\D/g, ''));\n  if (Number.isFinite(n) && n > 0) payload.car_id = n;\n}\nconst url = settings.apiBaseUrl.replace(/\\/$/, '') + '/integrations/n8n/bot/create-request';\ntry {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-N8N-Webhook-Secret': secret,\n    },\n    body: JSON.stringify(payload),\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  const status = resp.statusCode || resp.status || 0;\n  const rawBody = resp.body ?? resp.data ?? '';\n  const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n  if (status < 200 || status >= 300) {\n    return JSON.stringify({ error: 'HTTP ' + status, body: text.slice(0, 500) });\n  }\n  let result;\n  try { result = JSON.parse(text); } catch { result = null; }\n  if (result && result.ok === true && result.request_id) {\n    return JSON.stringify({ ok: true, request_id: result.request_id, message: 'Заявка #' + result.request_id + ' принята' });\n  }\n  return JSON.stringify({ error: 'unexpected_response', body: text.slice(0, 500) });\n} catch (error) {\n  const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n  const body = String(error.response?.body || error.description || error.message || '').slice(0, 500);\n  return JSON.stringify({ error: 'HTTP ' + status, body });\n}"
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nlet ctx = {};\ntry { ctx = $('Контекст чата').first().json; } catch (e) { ctx = {}; }\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nconst secret = String(settings.backendApiSecret || '').trim();\nif (!secret || secret.includes('ЗАМЕНИТЕ')) {\n  return JSON.stringify({ error: 'config', body: 'backendApiSecret не настроен в узле «Настройки workflow»' });\n}\nconst user_name = String(input.user_name || ctx.firstName || 'Клиент').trim();\nconst user_contact = String(input.user_contact || '').trim();\nconst comment = String(input.comment || '').trim();\nif (!user_contact) {\n  return JSON.stringify({ error: 'Нужен user_contact (телефон или email)' });\n}\nif (comment.length < 3) {\n  return JSON.stringify({ error: 'Нужен comment — описание авто (минимум 3 символа)' });\n}\nconst leadSource = String(ctx.leadSource || ctx.channel || 'telegram_bot');\nconst payload = {\n  user_name,\n  user_contact,\n  comment,\n  source: leadSource === 'guest_web' ? 'guest_web' : 'telegram_bot',\n  guest_token: String(ctx.guestToken || ''),\n  telegram_chat_id: leadSource === 'guest_web' ? '' : String(ctx.chatId || ''),\n  telegram_username: leadSource === 'guest_web' ? '' : String(ctx.username || ''),\n};\nconst rawCarId = input.car_id;\nif (rawCarId !== null && rawCarId !== undefined && String(rawCarId).trim() !== '') {\n  const n = Number(String(rawCarId).replace(/\\D/g, ''));\n  if (Number.isFinite(n) && n > 0) payload.car_id = n;\n}\nconst url = settings.apiBaseUrl.replace(/\\/$/, '') + '/integrations/n8n/bot/create-request';\ntry {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-N8N-Webhook-Secret': secret,\n    },\n    body: JSON.stringify(payload),\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  const status = resp.statusCode || resp.status || 0;\n  const rawBody = resp.body ?? resp.data ?? '';\n  const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n  if (status < 200 || status >= 300) {\n    return JSON.stringify({ error: 'HTTP ' + status, body: text.slice(0, 500) });\n  }\n  let result;\n  try { result = JSON.parse(text); } catch { result = null; }\n  if (result && result.ok === true && result.request_id) {\n    return JSON.stringify({ ok: true, request_id: result.request_id, message: 'Заявка #' + result.request_id + ' принята' });\n  }\n  return JSON.stringify({ error: 'unexpected_response', body: text.slice(0, 500) });\n} catch (error) {\n  const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n  const body = String(error.response?.body || error.description || error.message || '').slice(0, 500);\n  return JSON.stringify({ error: 'HTTP ' + status, body });\n}"
       },
       "id": "bot-tool-lead-10",
       "name": "create_lead",
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.1,
-      "position": [1400, 940]
+      "position": [
+        1640,
+        900
+      ]
     },
     {
       "parameters": {
@@ -278,7 +297,10 @@
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [1640, 360]
+      "position": [
+        1420,
+        280
+      ]
     },
     {
       "parameters": {
@@ -288,7 +310,42 @@
       "name": "Очистка ответа",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1780, 360]
+      "position": [
+        1660,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-telegram",
+              "leftValue": "={{ $('Контекст чата').item.json.channel }}",
+              "rightValue": "telegram",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bot-if-channel-15",
+      "name": "Канал ответа",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        360
+      ]
     },
     {
       "parameters": {
@@ -300,7 +357,10 @@
       "name": "Telegram: ответ",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1900, 360],
+      "position": [
+        2140,
+        280
+      ],
       "credentials": {
         "telegramApi": {
           "id": "REPLACE_TELEGRAM_CREDENTIAL",
@@ -310,7 +370,20 @@
     },
     {
       "parameters": {
-        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst ctx = $('Контекст чата').first().json;\nconst secret = String(settings.backendApiSecret || '').trim();\nconst text = String(items[0].json.output || '').trim();\nif (!text) return [{ json: { error: 'empty_reply' } }];\nif (!secret || secret.includes('ЗАМЕНИТЕ')) {\n  return [{ json: { error: 'config', body: 'backendApiSecret не настроен' } }];\n}\nconst guestToken = String(ctx.guestToken || '').trim();\nif (!guestToken) return [{ json: { error: 'missing_guest_token' } }];\nconst payload = { guest_token: guestToken, text };\nconst chatId = Number(ctx.chatId);\nif (Number.isFinite(chatId) && chatId > 0) payload.chat_id = chatId;\nconst url = String(settings.apiBaseUrl || '').replace(/\\/$/, '') + '/integrations/n8n/bot/guest-reply';\ntry {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url,\n    headers: {\n      'Content-Type': 'application/json',\n      'X-N8N-Webhook-Secret': secret,\n    },\n    body: JSON.stringify(payload),\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  const status = resp.statusCode || resp.status || 0;\n  const rawBody = resp.body ?? resp.data ?? '';\n  const bodyText = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n  if (status < 200 || status >= 300) {\n    return [{ json: { error: 'HTTP ' + status, body: bodyText.slice(0, 500) } }];\n  }\n  let result;\n  try { result = JSON.parse(bodyText); } catch { result = { raw: bodyText.slice(0, 500) }; }\n  return [{ json: result }];\n} catch (error) {\n  const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n  const body = String(error.response?.body || error.description || error.message || '').slice(0, 500);\n  return [{ json: { error: 'HTTP ' + status, body } }];\n}\n"
+      },
+      "id": "bot-guest-reply-16",
+      "name": "Ответ в чат сайта",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2140,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Контекст чата').item.json.chatId }}",
         "text": "={{ $('Настройки workflow').item.json.channelHintText }}",
         "additionalFields": {}
       },
@@ -318,7 +391,10 @@
       "name": "Telegram: подсказка канал",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [960, 480],
+      "position": [
+        1200,
+        560
+      ],
       "credentials": {
         "telegramApi": {
           "id": "REPLACE_TELEGRAM_CREDENTIAL",
@@ -329,43 +405,172 @@
   ],
   "connections": {
     "Telegram Trigger": {
-      "main": [[{ "node": "Настройки workflow", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Настройки workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook (сайт)": {
+      "main": [
+        [
+          {
+            "node": "Настройки workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Настройки workflow": {
-      "main": [[{ "node": "Только личка", "type": "main", "index": 0 }]]
-    },
-    "Только личка": {
       "main": [
-        [{ "node": "Контекст чата", "type": "main", "index": 0 }],
-        [{ "node": "Telegram: подсказка канал", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Контекст чата",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Контекст чата": {
-      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Только личка",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Только личка": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: подсказка канал",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "OpenAI Chat Model": {
-      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Память диалога": {
-      "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
     },
     "search_cars": {
-      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
     },
     "get_car": {
-      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
     },
     "get_faq": {
-      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
     },
     "create_lead": {
-      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
     },
     "AI Agent": {
-      "main": [[{ "node": "Очистка ответа", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Очистка ответа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Очистка ответа": {
-      "main": [[{ "node": "Telegram: ответ", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Канал ответа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Канал ответа": {
+      "main": [
+        [
+          {
+            "node": "Telegram: ответ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ответ в чат сайта",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {

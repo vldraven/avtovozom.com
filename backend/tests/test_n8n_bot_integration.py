@@ -11,8 +11,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.db import Base, get_db
-from app import models  # noqa: F401 — register tables on Base.metadata
+from app.db import get_db
 from app.main import app
 from app.models import CalculationRequest, Car, CarBrand, CarModel
 
@@ -24,7 +23,10 @@ class N8nBotIntegrationTests(unittest.TestCase):
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
-        Base.metadata.create_all(bind=self.engine)
+        CarBrand.__table__.create(bind=self.engine)
+        CarModel.__table__.create(bind=self.engine)
+        Car.__table__.create(bind=self.engine)
+        CalculationRequest.__table__.create(bind=self.engine)
         self.Session = sessionmaker(bind=self.engine)
         self.db = self.Session()
 
@@ -108,6 +110,28 @@ class N8nBotIntegrationTests(unittest.TestCase):
         self.assertIsNone(req.car_id)
         self.assertEqual(req.source, "telegram_bot")
         notify_mock.assert_called_once()
+
+    @patch("app.n8n_bot_integration.notify_calculation_request")
+    def test_create_request_guest_web_source(self, notify_mock) -> None:
+        r = self.client.post(
+            "/integrations/n8n/bot/create-request",
+            json={
+                "user_name": "Гость",
+                "user_contact": "+79991112233",
+                "comment": "Нужен BYD Seal, бюджет 4 млн",
+                "source": "guest_web",
+                "guest_token": "abc123guesttokenXX",
+            },
+            headers={"X-N8N-Webhook-Secret": "test-secret"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        req = self.db.execute(
+            select(CalculationRequest).where(CalculationRequest.id == r.json()["request_id"])
+        ).scalar_one()
+        self.assertEqual(req.source, "guest_web")
+        self.assertIn("guest:", req.user_contact)
+        notify_mock.assert_called_once()
+        self.assertEqual(notify_mock.call_args.kwargs.get("source"), "guest_web")
 
     def test_forbidden_without_secret(self) -> None:
         r = self.client.post(
