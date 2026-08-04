@@ -5576,6 +5576,7 @@ html.page-messages body {
   width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
+  /* Keep pan-y so the message list can scroll; manipulation alone can block it on iOS. */
   touch-action: pan-y;
   position: relative;
 }
