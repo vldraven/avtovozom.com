@@ -224,11 +224,18 @@ from .seed import seed_initial_data
 from .n8n_bot_integration import (
     N8nBotCreateRequestIn,
     N8nBotCreateRequestOut,
+    N8nGuestReplyIn,
+    N8nGuestReplyOut,
     create_bot_calculation_request,
+    post_guest_bot_reply,
     verify_n8n_bot_api_secret,
 )
 from .agent_api import router as agent_api_router
-from .n8n_client import n8n_webhook_post
+from .n8n_client import (
+    guest_chat_ai_webhook_configured,
+    n8n_webhook_post,
+    trigger_guest_chat_ai,
+)
 from .push_notify import (
     chat_message_recipient_user_id,
     notify_chat_message,
@@ -5353,12 +5360,25 @@ def n8n_bot_create_request(
     payload: N8nBotCreateRequestIn,
     db: Session = Depends(get_db),
 ):
-    """Создание заявки на расчёт из n8n Telegram-бота (с car_id или без — авто вне каталога)."""
+    """Создание заявки на расчёт из n8n-консультанта (Telegram или web guest chat)."""
     return create_bot_calculation_request(
         db,
         payload,
         public_car_page_url=_public_car_page_url,
     )
+
+
+@app.post(
+    "/integrations/n8n/bot/guest-reply",
+    response_model=N8nGuestReplyOut,
+    dependencies=[Depends(verify_n8n_bot_api_secret)],
+)
+def n8n_bot_guest_reply(
+    payload: N8nGuestReplyIn,
+    db: Session = Depends(get_db),
+):
+    """Запись ответа ИИ-консультанта в гостевой чат сайта."""
+    return post_guest_bot_reply(db, payload)
 
 
 @app.post("/requests/{request_id}/offers", response_model=DealerOfferOut)
@@ -5625,6 +5645,7 @@ def _unread_platform_for_staff(db: Session, chat: Chat) -> int:
 
 
 def _unread_guest_for_staff(db: Session, chat: Chat) -> int:
+    """Unread = guest user texts (not AI assistant / system)."""
     lr = chat.dealer_last_read_message_id or 0
     return int(
         db.execute(
@@ -5633,7 +5654,7 @@ def _unread_guest_for_staff(db: Session, chat: Chat) -> int:
             .where(
                 ChatMessage.chat_id == chat.id,
                 ChatMessage.sender_user_id.is_(None),
-                ChatMessage.message_type != "system",
+                ChatMessage.message_type.notin_(("system", "assistant")),
                 ChatMessage.id > lr,
             )
         ).scalar_one()
@@ -5641,6 +5662,7 @@ def _unread_guest_for_staff(db: Session, chat: Chat) -> int:
 
 
 def _unread_guest_for_guest(db: Session, chat: Chat) -> int:
+    """Unread = staff replies or AI assistant messages."""
     lr = chat.user_last_read_message_id or 0
     return int(
         db.execute(
@@ -5648,11 +5670,29 @@ def _unread_guest_for_guest(db: Session, chat: Chat) -> int:
             .select_from(ChatMessage)
             .where(
                 ChatMessage.chat_id == chat.id,
-                ChatMessage.sender_user_id.is_not(None),
                 ChatMessage.message_type != "system",
                 ChatMessage.id > lr,
+                (
+                    (ChatMessage.sender_user_id.is_not(None))
+                    | (ChatMessage.message_type == "assistant")
+                ),
             )
         ).scalar_one()
+    )
+
+
+def _guest_chat_has_staff_reply(db: Session, chat_id: int) -> bool:
+    """True when a human staff member already replied — AI should step aside."""
+    return (
+        db.execute(
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(
+                ChatMessage.chat_id == chat_id,
+                ChatMessage.sender_user_id.is_not(None),
+            )
+        ).scalar_one()
+        > 0
     )
 
 
@@ -5944,6 +5984,7 @@ def delete_chat(
 @app.post("/public/guest-chats/messages", response_model=GuestChatSessionOut)
 def public_guest_chat_send(
     payload: GuestChatSendIn,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     text_clean = (payload.text or "").strip()
@@ -5979,6 +6020,19 @@ def public_guest_chat_send(
             chat_id=chat.id,
             message_text=text_clean,
             messages_url=url,
+        )
+
+    # AI consultant (n8n) until a human staff member replies in this thread.
+    if guest_chat_ai_webhook_configured() and not _guest_chat_has_staff_reply(db, chat.id):
+        background_tasks.add_task(
+            trigger_guest_chat_ai,
+            {
+                "guest_token": token,
+                "chat_id": chat.id,
+                "message_id": msg.id,
+                "text": text_clean,
+                "created": created,
+            },
         )
 
     return GuestChatSessionOut(

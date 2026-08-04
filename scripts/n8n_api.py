@@ -219,7 +219,9 @@ def sync_workflow(file_path: Path, dry_run: bool = False) -> None:
     workflow_id = str(remote_meta["id"])
     result = update_workflow(workflow_id, merged)
     copied_cred = False
-    if name == "Avtovozom — Telegram текст (ИИ)":
+    if name in (
+        "Avtovozom — Telegram текст (ИИ)",
+    ):
         copied_cred = copy_node_credentials(
             target_workflow_id=workflow_id,
             target_node_name="OpenAI Chat Model",

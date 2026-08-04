@@ -306,7 +306,7 @@ class CalculationRequest(Base):
     """null — заявка на авто вне каталога (описание в comment)."""
     comment: Mapped[str] = mapped_column(Text, default="")
     source: Mapped[str] = mapped_column(String(32), default="website")
-    """website | telegram_bot | freeform | …"""
+    """website | telegram_bot | guest_web | freeform | …"""
     status: Mapped[str] = mapped_column(String(32), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     offers_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

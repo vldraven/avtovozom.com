@@ -111,6 +111,80 @@ class GuestChatApiTests(unittest.TestCase):
 
     @patch("app.main.notify_guest_chat_started")
     @patch("app.main.notify_guest_chat_message")
+    @patch("app.main.trigger_guest_chat_ai")
+    @patch("app.main.guest_chat_ai_webhook_configured", return_value=True)
+    def test_guest_message_triggers_ai_webhook(
+        self, _configured, mock_trigger, mock_msg, mock_started
+    ):
+        res = self.client.post(
+            "/public/guest-chats/messages",
+            json={"text": "Нужна Toyota"},
+        )
+        self.assertEqual(res.status_code, 200, res.text)
+        body = res.json()
+        mock_trigger.assert_called_once()
+        payload = mock_trigger.call_args.args[0]
+        self.assertEqual(payload["guest_token"], body["guest_token"])
+        self.assertEqual(payload["chat_id"], body["chat_id"])
+        self.assertEqual(payload["text"], "Нужна Toyota")
+        self.assertTrue(payload["created"])
+
+        # After staff reply, AI should not fire again
+        mock_trigger.reset_mock()
+        reply = self.client.post(
+            f"/chats/{body['chat_id']}/messages",
+            headers=self._admin_headers(),
+            data={"text": "Я менеджер"},
+        )
+        self.assertEqual(reply.status_code, 200, reply.text)
+        res2 = self.client.post(
+            "/public/guest-chats/messages",
+            json={"guest_token": body["guest_token"], "text": "Ещё вопрос"},
+        )
+        self.assertEqual(res2.status_code, 200, res2.text)
+        mock_trigger.assert_not_called()
+
+    @patch("app.main.notify_guest_chat_started")
+    def test_guest_bot_reply_endpoint(self, _started):
+        import os
+
+        os.environ["N8N_TELEGRAM_BOT_API_SECRET"] = "guest-reply-secret"
+        try:
+            created = self.client.post(
+                "/public/guest-chats/messages",
+                json={"text": "Привет"},
+            )
+            self.assertEqual(created.status_code, 200, created.text)
+            token = created.json()["guest_token"]
+            chat_id = created.json()["chat_id"]
+
+            denied = self.client.post(
+                "/integrations/n8n/bot/guest-reply",
+                json={"guest_token": token, "chat_id": chat_id, "text": "Здравствуйте!"},
+            )
+            self.assertEqual(denied.status_code, 403)
+
+            ok = self.client.post(
+                "/integrations/n8n/bot/guest-reply",
+                json={"guest_token": token, "chat_id": chat_id, "text": "Здравствуйте!"},
+                headers={"X-N8N-Webhook-Secret": "guest-reply-secret"},
+            )
+            self.assertEqual(ok.status_code, 200, ok.text)
+            self.assertTrue(ok.json()["ok"])
+
+            msgs = self.client.get(f"/public/guest-chats/{token}/messages")
+            self.assertEqual(msgs.status_code, 200)
+            body = msgs.json()
+            self.assertEqual(len(body), 2)
+            assistant = body[1]
+            self.assertEqual(assistant["message_type"], "assistant")
+            self.assertEqual(assistant["text"], "Здравствуйте!")
+            self.assertIsNone(assistant["sender_user_id"])
+        finally:
+            os.environ.pop("N8N_TELEGRAM_BOT_API_SECRET", None)
+
+    @patch("app.main.notify_guest_chat_started")
+    @patch("app.main.notify_guest_chat_message")
     def test_staff_can_delete_guest_chat(self, mock_msg, mock_started):
         res = self.client.post(
             "/public/guest-chats/messages",
