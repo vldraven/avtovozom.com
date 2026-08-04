@@ -96,7 +96,7 @@ export default function App({ Component, pageProps }) {
         <title>avtovozom — каталог автомобилей</title>
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, viewport-fit=cover"
+          content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
         />
         <meta name="theme-color" content="#0f172a" />
         <meta name="application-name" content="avtovozom" />

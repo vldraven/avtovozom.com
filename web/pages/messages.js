@@ -431,50 +431,94 @@ export default function MessagesPage() {
     document.body.classList.toggle("messages-thread-open", threadOpenOnMobile);
     return () => {
       document.documentElement.classList.remove("page-messages");
+      document.documentElement.classList.remove("messages-kb-open");
       document.body.classList.remove("messages-thread-open");
-      document.documentElement.style.removeProperty("--messages-vv-height");
-      document.documentElement.style.removeProperty("--messages-vv-offset");
+      document.documentElement.style.removeProperty("--msg-h");
+      document.documentElement.style.removeProperty("--msg-top");
+      document.documentElement.style.removeProperty("--msg-composer-pad");
     };
   }, [threadOpenOnMobile]);
 
-  // Pin messenger to the *visual* viewport on iOS (keyboard scrolls layout viewport via offsetTop).
+  /**
+   * iOS Safari chat shell (best practice):
+   * - Keyboard closed: 100svh (stable area above Safari chrome) — no vv fight.
+   * - Keyboard open: fill visualViewport (height + offsetTop).
+   * - Never scrollTo(0) on every vv event — that hides the composer on iOS.
+   * Refs: mattpilott/ios-chat, visualViewport + svh guidance.
+   */
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const root = document.documentElement;
-    const syncVv = () => {
+    let focusTimer = 0;
+
+    const sync = () => {
       const vv = window.visualViewport;
       if (!vv) {
-        root.style.setProperty("--messages-vv-height", `${window.innerHeight}px`);
-        root.style.setProperty("--messages-vv-offset", "0px");
+        root.style.removeProperty("--msg-h");
+        root.style.setProperty("--msg-top", "0px");
+        root.style.setProperty("--msg-composer-pad", "max(8px, env(safe-area-inset-bottom, 0px))");
+        root.classList.remove("messages-kb-open");
         return;
       }
-      root.style.setProperty("--messages-vv-height", `${Math.max(0, Math.round(vv.height))}px`);
-      root.style.setProperty("--messages-vv-offset", `${Math.max(0, Math.round(vv.offsetTop))}px`);
-      // Keep page scroll at 0 — iOS otherwise leaves the focused field "above" the keyboard.
-      if (window.scrollY !== 0 || window.scrollX !== 0) {
-        window.scrollTo(0, 0);
-      }
-      if (document.documentElement.scrollTop || document.body.scrollTop) {
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
+
+      const offsetTop = Math.max(0, Math.round(vv.offsetTop));
+      const vvH = Math.max(0, Math.round(vv.height));
+      const inset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      const keyboardOpen = inset > 120;
+
+      if (keyboardOpen) {
+        root.classList.add("messages-kb-open");
+        root.style.setProperty("--msg-h", `${vvH}px`);
+        root.style.setProperty("--msg-top", `${offsetTop}px`);
+        root.style.setProperty("--msg-composer-pad", "8px");
+      } else {
+        root.classList.remove("messages-kb-open");
+        root.style.removeProperty("--msg-h");
+        root.style.setProperty("--msg-top", "0px");
+        root.style.setProperty("--msg-composer-pad", "max(8px, env(safe-area-inset-bottom, 0px))");
       }
     };
-    syncVv();
-    window.visualViewport?.addEventListener("resize", syncVv);
-    window.visualViewport?.addEventListener("scroll", syncVv);
-    window.addEventListener("resize", syncVv);
-    window.addEventListener("orientationchange", syncVv);
-    document.addEventListener("focusin", syncVv);
-    document.addEventListener("focusout", syncVv);
+
+    const onFocusIn = (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (!t.classList?.contains("messenger__composer-input")) return;
+      sync();
+      window.clearTimeout(focusTimer);
+      focusTimer = window.setTimeout(() => {
+        sync();
+        try {
+          t.scrollIntoView({ block: "nearest", inline: "nearest" });
+        } catch {
+          /* ignore */
+        }
+      }, 350);
+    };
+
+    const onFocusOut = () => {
+      window.clearTimeout(focusTimer);
+      focusTimer = window.setTimeout(sync, 200);
+    };
+
+    sync();
+    window.visualViewport?.addEventListener("resize", sync);
+    window.visualViewport?.addEventListener("scroll", sync);
+    window.addEventListener("resize", sync);
+    window.addEventListener("orientationchange", sync);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
     return () => {
-      window.visualViewport?.removeEventListener("resize", syncVv);
-      window.visualViewport?.removeEventListener("scroll", syncVv);
-      window.removeEventListener("resize", syncVv);
-      window.removeEventListener("orientationchange", syncVv);
-      document.removeEventListener("focusin", syncVv);
-      document.removeEventListener("focusout", syncVv);
-      root.style.removeProperty("--messages-vv-height");
-      root.style.removeProperty("--messages-vv-offset");
+      window.clearTimeout(focusTimer);
+      window.visualViewport?.removeEventListener("resize", sync);
+      window.visualViewport?.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", sync);
+      window.removeEventListener("orientationchange", sync);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+      root.classList.remove("messages-kb-open");
+      root.style.removeProperty("--msg-h");
+      root.style.removeProperty("--msg-top");
+      root.style.removeProperty("--msg-composer-pad");
     };
   }, []);
 
