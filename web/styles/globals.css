@@ -5577,7 +5577,8 @@ html.page-messages body {
   width: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  touch-action: manipulation;
+  /* Keep pan-y so the message list can scroll; manipulation alone can block it on iOS. */
+  touch-action: pan-y;
   position: relative;
 }
 
@@ -5646,9 +5647,11 @@ html.page-messages .messenger__thread {
 html.page-messages .messenger__bubble-wrap {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .layout.layout--messages.layout--no-mobile-dock {
