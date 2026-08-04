@@ -239,6 +239,12 @@ def _insert_car_from_parsed(
     db.commit()
     db.refresh(car)
     _indexnow_submit_car(db, car)
+    try:
+        from .car_estimates import refresh_car_stored_estimate
+
+        refresh_car_stored_estimate(db, car, commit=True)
+    except Exception:
+        pass
     return car, None
 
 
@@ -349,6 +355,12 @@ def _revive_inactive_car_from_parsed(
     db.commit()
     db.refresh(car)
     _indexnow_submit_car(db, car)
+    try:
+        from .car_estimates import refresh_car_stored_estimate
+
+        refresh_car_stored_estimate(db, car, commit=True)
+    except Exception:
+        pass
     return car, None
 
 
