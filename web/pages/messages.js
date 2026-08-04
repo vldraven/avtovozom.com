@@ -145,6 +145,7 @@ export default function MessagesPage() {
   const guestAwaitTimerRef = useRef(null);
   const threadEndRef = useRef(null);
   const draftFromQueryAppliedRef = useRef(false);
+  const composerInputRef = useRef(null);
 
   const scrollThreadToEnd = () => {
     requestAnimationFrame(() => {
@@ -431,8 +432,43 @@ export default function MessagesPage() {
     return () => {
       document.documentElement.classList.remove("page-messages");
       document.body.classList.remove("messages-thread-open");
+      document.documentElement.style.removeProperty("--messages-vv-height");
     };
   }, [threadOpenOnMobile]);
+
+  // Stick messenger layout to the visual viewport (above iOS keyboard / Safari chrome).
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const root = document.documentElement;
+    const syncVv = () => {
+      const vv = window.visualViewport;
+      const h = vv ? Math.round(vv.height) : window.innerHeight;
+      root.style.setProperty("--messages-vv-height", `${Math.max(0, h)}px`);
+    };
+    syncVv();
+    window.visualViewport?.addEventListener("resize", syncVv);
+    window.visualViewport?.addEventListener("scroll", syncVv);
+    window.addEventListener("resize", syncVv);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", syncVv);
+      window.visualViewport?.removeEventListener("scroll", syncVv);
+      window.removeEventListener("resize", syncVv);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = composerInputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const styles = window.getComputedStyle(el);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 22;
+    const padY =
+      (Number.parseFloat(styles.paddingTop) || 0) + (Number.parseFloat(styles.paddingBottom) || 0);
+    const maxHeight = Math.ceil(lineHeight * 10 + padY);
+    const next = Math.min(el.scrollHeight, maxHeight);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight + 1 ? "auto" : "hidden";
+  }, [draft]);
 
   function logout() {
     clearToken({ logout: true });
@@ -881,6 +917,7 @@ export default function MessagesPage() {
                         </label>
                         ) : null}
                         <textarea
+                          ref={composerInputRef}
                           className="messenger__composer-input"
                           rows={1}
                           placeholder={guestMode ? "Напишите сообщение…" : "Сообщение…"}
