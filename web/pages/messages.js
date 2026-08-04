@@ -433,26 +433,48 @@ export default function MessagesPage() {
       document.documentElement.classList.remove("page-messages");
       document.body.classList.remove("messages-thread-open");
       document.documentElement.style.removeProperty("--messages-vv-height");
+      document.documentElement.style.removeProperty("--messages-vv-offset");
     };
   }, [threadOpenOnMobile]);
 
-  // Stick messenger layout to the visual viewport (above iOS keyboard / Safari chrome).
+  // Pin messenger to the *visual* viewport on iOS (keyboard scrolls layout viewport via offsetTop).
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const root = document.documentElement;
     const syncVv = () => {
       const vv = window.visualViewport;
-      const h = vv ? Math.round(vv.height) : window.innerHeight;
-      root.style.setProperty("--messages-vv-height", `${Math.max(0, h)}px`);
+      if (!vv) {
+        root.style.setProperty("--messages-vv-height", `${window.innerHeight}px`);
+        root.style.setProperty("--messages-vv-offset", "0px");
+        return;
+      }
+      root.style.setProperty("--messages-vv-height", `${Math.max(0, Math.round(vv.height))}px`);
+      root.style.setProperty("--messages-vv-offset", `${Math.max(0, Math.round(vv.offsetTop))}px`);
+      // Keep page scroll at 0 — iOS otherwise leaves the focused field "above" the keyboard.
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0);
+      }
+      if (document.documentElement.scrollTop || document.body.scrollTop) {
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
     };
     syncVv();
     window.visualViewport?.addEventListener("resize", syncVv);
     window.visualViewport?.addEventListener("scroll", syncVv);
     window.addEventListener("resize", syncVv);
+    window.addEventListener("orientationchange", syncVv);
+    document.addEventListener("focusin", syncVv);
+    document.addEventListener("focusout", syncVv);
     return () => {
       window.visualViewport?.removeEventListener("resize", syncVv);
       window.visualViewport?.removeEventListener("scroll", syncVv);
       window.removeEventListener("resize", syncVv);
+      window.removeEventListener("orientationchange", syncVv);
+      document.removeEventListener("focusin", syncVv);
+      document.removeEventListener("focusout", syncVv);
+      root.style.removeProperty("--messages-vv-height");
+      root.style.removeProperty("--messages-vv-offset");
     };
   }, []);
 
