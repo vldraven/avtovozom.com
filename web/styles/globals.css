@@ -5992,6 +5992,20 @@ html.page-messages .layout.layout--messages.layout--no-mobile-dock {
   font-size: 15px;
 }
 
+/* PWA / Add to Home Screen only: thread head is the top bar (site-header hidden).
+   In Safari/Chrome tabs safe-area is handled by browser chrome — do not pad there. */
+html.is-standalone body.messages-thread-open .messenger__thread-head {
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+}
+
+html.is-standalone body.messages-thread-open .messenger__thread-head--guest {
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
+}
+
+html.is-standalone .site-header {
+  padding-top: max(0.65rem, env(safe-area-inset-top, 0px));
+}
+
 .messenger__thread-sub {
   margin: 4px 0 0;
   font-size: 0.85rem;
