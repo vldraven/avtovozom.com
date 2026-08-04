@@ -156,7 +156,10 @@ export default function SiteSelectDropdown({
 
   useEffect(() => {
     if (!open) return undefined;
+    const openedAt = Date.now();
     const onDoc = (e) => {
+      // iOS: ignore the same gesture that opened the menu
+      if (Date.now() - openedAt < 400) return;
       const t = e.target;
       if (rootRef.current?.contains(t)) return;
       if (menuRef.current?.contains(t)) return;
@@ -165,10 +168,10 @@ export default function SiteSelectDropdown({
     const onKey = (e) => {
       if (e.key === "Escape") setOpen(false);
     };
-    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("pointerdown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("pointerdown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);

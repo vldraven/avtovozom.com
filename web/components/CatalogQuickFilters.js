@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   chipLabelForFilter,
@@ -50,12 +51,18 @@ function FilterChip({ label, active, disabled, open, onClick, chipRef }) {
 function PopoverMenu({ anchorRef, open, onClose, children, align = "left", width = 260 }) {
   const menuRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
+  const [mounted, setMounted] = useState(false);
+  const ignoreCloseUntilRef = useRef(0);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open || !anchorRef?.current) return undefined;
+    ignoreCloseUntilRef.current = Date.now() + 400;
     const update = () => {
       const rect = anchorRef.current.getBoundingClientRect();
-      // position: fixed — координаты viewport, иначе меню клипится overflow-родителями (главная).
       let left = rect.left;
       if (align === "right") {
         left = rect.right - width;
@@ -81,6 +88,7 @@ function PopoverMenu({ anchorRef, open, onClose, children, align = "left", width
   useEffect(() => {
     if (!open) return undefined;
     const onDoc = (e) => {
+      if (Date.now() < ignoreCloseUntilRef.current) return;
       const t = e.target;
       if (menuRef.current?.contains(t) || anchorRef?.current?.contains(t)) return;
       onClose();
@@ -88,17 +96,18 @@ function PopoverMenu({ anchorRef, open, onClose, children, align = "left", width
     const onKey = (e) => {
       if (e.key === "Escape") onClose();
     };
-    document.addEventListener("mousedown", onDoc);
+    // pointerdown лучше mousedown на iOS (тач → синтетический mouse).
+    document.addEventListener("pointerdown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("pointerdown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
   }, [open, onClose, anchorRef]);
 
-  if (!open) return null;
+  if (!open || !mounted || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className="catalog-qf__menu"
@@ -106,7 +115,8 @@ function PopoverMenu({ anchorRef, open, onClose, children, align = "left", width
       role="dialog"
     >
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 
