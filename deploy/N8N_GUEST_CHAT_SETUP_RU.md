@@ -1,95 +1,91 @@
-# n8n: гостевой чат сайта ↔ ИИ-консультант
+# Гостевой чат сайта → тот же n8n-консультант, что в Telegram
 
-Тот же консультант, что отвечает в Telegram-боте, отвечает гостям в `/messages` **без входа**.
+**Отдельный workflow не нужен.** Гостевой чат сайта подключён ко второму триггеру
+в уже настроенном [n8n-telegram-consultant.workflow.json](n8n-telegram-consultant.workflow.json)
+(«Avtovozom — Telegram консультант (бот)»).
 
-**n8n с телефона не нужен.** Workflow крутится на сервере. С телефона вы только:
-- читаете алерты в Telegram (`TELEGRAM_ADMIN_CHAT_ID`);
-- при handoff отвечаете гостю в веб-чате `/messages` (мобильный браузер) или из staff-инбокса.
+Секреты / OpenAI / Telegram credentials — те же, что уже стоят в «Настройки workflow».
 
-Импорт: n8n → **Import from File** → [n8n-guest-chat-consultant.workflow.json](n8n-guest-chat-consultant.workflow.json)
-
-Telegram-бот: [N8N_TELEGRAM_BOT_SETUP_RU.md](N8N_TELEGRAM_BOT_SETUP_RU.md)
+Базовая настройка бота: [N8N_TELEGRAM_BOT_SETUP_RU.md](N8N_TELEGRAM_BOT_SETUP_RU.md)
 
 ---
 
 ## 1. Поток
 
-**Цель: бот сам пишет клиенту в чат на сайте** (не только пингует админа).
+**Бот сам отвечает клиенту в чате на сайте.**
 
 ```
 Гость пишет на сайте (/messages)
   → POST /public/guest-chats/messages
-  → уведомление админу в Telegram (для мониторинга)
-  → фон: POST N8N_GUEST_CHAT_WEBHOOK_URL  { chat_id, text, history, … }
-  → n8n AI Agent (search_cars / get_car / get_faq / create_lead / handoff_to_manager)
-  → POST /integrations/n8n/guest-chats/{chat_id}/messages  { text }   ← ответ бота клиенту
-  → гость видит ответ (быстрый poll ~2.5 с после отправки)
+  → TG-алерт админу (мониторинг)
+  → фон: POST N8N_GUEST_CHAT_WEBHOOK_URL
+  → тот же AI Agent (search_cars / get_car / get_faq / create_lead / handoff_to_manager)
+  → POST /integrations/n8n/guest-chats/{chat_id}/messages
+  → гость видит ответ (быстрый poll ~2.5 с)
 ```
 
-Если `N8N_GUEST_CHAT_WEBHOOK_URL` не задан — чат работает как раньше (только человек + TG-пинг).
+Telegram-личка по-прежнему идёт через **Telegram Trigger** в том же workflow.
 
 ---
 
-## 2. Переменные `.env` бэкенда
+## 2. Что сделать на уже работающем n8n
+
+1. Залить обновлённый JSON (сохранит `backendApiSecret` и credentials):
+
+```bash
+python3 scripts/n8n_api.py sync-workflow deploy/n8n-telegram-consultant.workflow.json
+```
+
+Или вручную: Import / обновить узлы из файла — **не затирайте** `backendApiSecret`.
+
+2. В workflow появится узел **«Webhook гостевой чат»** (path `avtovozom-guest-chat`).
+3. **Activate** (если был выключен) и скопируйте **Production** URL webhook.
+4. В backend `.env`:
+
+```bash
+N8N_GUEST_CHAT_WEBHOOK_URL=https://<ваш-n8n>/webhook/avtovozom-guest-chat
+# секрет можно не задавать — возьмётся N8N_TELEGRAM_BOT_API_SECRET
+```
+
+5. Перезапустите backend.
+
+---
+
+## 3. Переменные `.env`
 
 | Переменная | Обязательно | Описание |
 |------------|-------------|----------|
-| `N8N_GUEST_CHAT_WEBHOOK_URL` | да (для ИИ) | Production URL webhook n8n (после Activate) |
-| `N8N_GUEST_CHAT_WEBHOOK_SECRET` | нет | Если пусто — берётся `N8N_TELEGRAM_BOT_API_SECRET` |
-| `N8N_TELEGRAM_BOT_API_SECRET` | да | Секрет для reply / handoff / create-request |
-| `N8N_GUEST_CHAT_TIMEOUT_SEC` | нет | Таймаут вызова webhook (по умолчанию 120). При `onReceived` n8n отвечает сразу |
-| `N8N_GUEST_CHAT_SENDER_USER_ID` | нет | `users.id` от чьего имени пишется ответ; иначе первый активный `admin` |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ADMIN_CHAT_ID` | да | Алерты и handoff |
-| `PUBLIC_WEB_ORIGIN` | да | Ссылки «Открыть чат» |
+| `N8N_GUEST_CHAT_WEBHOOK_URL` | да (для ИИ на сайте) | Production URL узла «Webhook гостевой чат» |
+| `N8N_GUEST_CHAT_WEBHOOK_SECRET` | нет | Пусто = `N8N_TELEGRAM_BOT_API_SECRET` |
+| `N8N_TELEGRAM_BOT_API_SECRET` | да | Уже есть для TG-бота |
+| `N8N_GUEST_CHAT_SENDER_USER_ID` | нет | `users.id` для сообщений бота; иначе первый admin |
+| `TELEGRAM_*` / `PUBLIC_WEB_ORIGIN` | да | Как для бота |
+
+Без `N8N_GUEST_CHAT_WEBHOOK_URL` сайт работает по-старому (только человек + TG-пинг).
 
 ---
 
-## 3. Настройка после импорта
-
-1. Узел **«Настройки workflow»**: `apiBaseUrl`, `backendApiSecret` (= `N8N_TELEGRAM_BOT_API_SECRET`), `llmModel`, `webOrigin` — как у Telegram-консультанта.
-2. Credential **OpenAI** на узле **OpenAI Chat Model**.
-3. **Activate** workflow.
-4. Скопируйте Production Webhook URL → `N8N_GUEST_CHAT_WEBHOOK_URL` в backend `.env`.
-5. Перезапустите backend.
-
-Синк из git (после ручного импорта и credentials):
-
-```bash
-python3 scripts/n8n_api.py sync-workflow deploy/n8n-guest-chat-consultant.workflow.json
-```
-
----
-
-## 4. API для n8n
-
-Общий заголовок: `X-N8N-Webhook-Secret: <backendApiSecret>`
+## 4. API (тот же секрет, что у create-request)
 
 ```
 POST /integrations/n8n/guest-chats/{chat_id}/messages
+Header: X-N8N-Webhook-Secret
 Body: { "text": "…" }
 
 POST /integrations/n8n/guest-chats/{chat_id}/handoff
 Body: { "reason": "…" }
-
-POST /integrations/n8n/bot/create-request
-Body: { …, "source": "guest_chat", "guest_chat_id": 123 }
 ```
 
 ---
 
 ## 5. Проверка
 
-1. Не задавая webhook URL — гостевой чат шлёт только TG-алерт (регрессия).
-2. С URL — напишите с инкогнито в `/messages`; через ~30 с должен появиться ответ консультанта.
-3. «Позовите менеджера» — в admin Telegram приходит handoff; ответьте из `/messages` под staff.
+1. Напишите боту в Telegram — ответ как раньше.
+2. С инкогнито откройте `/messages`, напишите гостем — через несколько секунд ответ бота в чате.
+3. «Позовите менеджера» — handoff в admin Telegram.
 
 ---
 
-## 6. Типичные проблемы
+## 6. n8n с телефона
 
-| Симптом | Решение |
-|---------|---------|
-| Гость пишет, ответа нет | Workflow не Active / неверный `N8N_GUEST_CHAT_WEBHOOK_URL` / смотрите executions в n8n |
-| 403 на reply | `backendApiSecret` ≠ `N8N_TELEGRAM_BOT_API_SECRET` |
-| 503 «Нет активного admin» | Задайте `N8N_GUEST_CHAT_SENDER_USER_ID` |
-| Отказ (секрет) в n8n | Заголовок с бэкенда не совпал с `backendApiSecret` в «Настройки workflow» |
+**Не нужен.** Workflow на сервере; с телефона — алерты в Telegram и при handoff ответ из `/messages` под staff.
