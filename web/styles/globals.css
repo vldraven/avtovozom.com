@@ -9642,11 +9642,7 @@ html.page-messages body {
   min-height: 46px;
   border-radius: 12px;
   font-weight: 800;
-  font-size: 13px;
-  padding-left: 10px;
-  padding-right: 10px;
-  text-align: center;
-  line-height: 1.25;
+  font-size: 15px;
 }
 
 .home-m-hero__cta--ghost {
@@ -10052,36 +10048,6 @@ html.page-messages body {
   max-width: 62ch;
 }
 
-.home-d-hero__cta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 0 0 1.1rem;
-}
-
-.home-d-hero__cta {
-  min-height: 48px;
-  min-width: 11.5rem;
-  padding: 0 1.25rem;
-  border-radius: 12px;
-  font-weight: 800;
-  font-size: 0.9375rem;
-}
-
-.home-d-hero__cta--ghost {
-  background: rgba(248, 250, 252, 0.1);
-  border: 1px solid rgba(248, 250, 252, 0.22);
-  color: #f8fafc;
-  font-weight: 700;
-}
-
-.home-d-hero__cta--ghost:hover {
-  background: rgba(248, 250, 252, 0.16);
-  border-color: rgba(248, 250, 252, 0.35);
-  color: #fff;
-  text-decoration: none;
-}
-
 .home-d-filters {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
@@ -10132,10 +10098,19 @@ html.page-messages body {
 
 .home-d-stats {
   display: flex;
-  gap: 1.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
   margin-top: 0.85rem;
   padding-top: 0.75rem;
   border-top: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.home-d-stats__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+  min-width: 0;
 }
 
 .home-d-stats__item {
@@ -10153,6 +10128,32 @@ html.page-messages body {
 .home-d-stats__item span {
   font-size: 0.8rem;
   color: #94a3b8;
+}
+
+.home-d-stats__quote {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 10.5rem;
+  padding: 0 1.1rem;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.1);
+  border: 1px solid rgba(248, 250, 252, 0.22);
+  color: #f8fafc;
+  font-weight: 700;
+  font-size: 0.875rem;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.home-d-stats__quote:hover {
+  background: rgba(248, 250, 252, 0.16);
+  border-color: rgba(248, 250, 252, 0.35);
+  color: #fff;
+  text-decoration: none;
 }
 
 /* —— Desktop arrivals —— */
