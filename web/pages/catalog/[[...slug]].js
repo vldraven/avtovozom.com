@@ -29,6 +29,7 @@ import { canCreateListings } from "../../lib/roles";
 import {
   buildCatalogCarsQuery,
   catalogFetchKey,
+  CATALOG_PAGE_SIZE,
   isCarDetailSegments,
   resolveCatalogTree,
   segmentsFromSlugParam,
@@ -115,6 +116,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const [filterDraft, setFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [carsLoading, setCarsLoading] = useState(false);
+  const [carsLoadingMore, setCarsLoadingMore] = useState(false);
   const [carsRetryTick, setCarsRetryTick] = useState(0);
   const [similarCars, setSimilarCars] = useState([]);
 
@@ -605,19 +607,12 @@ export default function CatalogTreePage({ initialPayload = null }) {
       });
       return;
     }
-    // SSR отдал полный набор для этого fetchKey — повторный клиентский запрос не нужен.
-    let silentListCompletion = false;
+    // SSR отдал первую страницу — не дотягиваем до 100; остальное через «Показать ещё».
     if (skipCarsFetchKeyRef.current === fetchKey) {
       skipCarsFetchKeyRef.current = null;
       const initialCars = listInitial?.cars?.length ?? 0;
-      const initialTotal = listInitial?.total ?? 0;
-      if (initialTotal > 0 && initialCars >= initialTotal) {
-        return;
-      }
-      // Корень /catalog: SSR даёт укороченный HTML (12), клиент дотягивает до 100.
-      // Не сбрасываем сетку в скелетоны — иначе «перезагрузка» уже показанных карточек.
       if (initialCars > 0) {
-        silentListCompletion = true;
+        return;
       }
     }
     const cached = getListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath);
@@ -636,23 +631,25 @@ export default function CatalogTreePage({ initialPayload = null }) {
       brandId: resolved.brand?.id ?? null,
       modelId: resolved.model?.id ?? null,
     });
-    const params = buildCatalogCarsQuery(resolved, listSort, undefined, filterQuery, textQuery);
+    const params = buildCatalogCarsQuery(
+      resolved,
+      listSort,
+      CATALOG_PAGE_SIZE,
+      filterQuery,
+      textQuery,
+      1
+    );
     if (!params) return;
     let cancelled = false;
     (async () => {
       setCarsError(null);
-      // Смена фильтра/сорта — скелетоны как раньше; догрузка после SSR — без мигания UI.
-      if (!silentListCompletion) {
-        setCarsLoading(true);
-      }
+      setCarsLoading(true);
       try {
         const res = await fetch(`${API_URL}/cars?${params.toString()}`);
         if (!res.ok) {
           if (!cancelled) {
-            if (!silentListCompletion) {
-              setCars([]);
-              setTotal(0);
-            }
+            setCars([]);
+            setTotal(0);
             setCarsError(`Не удалось загрузить объявления (${res.status}).`);
           }
           return;
@@ -673,10 +670,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
         }
       } catch {
         if (!cancelled) {
-          if (!silentListCompletion) {
-            setCars([]);
-            setTotal(0);
-          }
+          setCars([]);
+          setTotal(0);
           setCarsError("Нет связи с API при загрузке объявлений.");
         }
       } finally {
@@ -698,6 +693,83 @@ export default function CatalogTreePage({ initialPayload = null }) {
     listInitial?.total,
     isCatalogListRoute,
     carsRetryTick,
+  ]);
+
+  const loadMoreCars = useCallback(async () => {
+    if (
+      !isCatalogListRoute ||
+      carsLoading ||
+      carsLoadingMore ||
+      carsError ||
+      segments == null ||
+      cars.length === 0 ||
+      cars.length >= total
+    ) {
+      return;
+    }
+    const nextPage = Math.floor(cars.length / CATALOG_PAGE_SIZE) + 1;
+    const resolved = resolveCatalogTree(segments, tree);
+    const filterQuery = parseFiltersFromQuery(router.query, {
+      brandId: resolved.brand?.id ?? null,
+      modelId: resolved.model?.id ?? null,
+    });
+    const textQuery = catalogTextQueryFromRouter(router.query);
+    const params = buildCatalogCarsQuery(
+      resolved,
+      listSort,
+      CATALOG_PAGE_SIZE,
+      filterQuery,
+      textQuery,
+      nextPage
+    );
+    if (!params) return;
+    const filterKey = catalogFilterKeyFromQuery(router.query);
+    const fetchKey = catalogFetchKey(segments, listSort, filterKey, textQuery);
+    setCarsLoadingMore(true);
+    try {
+      const res = await fetch(`${API_URL}/cars?${params.toString()}`);
+      if (!res.ok) {
+        return;
+      }
+      const data = await res.json();
+      const more = data.items || [];
+      const nextTotal = Number(data.total) || total;
+      setTotal(nextTotal);
+      setCars((prev) => {
+        const seen = new Set(prev.map((c) => c.id));
+        const merged = [...prev];
+        for (const car of more) {
+          if (car?.id != null && !seen.has(car.id)) {
+            seen.add(car.id);
+            merged.push(car);
+          }
+        }
+        setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
+          cars: merged,
+          total: nextTotal,
+          tree,
+          listSort,
+          fetchKey,
+        });
+        return merged;
+      });
+    } catch {
+      /* список уже на экране — догрузку можно повторить кнопкой */
+    } finally {
+      setCarsLoadingMore(false);
+    }
+  }, [
+    isCatalogListRoute,
+    carsLoading,
+    carsLoadingMore,
+    carsError,
+    segments,
+    cars.length,
+    total,
+    tree,
+    listSort,
+    router.query,
+    router.asPath,
   ]);
 
   useEffect(() => {
@@ -1126,6 +1198,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                         ) : null}
                       </div>
                     ) : (
+                    <>
                     <div className="catalog-grid">
                       {cars.map((car) => {
                         const totalRub =
@@ -1212,6 +1285,24 @@ export default function CatalogTreePage({ initialPayload = null }) {
                         );
                       })}
                     </div>
+                    {cars.length < total ? (
+                      <div className="catalog-load-more">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={carsLoadingMore}
+                          onClick={() => loadMoreCars()}
+                        >
+                          {carsLoadingMore
+                            ? "Загружаем…"
+                            : `Показать ещё (${Math.min(
+                                CATALOG_PAGE_SIZE,
+                                Math.max(0, total - cars.length)
+                              )})`}
+                        </button>
+                      </div>
+                    ) : null}
+                    </>
                     )}
                   </section>
                 </div>
