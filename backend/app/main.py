@@ -112,7 +112,6 @@ from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_
 from .car_list_filters import (
     apply_fuel_type_filter,
     apply_transmission_filter,
-    matches_turnkey_rub_bounds,
 )
 from .body_colors import BODY_COLOR_OPTIONS, label_for_slug, slug_from_form
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
