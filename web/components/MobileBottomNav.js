@@ -177,7 +177,21 @@ export default function MobileBottomNav() {
     rawChat != null &&
     rawChat !== "" &&
     String(Array.isArray(rawChat) ? rawChat[0] : rawChat).trim() !== "";
-  if (messagesThreadOpen) return null;
+
+  // Guest chat opens the thread without ?chat= — hide dock via body class from messages.js
+  const [messagesBodyThreadOpen, setMessagesBodyThreadOpen] = useState(false);
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const sync = () => {
+      setMessagesBodyThreadOpen(document.body.classList.contains("messages-thread-open"));
+    };
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+
+  if (messagesThreadOpen || messagesBodyThreadOpen) return null;
 
   const isHomeNav = router.pathname === "/";
   const isCatalogNav =

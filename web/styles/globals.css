@@ -5575,15 +5575,15 @@ html.page-messages body {
 }
 
 .app-chrome:has(.layout--messages) {
-  height: 100dvh;
-  max-height: 100dvh;
+  height: var(--messages-vv-height, 100dvh);
+  max-height: var(--messages-vv-height, 100dvh);
   overflow: hidden;
 }
 
 .layout.layout--messages {
   min-height: 0;
-  height: 100dvh;
-  max-height: 100dvh;
+  height: var(--messages-vv-height, 100dvh);
+  max-height: var(--messages-vv-height, 100dvh);
   overflow: hidden;
 }
 
@@ -6093,6 +6093,11 @@ html.page-messages body {
   background: var(--color-surface);
 }
 
+.messenger__composer-hint {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+}
+
 .messenger__composer-err {
   margin: 0 0 8px;
   font-size: 0.85rem;
@@ -6179,8 +6184,9 @@ html.page-messages body {
 .messenger__composer-input {
   flex: 1;
   resize: none;
-  min-height: 32px;
-  max-height: 160px;
+  min-height: 22px;
+  max-height: calc(1.35em * 10 + 14px);
+  overflow-y: hidden;
   border: none;
   box-shadow: none;
   background: transparent;
@@ -6190,6 +6196,7 @@ html.page-messages body {
   font-size: 1rem;
   line-height: 1.35;
   color: var(--color-text);
+  field-sizing: content;
 }
 
 .messenger__composer-input:focus {
@@ -6250,20 +6257,24 @@ html.page-messages body {
   }
 
   body.messages-thread-open .messenger__composer {
-    padding: 10px 12px max(12px, env(safe-area-inset-bottom, 0px));
+    padding: 8px 12px max(6px, env(safe-area-inset-bottom, 0px));
   }
 
   body.messages-thread-open .messenger__composer-field {
-    min-height: 46px;
-    padding: 7px 14px 7px 8px;
-    border-radius: 24px;
+    min-height: 44px;
+    align-items: flex-end;
+    padding: 6px 14px 6px 8px;
+    border-radius: 22px;
     background: #eef2f7;
   }
 
   body.messages-thread-open .messenger__composer-input {
     font-size: 16px;
     min-height: 22px;
-    padding: 7px 2px;
+    max-height: calc(1.35em * 10 + 14px);
+    padding: 5px 2px;
+    background: transparent;
+    border-radius: 0;
   }
 
   body.messages-thread-open .messenger__clip-btn {
@@ -11332,9 +11343,9 @@ html.page-messages body {
 }
 
 .messenger__composer-input {
-  border-radius: 22px;
-  background: var(--color-neutral-200);
-  min-height: 44px;
+  border-radius: 0;
+  background: transparent;
+  min-height: 22px;
 }
 
 .messenger__send-fab {
