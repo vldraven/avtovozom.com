@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, delete, distinct, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from .db import Base, engine, get_db, SessionLocal
 from .models import (
@@ -627,6 +628,60 @@ def _trim_to_out(trim: CarTrim | None) -> CarTrimOut | None:
         sections=sections,
         param_sections=param_sections,
     )
+
+
+def _attach_list_photos(
+    db: Session,
+    cars: list[Car],
+    photo_limit: int | None,
+) -> None:
+    """Подгрузить фото только для страницы списка (не для всех кандидатов).
+
+    При photo_limit — top-N по (sort_order, id) через ROW_NUMBER; иначе все фото
+    этих car_id. Не помечает сессию dirty.
+    """
+    if not cars:
+        return
+    ids = [c.id for c in cars]
+    if photo_limit is not None and photo_limit > 0:
+        rn = (
+            func.row_number()
+            .over(
+                partition_by=CarPhoto.car_id,
+                order_by=(CarPhoto.sort_order.asc(), CarPhoto.id.asc()),
+            )
+            .label("rn")
+        )
+        ranked = (
+            select(CarPhoto.id.label("photo_id"), rn)
+            .where(CarPhoto.car_id.in_(ids))
+            .subquery()
+        )
+        rows = (
+            db.execute(
+                select(CarPhoto)
+                .join(ranked, CarPhoto.id == ranked.c.photo_id)
+                .where(ranked.c.rn <= int(photo_limit))
+                .order_by(CarPhoto.car_id, CarPhoto.sort_order, CarPhoto.id)
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        rows = (
+            db.execute(
+                select(CarPhoto)
+                .where(CarPhoto.car_id.in_(ids))
+                .order_by(CarPhoto.car_id, CarPhoto.sort_order, CarPhoto.id)
+            )
+            .scalars()
+            .all()
+        )
+    by_car: dict[int, list[CarPhoto]] = defaultdict(list)
+    for photo in rows:
+        by_car[photo.car_id].append(photo)
+    for car in cars:
+        set_committed_value(car, "photos", by_car.get(car.id, []))
 
 
 def _car_to_out(
@@ -2202,7 +2257,6 @@ def list_favorites(
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
-            selectinload(Car.photos),
         )
     )
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
@@ -2216,6 +2270,7 @@ def list_favorites(
         .scalars()
         .all()
     )
+    _attach_list_photos(db, list(cars), photo_limit)
 
     snap, cbr_err = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
@@ -2534,7 +2589,6 @@ def list_cars(
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
-            selectinload(Car.photos),
         )
         .where(Car.is_active.is_(True))
     )
@@ -2704,6 +2758,8 @@ def list_cars(
             .limit(limit)
         ).unique().scalars().all()
 
+    _attach_list_photos(db, list(cars), photo_limit)
+
     items: list[CarOut] = []
     for car in cars:
         pb = None
@@ -2809,13 +2865,13 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
-            selectinload(Car.photos),
         )
         .where(Car.created_by_user_id == user_id, Car.is_active.is_(True))
         .order_by(Car.updated_at.desc())
         .limit(100)
     )
     cars = db.execute(stmt).unique().scalars().all()
+    _attach_list_photos(db, list(cars), 8)
     snap, _ = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
     settings_row = ensure_settings_row(db)
@@ -2843,6 +2899,7 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
                 price_breakdown=None,
                 estimated_total_rub=est,
                 include_description=False,
+                photo_limit=8,
             )
         )
     co = (user.company_name or "").strip()
