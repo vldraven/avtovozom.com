@@ -14,14 +14,16 @@ Telegram-бот: [N8N_TELEGRAM_BOT_SETUP_RU.md](N8N_TELEGRAM_BOT_SETUP_RU.md)
 
 ## 1. Поток
 
+**Цель: бот сам пишет клиенту в чат на сайте** (не только пингует админа).
+
 ```
 Гость пишет на сайте (/messages)
   → POST /public/guest-chats/messages
-  → уведомление админу в Telegram (как раньше)
+  → уведомление админу в Telegram (для мониторинга)
   → фон: POST N8N_GUEST_CHAT_WEBHOOK_URL  { chat_id, text, history, … }
   → n8n AI Agent (search_cars / get_car / get_faq / create_lead / handoff_to_manager)
-  → POST /integrations/n8n/guest-chats/{chat_id}/messages  { text }
-  → гость видит ответ при polling (~26 с)
+  → POST /integrations/n8n/guest-chats/{chat_id}/messages  { text }   ← ответ бота клиенту
+  → гость видит ответ (быстрый poll ~2.5 с после отправки)
 ```
 
 Если `N8N_GUEST_CHAT_WEBHOOK_URL` не задан — чат работает как раньше (только человек + TG-пинг).

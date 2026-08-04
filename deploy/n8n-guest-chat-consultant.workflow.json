@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Гостевой чат сайта → тот же ИИ-консультант\n\nWebhook вызывается бэкендом при сообщении гостя.\nОтвет пишется обратно в чат через API.\n\n**n8n с телефона не нужен** — консультант отвечает сам; handoff уходит в Telegram админу.\n\n`backendApiSecret` = `N8N_TELEGRAM_BOT_API_SECRET`",
+        "content": "## Гостевой чат сайта → тот же ИИ-бот\n\nГлавное: **бот сам отвечает клиенту** в чате на сайте (не только уведомляет админа).\n\nWebhook → AI → POST /integrations/n8n/guest-chats/{id}/messages\n\nn8n с телефона не нужен. Handoff → Telegram админу.\n\n`backendApiSecret` = `N8N_TELEGRAM_BOT_API_SECRET`",
         "height": 240,
         "width": 420
       },
@@ -378,6 +378,38 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-output",
+              "leftValue": "={{ String($json.output || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "guest-if-has-reply-16",
+      "name": "Есть текст ответа",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        360
+      ]
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{ $('Настройки workflow').first().json.apiBaseUrl.replace(/\\/$/, '') + '/integrations/n8n/guest-chats/' + $('Контекст чата').item.json.chatId + '/messages' }}",
         "sendHeaders": true,
@@ -403,8 +435,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2000,
-        360
+        2140,
+        280
       ]
     }
   ],
@@ -552,11 +584,23 @@
       "main": [
         [
           {
-            "node": "Ответ в гостевой чат",
+            "node": "Есть текст ответа",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Есть текст ответа": {
+      "main": [
+        [
+          {
+            "node": "Ответ в гостевой чат",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },
