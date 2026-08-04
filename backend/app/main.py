@@ -33,7 +33,7 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, delete, distinct, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .db import Base, engine, get_db, SessionLocal
 from .models import (
@@ -621,6 +621,7 @@ def _car_to_out(
     estimated_total_rub: float | None = None,
     photo_limit: int | None = None,
     include_trim: bool = False,
+    include_description: bool = True,
 ) -> CarOut:
     rub = round(rub_china_for_car(car, cbr), 2) if cbr is not None else None
     guide = build_pricing_guide(car, cbr) if full_import and cbr is not None else None
@@ -635,6 +636,13 @@ def _car_to_out(
         photos_out = sorted(photos_out, key=lambda p: (p.sort_order, p.id))[
             :photo_limit
         ]
+    # Списки не рендерят description; оставляем текст только если нет horsepower
+    # (фронт resolveHorsepower может вытащить л.с. из описания).
+    description_out = car.description or ""
+    if not include_description:
+        hp = getattr(car, "horsepower", None)
+        if hp is not None and int(hp) > 0:
+            description_out = ""
     return CarOut(
         id=car.id,
         brand_id=car.brand_id,
@@ -645,7 +653,7 @@ def _car_to_out(
         generation_slug=gen_slug,
         generation=(gen.name if gen is not None else None),
         title=car.title,
-        description=car.description,
+        description=description_out,
         year=car.year,
         mileage_km=car.mileage_km,
         engine_volume_cc=normalize_passenger_engine_volume_cc(car.engine_volume_cc),
@@ -954,6 +962,37 @@ def startup() -> None:
             text(
                 "CREATE INDEX IF NOT EXISTS ix_cars_is_popular ON cars (is_popular) "
                 "WHERE is_popular IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_created_at "
+                "ON cars (created_at DESC, id DESC) WHERE is_active IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_brand_created "
+                "ON cars (brand_id, created_at DESC, id DESC) WHERE is_active IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_model_created "
+                "ON cars (model_id, created_at DESC, id DESC) WHERE is_active IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_popular_created "
+                "ON cars (created_at DESC, id DESC) "
+                "WHERE is_active IS TRUE AND is_popular IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_car_photos_car_id_sort "
+                "ON car_photos (car_id, sort_order, id)"
             )
         )
         conn.execute(
@@ -2097,7 +2136,7 @@ def list_favorites(
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
-            joinedload(Car.photos),
+            selectinload(Car.photos),
         )
     )
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
@@ -2147,6 +2186,7 @@ def list_favorites(
                 price_breakdown=pb,
                 estimated_total_rub=est,
                 photo_limit=photo_limit,
+                include_description=False,
             )
         )
     return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
@@ -2418,8 +2458,8 @@ def list_cars(
         default=None,
         description="Если true — только объявления с флагом витрины «Популярные модели».",
     ),
-    page: int = 1,
-    limit: int = 20,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     stmt = (
@@ -2428,7 +2468,7 @@ def list_cars(
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
-            joinedload(Car.photos),
+            selectinload(Car.photos),
         )
         .where(Car.is_active.is_(True))
     )
@@ -2626,6 +2666,7 @@ def list_cars(
                 price_breakdown=pb,
                 estimated_total_rub=est,
                 photo_limit=photo_limit,
+                include_description=False,
             )
         )
     return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
@@ -2702,7 +2743,7 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
-            joinedload(Car.photos),
+            selectinload(Car.photos),
         )
         .where(Car.created_by_user_id == user_id, Car.is_active.is_(True))
         .order_by(Car.updated_at.desc())
@@ -2735,6 +2776,7 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
                 slug_maps=slug_maps,
                 price_breakdown=None,
                 estimated_total_rub=est,
+                include_description=False,
             )
         )
     co = (user.company_name or "").strip()
@@ -3446,7 +3488,7 @@ def staff_my_posted_cars(
                 joinedload(Car.brand),
                 joinedload(Car.model),
                 joinedload(Car.generation),
-                joinedload(Car.photos),
+                selectinload(Car.photos),
             )
             .where(
                 Car.created_by_user_id == current_user.id,
@@ -3461,7 +3503,10 @@ def staff_my_posted_cars(
     snap, _ = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
     return [
-        _car_to_out(c, cbr=snap, full_import=False, slug_maps=slug_maps) for c in cars
+        _car_to_out(
+            c, cbr=snap, full_import=False, slug_maps=slug_maps, include_description=False
+        )
+        for c in cars
     ]
 
 
