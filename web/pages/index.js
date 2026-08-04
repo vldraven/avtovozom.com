@@ -167,12 +167,22 @@ function formatApiErrorDetail(body) {
   return String(d);
 }
 
+/** SSR уже отдал ленту — не дублируем клиентский fetch (фильтры/staff по-прежнему дергают loadCars). */
+function homeHasSsrListSeed(initialData) {
+  if (!initialData) return false;
+  return (
+    (Array.isArray(initialData.cars) && initialData.cars.length > 0) ||
+    (Array.isArray(initialData.popularCars) && initialData.popularCars.length > 0)
+  );
+}
+
 export default function Home({ initialData = null }) {
   const router = useRouter();
   const lastExplicitHomeScrollSaveRef = useRef({ path: "", at: 0 });
   const cacheSeed = readHomeListCacheSeed();
   const skipHomeListFetchOnceRef = useRef(
     Boolean(cacheSeed) ||
+      homeHasSsrListSeed(initialData) ||
       (typeof window !== "undefined" &&
         isListingBackNavigation(`${window.location.pathname}${window.location.search}`))
   );
@@ -1275,7 +1285,8 @@ export default function Home({ initialData = null }) {
 
   useEffect(() => {
     if (!router.isReady) return;
-    // После «назад» из карточки не перезапрашиваем ленту (один раз на mount).
+    // SSR-seed или «назад» из карточки: не дублируем ленту (один раз на mount).
+    // Смена фильтров меняет loadHomeCatalogParallel → эффект снова грузит.
     if (skipHomeListFetchOnceRef.current) {
       skipHomeListFetchOnceRef.current = false;
       if (router.asPath && cars.length > 0) {
