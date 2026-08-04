@@ -1323,6 +1323,17 @@ a:hover {
   margin-top: 0.5rem;
 }
 
+.catalog-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.catalog-load-more .btn {
+  min-width: 12rem;
+}
+
 .catalog-grid {
   display: grid;
   grid-template-columns: 1fr;
