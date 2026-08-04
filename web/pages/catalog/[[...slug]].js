@@ -598,12 +598,19 @@ export default function CatalogTreePage({ initialPayload = null }) {
       });
       return;
     }
+    // SSR отдал полный набор для этого fetchKey — повторный клиентский запрос не нужен.
+    let silentListCompletion = false;
     if (skipCarsFetchKeyRef.current === fetchKey) {
       skipCarsFetchKeyRef.current = null;
       const initialCars = listInitial?.cars?.length ?? 0;
       const initialTotal = listInitial?.total ?? 0;
       if (initialTotal > 0 && initialCars >= initialTotal) {
         return;
+      }
+      // Корень /catalog: SSR даёт укороченный HTML (12), клиент дотягивает до 100.
+      // Не сбрасываем сетку в скелетоны — иначе «перезагрузка» уже показанных карточек.
+      if (initialCars > 0) {
+        silentListCompletion = true;
       }
     }
     const cached = getListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath);
@@ -627,13 +634,18 @@ export default function CatalogTreePage({ initialPayload = null }) {
     let cancelled = false;
     (async () => {
       setCarsError(null);
-      setCarsLoading(true);
+      // Смена фильтра/сорта — скелетоны как раньше; догрузка после SSR — без мигания UI.
+      if (!silentListCompletion) {
+        setCarsLoading(true);
+      }
       try {
         const res = await fetch(`${API_URL}/cars?${params.toString()}`);
         if (!res.ok) {
           if (!cancelled) {
-            setCars([]);
-            setTotal(0);
+            if (!silentListCompletion) {
+              setCars([]);
+              setTotal(0);
+            }
             setCarsError(`Не удалось загрузить объявления (${res.status}).`);
           }
           return;
@@ -654,8 +666,10 @@ export default function CatalogTreePage({ initialPayload = null }) {
         }
       } catch {
         if (!cancelled) {
-          setCars([]);
-          setTotal(0);
+          if (!silentListCompletion) {
+            setCars([]);
+            setTotal(0);
+          }
           setCarsError("Нет связи с API при загрузке объявлений.");
         }
       } finally {

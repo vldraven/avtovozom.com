@@ -1392,9 +1392,21 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
 
 
 @app.get("/catalog/tree", response_model=list[CatalogTreeBrandOut])
-def public_catalog_tree(db: Session = Depends(get_db)):
+def public_catalog_tree(response: Response, db: Session = Depends(get_db)):
     """Дерево марок и моделей с ЧПУ-слагами для навигации /catalog/…"""
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
+    # Bulk-load: без N+1 на каждую марку/модель (форма ответа прежняя).
+    all_models = db.execute(select(CarModel).order_by(CarModel.name)).scalars().all()
+    all_generations = (
+        db.execute(select(CarGeneration).order_by(CarGeneration.name)).scalars().all()
+    )
+    models_by_brand: dict[int, list] = {}
+    for m in all_models:
+        models_by_brand.setdefault(m.brand_id, []).append(m)
+    gens_by_model: dict[int, list] = {}
+    for g in all_generations:
+        gens_by_model.setdefault(g.model_id, []).append(g)
+
     bmap, mmap = _get_cached_slug_maps(db)
     car_counts = {
         row[0]: row[1]
@@ -1430,26 +1442,8 @@ def public_catalog_tree(db: Session = Depends(get_db)):
     }
     out: list[CatalogTreeBrandOut] = []
     for b in brands:
-        models = (
-            db.execute(
-                select(CarModel)
-                .where(CarModel.brand_id == b.id)
-                .order_by(CarModel.name)
-            )
-            .scalars()
-            .all()
-        )
         model_items: list[CatalogTreeModelOut] = []
-        for m in models:
-            gens = (
-                db.execute(
-                    select(CarGeneration)
-                    .where(CarGeneration.model_id == m.id)
-                    .order_by(CarGeneration.name)
-                )
-                .scalars()
-                .all()
-            )
+        for m in models_by_brand.get(b.id, []):
             gen_items = [
                 CatalogTreeGenerationOut(
                     id=g.id,
@@ -1457,7 +1451,7 @@ def public_catalog_tree(db: Session = Depends(get_db)):
                     slug=g.slug,
                     listings_count=listing_per_generation.get(g.id, 0),
                 )
-                for g in gens
+                for g in gens_by_model.get(m.id, [])
             ]
             model_items.append(
                 CatalogTreeModelOut(
@@ -1481,6 +1475,7 @@ def public_catalog_tree(db: Session = Depends(get_db)):
             )
         )
     out.sort(key=lambda x: (-x.listings_count, x.name.lower()))
+    response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return out
 
 
