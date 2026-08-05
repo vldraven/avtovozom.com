@@ -76,10 +76,24 @@ const EXTENSION_NOISE_GUARD = `
 })();
 `;
 
+/** PWA / iOS Home Screen: set class before paint so safe-area CSS applies immediately. */
+const STANDALONE_CLASS_BOOT = `
+(function () {
+  try {
+    var standalone =
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+      (window.matchMedia && window.matchMedia("(display-mode: fullscreen)").matches) ||
+      window.navigator.standalone === true;
+    if (standalone) document.documentElement.classList.add("is-standalone");
+  } catch (e) {}
+})();
+`;
+
 export default function Document() {
   return (
     <Html lang="ru">
       <Head>
+        <script dangerouslySetInnerHTML={{ __html: STANDALONE_CLASS_BOOT }} />
         <script dangerouslySetInnerHTML={{ __html: EXTENSION_NOISE_GUARD }} />
         <meta httpEquiv="content-language" content="ru" />
         {YANDEX_VERIFICATION ? (

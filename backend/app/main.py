@@ -33,7 +33,8 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, delete, distinct, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from .db import Base, engine, get_db, SessionLocal
 from .models import (
@@ -112,12 +113,23 @@ from .car_pricing import build_cbr_snapshot, build_pricing_guide, rub_china_for_
 from .car_list_filters import (
     apply_fuel_type_filter,
     apply_transmission_filter,
-    matches_turnkey_rub_bounds,
 )
 from .body_colors import BODY_COLOR_OPTIONS, label_for_slug, slug_from_form
 from .catalog_slug import build_catalog_slug_maps, slug_for_generation_url, slugs_for_car
 from .engine_volume_util import normalize_passenger_engine_volume_cc
 from .customs_calc import ensure_settings_row, run_estimate, validate_config_yaml
+from .car_estimates import (
+    car_age_group_for_calc as _car_age_group_for_calc,
+    car_engine_type_for_calc as _car_engine_type_for_calc,
+    clear_stored_estimates,
+    compute_estimated_total_rub as _compute_estimated_total_rub,
+    ensure_active_estimates_fresh,
+    get_etc_customs_rubs as _get_etc_customs_rubs,
+    invalidate_etc_estimate_caches as _invalidate_etc_estimate_caches,
+    refresh_car_stored_estimate,
+    stored_estimate_if_fresh,
+    to_rub as _to_rub,
+)
 from .additional_expenses import (
     default_additional_expenses_json,
     parse_additional_expenses_json,
@@ -308,41 +320,13 @@ _slug_maps_cached_at = 0.0
 _slug_maps_cached: tuple[dict[int, str], dict[tuple[int, int], str]] | None = None
 _SLUG_MAPS_TTL_SECONDS = 120.0
 
-# Календарь для возраста авто: полные годы от даты первой регистрации до сегодня (день/месяц важны).
-try:
-    MSK = ZoneInfo("Europe/Moscow")
-except Exception:
-    # В slim Docker часто нет системного tzdata; ставьте пакет tzdata (см. requirements.txt).
-    MSK = timezone(timedelta(hours=3))
-
-
-def _parse_car_registration_date(s: str | None) -> date | None:
-    """Дата в формате YYYY-MM-DD, DD.MM.YYYY или YYYY; иначе None."""
-    if s is None:
-        return None
-    t = (s or "").strip()
-    if not t:
-        return None
-    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%Y/%m/%d", "%Y.%m.%d"):
-        try:
-            return datetime.strptime(t, fmt).date()
-        except ValueError:
-            continue
-    if len(t) == 4 and t.isdigit():
-        y = int(t, 10)
-        if 1980 <= y <= 2100:
-            return date(y, 1, 1)
-    return None
-
-
-def _subtract_years_safe(d: date, years: int) -> date:
-    """d - N календарных лет с безопасной обработкой 29 февраля."""
-    try:
-        return d.replace(year=d.year - years)
-    except ValueError:
-        # 29 февраля -> 28 февраля в невисокосный год
-        return d.replace(year=d.year - years, day=28)
-
+# Публичная навигация каталога (brands/tree): один расчёт на воркер, TTL как у Cache-Control.
+_catalog_meta_lock = Lock()
+_catalog_brands_cached_at = 0.0
+_catalog_brands_cached: list[CatalogBrandOut] | None = None
+_catalog_tree_cached_at = 0.0
+_catalog_tree_cached: list[CatalogTreeBrandOut] | None = None
+_CATALOG_META_TTL_SECONDS = 120.0
 
 def _get_cached_slug_maps(db: Session) -> tuple[dict[int, str], dict[tuple[int, int], str]]:
     global _slug_maps_cached_at, _slug_maps_cached
@@ -358,154 +342,20 @@ def _get_cached_slug_maps(db: Session) -> tuple[dict[int, str], dict[tuple[int, 
 
 
 def _invalidate_slug_maps_cache() -> None:
-    global _slug_maps_cached
+    global _slug_maps_cached, _catalog_brands_cached, _catalog_tree_cached
     with _slug_maps_lock:
         _slug_maps_cached = None
+    with _catalog_meta_lock:
+        _catalog_brands_cached = None
+        _catalog_tree_cached = None
 
 
-def _car_age_group_for_calc(car: Car) -> str:
-    today = datetime.now(MSK).date()
-    reg = _parse_car_registration_date(car.registration_date)
-    if reg is None and car.year is not None:
-        try:
-            y = int(car.year)
-            if 1980 <= y <= 2100:
-                reg = date(y, 1, 1)
-        except (TypeError, ValueError):
-            reg = None
-    if reg is None:
-        return "new"
-
-    # Границы по полным календарным датам (день/месяц важны):
-    # new: < 1 года; 1-3: [1,3); 3-5: [3,5); 5-7: [5,7); over_7: >= 7.
-    cutoff_1 = _subtract_years_safe(today, 1)
-    cutoff_3 = _subtract_years_safe(today, 3)
-    cutoff_5 = _subtract_years_safe(today, 5)
-    cutoff_7 = _subtract_years_safe(today, 7)
-
-    if reg > cutoff_1:
-        return "new"
-    if reg > cutoff_3:
-        return "1-3"
-    if reg > cutoff_5:
-        return "3-5"
-    if reg > cutoff_7:
-        return "5-7"
-    return "over_7"
-
-
-def _car_engine_type_for_calc(car: Car) -> str:
-    raw = (car.fuel_type or "").strip().lower()
-    if any(token in raw for token in ("элект", "electric", "ev", "纯电", "bev")):
-        return "electric"
-    if "diesel" in raw or "диз" in raw:
-        return "diesel"
-    if any(token in raw for token in ("hybrid", "гиб", "phev", "hev", "增程")):
-        return "hybrid"
-    return "gasoline"
-
-
-def _to_rub(amount: float, currency: str, rub_per_cny: float) -> float:
-    cur = (currency or "RUB").strip().upper()
-    if cur == "CNY":
-        return float(amount) * float(rub_per_cny)
-    return float(amount)
-
-
-# Кэш компонентов ETC/ТКС: один и тот же run_estimate() для близких авто/настроек не пересчитывать.
-_ETC_RUBS_CACHE: dict[
-    tuple[int, str, str, int, int, int], tuple[float, float, float]
-] = {}
-_ETC_RUBS_LOCK = Lock()
-_ETC_RUBS_CACHE_MAX = 3000
-
-
-def _estimate_fingerprint(row: CustomsCalcSettings) -> int:
-    h = zlib.crc32((row.config_yaml or "").encode("utf-8", errors="replace"))
-    h = zlib.crc32(
-        (row.util_coefficients_individual or "").encode("utf-8", errors="replace"), h
-    )
-    h = zlib.crc32(
-        (row.util_coefficients_company or "").encode("utf-8", errors="replace"), h
-    )
-    return h & 0xFFFFFFFF
-
-
-def _get_etc_customs_rubs(car: Car, row: CustomsCalcSettings) -> tuple[float, float, float] | None:
-    engine_type = _car_engine_type_for_calc(car)
-    age_group = _car_age_group_for_calc(car)
-    engine_capacity = normalize_passenger_engine_volume_cc(int(car.engine_volume_cc or 0))
-    if engine_type != "electric":
-        engine_capacity = max(50, engine_capacity)
-    power = max(1, int(car.horsepower or 1))
-    price_key = int(round(float(car.price_cny) * 100))
-    fp = _estimate_fingerprint(row)
-    key = (fp, age_group, engine_type, engine_capacity, power, price_key)
-    with _ETC_RUBS_LOCK:
-        hit = _ETC_RUBS_CACHE.get(key)
-    if hit is not None:
-        return hit
-    try:
-        estimate = run_estimate(
-            row.config_yaml,
-            CustomsCalcEstimateIn(
-                age=age_group,
-                engine_capacity=engine_capacity,
-                engine_type=engine_type,
-                power=power,
-                price=float(car.price_cny),
-                owner_type="individual",
-                currency="CNY",
-            ),
-            util_individual_json=row.util_coefficients_individual,
-            util_company_json=row.util_coefficients_company,
-        )
-        if estimate.summary is None:
-            return None
-        s = estimate.summary
-        hit = (float(s.clearance_fee_rub), float(s.duty_rub), float(s.utilization_fee_rub))
-    except Exception:
-        return None
-    with _ETC_RUBS_LOCK:
-        if len(_ETC_RUBS_CACHE) >= _ETC_RUBS_CACHE_MAX:
-            _ETC_RUBS_CACHE.clear()
-        _ETC_RUBS_CACHE[key] = hit
-    return hit
-
-
-def _compute_estimated_total_rub(
-    car: Car,
-    row: CustomsCalcSettings,
-    cbr: CbrSnapshot,
-    *,
-    extras: dict[str, Any] | None = None,
-) -> float | None:
-    rubs = _get_etc_customs_rubs(car, row)
-    if rubs is None:
-        return None
-    clearance, duty, util = rubs
-    rub_china = float(rub_china_for_car(car, cbr))
-    if extras is None:
-        extras = parse_additional_expenses_json(row.additional_expenses_json)
-    export_raw = extras["export_expenses"]
-    russia_raw = extras["russia_expenses"]
-    bank_raw = extras["bank_commission"]
-    company_raw = extras["company_commission"]
-    export_rub = _to_rub(float(export_raw["amount"]), str(export_raw["currency"]), cbr.rub_per_cny)
-    russia_rub = _to_rub(float(russia_raw["amount"]), str(russia_raw["currency"]), cbr.rub_per_cny)
-    company_rub = _to_rub(float(company_raw["amount"]), str(company_raw["currency"]), cbr.rub_per_cny)
-    bank_rub = rub_china * (float(bank_raw["percent"]) / 100.0)
-    total = (
-        rub_china
-        + clearance
-        + duty
-        + util
-        + export_rub
-        + russia_rub
-        + bank_rub
-        + company_rub
-    )
-    return round(float(total), 2)
+def _invalidate_catalog_meta_cache() -> None:
+    """Сброс brands/tree (счётчики лотов) без обязательного сброса slug maps."""
+    global _catalog_brands_cached, _catalog_tree_cached
+    with _catalog_meta_lock:
+        _catalog_brands_cached = None
+        _catalog_tree_cached = None
 
 
 def _build_car_price_breakdown(
@@ -611,6 +461,60 @@ def _trim_to_out(trim: CarTrim | None) -> CarTrimOut | None:
     )
 
 
+def _attach_list_photos(
+    db: Session,
+    cars: list[Car],
+    photo_limit: int | None,
+) -> None:
+    """Подгрузить фото только для страницы списка (не для всех кандидатов).
+
+    При photo_limit — top-N по (sort_order, id) через ROW_NUMBER; иначе все фото
+    этих car_id. Не помечает сессию dirty.
+    """
+    if not cars:
+        return
+    ids = [c.id for c in cars]
+    if photo_limit is not None and photo_limit > 0:
+        rn = (
+            func.row_number()
+            .over(
+                partition_by=CarPhoto.car_id,
+                order_by=(CarPhoto.sort_order.asc(), CarPhoto.id.asc()),
+            )
+            .label("rn")
+        )
+        ranked = (
+            select(CarPhoto.id.label("photo_id"), rn)
+            .where(CarPhoto.car_id.in_(ids))
+            .subquery()
+        )
+        rows = (
+            db.execute(
+                select(CarPhoto)
+                .join(ranked, CarPhoto.id == ranked.c.photo_id)
+                .where(ranked.c.rn <= int(photo_limit))
+                .order_by(CarPhoto.car_id, CarPhoto.sort_order, CarPhoto.id)
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        rows = (
+            db.execute(
+                select(CarPhoto)
+                .where(CarPhoto.car_id.in_(ids))
+                .order_by(CarPhoto.car_id, CarPhoto.sort_order, CarPhoto.id)
+            )
+            .scalars()
+            .all()
+        )
+    by_car: dict[int, list[CarPhoto]] = defaultdict(list)
+    for photo in rows:
+        by_car[photo.car_id].append(photo)
+    for car in cars:
+        set_committed_value(car, "photos", by_car.get(car.id, []))
+
+
 def _car_to_out(
     car: Car,
     *,
@@ -622,6 +526,7 @@ def _car_to_out(
     estimated_total_rub: float | None = None,
     photo_limit: int | None = None,
     include_trim: bool = False,
+    include_description: bool = True,
 ) -> CarOut:
     rub = round(rub_china_for_car(car, cbr), 2) if cbr is not None else None
     guide = build_pricing_guide(car, cbr) if full_import and cbr is not None else None
@@ -636,6 +541,13 @@ def _car_to_out(
         photos_out = sorted(photos_out, key=lambda p: (p.sort_order, p.id))[
             :photo_limit
         ]
+    # Списки не рендерят description; оставляем текст только если нет horsepower
+    # (фронт resolveHorsepower может вытащить л.с. из описания).
+    description_out = car.description or ""
+    if not include_description:
+        hp = getattr(car, "horsepower", None)
+        if hp is not None and int(hp) > 0:
+            description_out = ""
     return CarOut(
         id=car.id,
         brand_id=car.brand_id,
@@ -646,7 +558,7 @@ def _car_to_out(
         generation_slug=gen_slug,
         generation=(gen.name if gen is not None else None),
         title=car.title,
-        description=car.description,
+        description=description_out,
         year=car.year,
         mileage_km=car.mileage_km,
         engine_volume_cc=normalize_passenger_engine_volume_cc(car.engine_volume_cc),
@@ -955,6 +867,54 @@ def startup() -> None:
             text(
                 "CREATE INDEX IF NOT EXISTS ix_cars_is_popular ON cars (is_popular) "
                 "WHERE is_popular IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE cars ADD COLUMN IF NOT EXISTS estimated_total_rub DOUBLE PRECISION"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE cars ADD COLUMN IF NOT EXISTS estimate_cbr_date VARCHAR(32)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_estimated_total_rub "
+                "ON cars (estimated_total_rub ASC NULLS LAST, id DESC) "
+                "WHERE is_active IS TRUE AND estimated_total_rub IS NOT NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_created_at "
+                "ON cars (created_at DESC, id DESC) WHERE is_active IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_brand_created "
+                "ON cars (brand_id, created_at DESC, id DESC) WHERE is_active IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_model_created "
+                "ON cars (model_id, created_at DESC, id DESC) WHERE is_active IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_popular_created "
+                "ON cars (created_at DESC, id DESC) "
+                "WHERE is_active IS TRUE AND is_popular IS TRUE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_car_photos_car_id_sort "
+                "ON car_photos (car_id, sort_order, id)"
             )
         )
         conn.execute(
@@ -1311,9 +1271,7 @@ def public_customs_calculator_estimate(payload: CustomsCalcEstimateIn, db: Sessi
         raise HTTPException(status_code=400, detail=f"Ошибка расчёта: {e}") from e
 
 
-@app.get("/catalog/brands", response_model=list[CatalogBrandOut])
-def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
-    """Публичный список марок с числом объявлений (главная страница, сценарий как на auto.ru)."""
+def _build_catalog_brands(db: Session) -> list[CatalogBrandOut]:
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
     bmap, _ = _get_cached_slug_maps(db)
     car_counts = {
@@ -1346,6 +1304,29 @@ def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
         for b in brands
     ]
     items.sort(key=lambda x: (-x.listings_count, x.name.lower()))
+    return items
+
+
+def _get_cached_catalog_brands(db: Session) -> list[CatalogBrandOut]:
+    global _catalog_brands_cached_at, _catalog_brands_cached
+    now = time.monotonic()
+    with _catalog_meta_lock:
+        if (
+            _catalog_brands_cached is not None
+            and (now - _catalog_brands_cached_at) <= _CATALOG_META_TTL_SECONDS
+        ):
+            return _catalog_brands_cached
+    fresh = _build_catalog_brands(db)
+    with _catalog_meta_lock:
+        _catalog_brands_cached = fresh
+        _catalog_brands_cached_at = now
+    return fresh
+
+
+@app.get("/catalog/brands", response_model=list[CatalogBrandOut])
+def public_catalog_brands(response: Response, db: Session = Depends(get_db)):
+    """Публичный список марок с числом объявлений (главная страница, сценарий как на auto.ru)."""
+    items = _get_cached_catalog_brands(db)
     response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return items
 
@@ -1357,7 +1338,11 @@ def public_catalog_body_colors():
 
 
 @app.get("/catalog/models", response_model=list[CatalogModelOut])
-def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_db)):
+def public_catalog_models(
+    response: Response,
+    brand_id: int = Query(...),
+    db: Session = Depends(get_db),
+):
     brand = db.execute(select(CarBrand).where(CarBrand.id == brand_id)).scalar_one_or_none()
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
@@ -1379,6 +1364,7 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
             .group_by(Car.model_id)
         ).all()
     }
+    response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return [
         CatalogModelOut(
             id=m.id,
@@ -1392,10 +1378,20 @@ def public_catalog_models(brand_id: int = Query(...), db: Session = Depends(get_
     ]
 
 
-@app.get("/catalog/tree", response_model=list[CatalogTreeBrandOut])
-def public_catalog_tree(db: Session = Depends(get_db)):
-    """Дерево марок и моделей с ЧПУ-слагами для навигации /catalog/…"""
+def _build_catalog_tree(db: Session) -> list[CatalogTreeBrandOut]:
     brands = db.execute(select(CarBrand).order_by(CarBrand.name)).scalars().all()
+    # Bulk-load: без N+1 на каждую марку/модель (форма ответа прежняя).
+    all_models = db.execute(select(CarModel).order_by(CarModel.name)).scalars().all()
+    all_generations = (
+        db.execute(select(CarGeneration).order_by(CarGeneration.name)).scalars().all()
+    )
+    models_by_brand: dict[int, list] = {}
+    for m in all_models:
+        models_by_brand.setdefault(m.brand_id, []).append(m)
+    gens_by_model: dict[int, list] = {}
+    for g in all_generations:
+        gens_by_model.setdefault(g.model_id, []).append(g)
+
     bmap, mmap = _get_cached_slug_maps(db)
     car_counts = {
         row[0]: row[1]
@@ -1431,26 +1427,8 @@ def public_catalog_tree(db: Session = Depends(get_db)):
     }
     out: list[CatalogTreeBrandOut] = []
     for b in brands:
-        models = (
-            db.execute(
-                select(CarModel)
-                .where(CarModel.brand_id == b.id)
-                .order_by(CarModel.name)
-            )
-            .scalars()
-            .all()
-        )
         model_items: list[CatalogTreeModelOut] = []
-        for m in models:
-            gens = (
-                db.execute(
-                    select(CarGeneration)
-                    .where(CarGeneration.model_id == m.id)
-                    .order_by(CarGeneration.name)
-                )
-                .scalars()
-                .all()
-            )
+        for m in models_by_brand.get(b.id, []):
             gen_items = [
                 CatalogTreeGenerationOut(
                     id=g.id,
@@ -1458,7 +1436,7 @@ def public_catalog_tree(db: Session = Depends(get_db)):
                     slug=g.slug,
                     listings_count=listing_per_generation.get(g.id, 0),
                 )
-                for g in gens
+                for g in gens_by_model.get(m.id, [])
             ]
             model_items.append(
                 CatalogTreeModelOut(
@@ -1482,6 +1460,30 @@ def public_catalog_tree(db: Session = Depends(get_db)):
             )
         )
     out.sort(key=lambda x: (-x.listings_count, x.name.lower()))
+    return out
+
+
+def _get_cached_catalog_tree(db: Session) -> list[CatalogTreeBrandOut]:
+    global _catalog_tree_cached_at, _catalog_tree_cached
+    now = time.monotonic()
+    with _catalog_meta_lock:
+        if (
+            _catalog_tree_cached is not None
+            and (now - _catalog_tree_cached_at) <= _CATALOG_META_TTL_SECONDS
+        ):
+            return _catalog_tree_cached
+    fresh = _build_catalog_tree(db)
+    with _catalog_meta_lock:
+        _catalog_tree_cached = fresh
+        _catalog_tree_cached_at = now
+    return fresh
+
+
+@app.get("/catalog/tree", response_model=list[CatalogTreeBrandOut])
+def public_catalog_tree(response: Response, db: Session = Depends(get_db)):
+    """Дерево марок и моделей с ЧПУ-слагами для навигации /catalog/…"""
+    out = _get_cached_catalog_tree(db)
+    response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=300"
     return out
 
 
@@ -2103,7 +2105,6 @@ def list_favorites(
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
-            joinedload(Car.photos),
         )
     )
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
@@ -2117,6 +2118,7 @@ def list_favorites(
         .scalars()
         .all()
     )
+    _attach_list_photos(db, list(cars), photo_limit)
 
     snap, cbr_err = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
@@ -2153,6 +2155,7 @@ def list_favorites(
                 price_breakdown=pb,
                 estimated_total_rub=est,
                 photo_limit=photo_limit,
+                include_description=False,
             )
         )
     return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
@@ -2424,18 +2427,12 @@ def list_cars(
         default=None,
         description="Если true — только объявления с флагом витрины «Популярные модели».",
     ),
-    page: int = 1,
-    limit: int = 20,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     stmt = (
         select(Car)
-        .options(
-            joinedload(Car.brand),
-            joinedload(Car.model),
-            joinedload(Car.generation),
-            joinedload(Car.photos),
-        )
         .where(Car.is_active.is_(True))
     )
     qs = (q or "").strip()
@@ -2509,75 +2506,62 @@ def list_cars(
 
     s = (sort or "date_desc").strip().lower()
     est_by_id: dict[int, float] = {}
+    list_load_opts = (
+        joinedload(Car.brand),
+        joinedload(Car.model),
+        joinedload(Car.generation),
+    )
 
-    if filter_by_turnkey:
-        candidates = db.execute(stmt).unique().scalars().all()
-        scored: list[tuple[Car, float]] = []
-        if snap is not None:
-            for car in candidates:
-                try:
-                    est = _compute_estimated_total_rub(
-                        car, settings_row, snap, extras=extras_for_est
-                    )
-                except Exception:
-                    est = None
-                if not matches_turnkey_rub_bounds(est, rub_from, rub_to):
-                    continue
-                scored.append((car, float(est)))
+    if filter_by_turnkey and snap is not None:
+        # Денормализованный estimated_total_rub → фильтр/сорт в SQL.
+        ensure_active_estimates_fresh(
+            db, snap=snap, settings_row=settings_row, extras=extras_for_est
+        )
+        turnkey_stmt = stmt.where(
+            Car.estimated_total_rub.isnot(None),
+            Car.estimate_cbr_date == (snap.rate_date or ""),
+        )
+        if rub_from is not None:
+            turnkey_stmt = turnkey_stmt.where(Car.estimated_total_rub >= float(rub_from))
+        if rub_to is not None:
+            turnkey_stmt = turnkey_stmt.where(Car.estimated_total_rub <= float(rub_to))
+        total = db.scalar(select(func.count()).select_from(turnkey_stmt.subquery())) or 0
         if s == "price_asc":
-            scored.sort(key=lambda x: (x[1], -x[0].id))
+            order = (Car.estimated_total_rub.asc(), Car.id.desc())
         elif s == "price_desc":
-            scored.sort(key=lambda x: (-x[1], -x[0].id))
+            order = (Car.estimated_total_rub.desc(), Car.id.desc())
         elif s == "date_asc":
-            scored.sort(
-                key=lambda x: (x[0].created_at is None, x[0].created_at, x[0].id)
-            )
+            order = (Car.created_at.asc(), Car.id.asc())
         elif s == "year_desc":
-            scored.sort(
-                key=lambda x: (x[0].year is None, -(x[0].year or 0), -x[0].id)
-            )
+            order = (Car.year.desc().nulls_last(), Car.id.desc())
         elif s == "year_asc":
-            scored.sort(
-                key=lambda x: (x[0].year is None, x[0].year or 0, -x[0].id)
-            )
+            order = (Car.year.asc().nulls_last(), Car.id.desc())
         elif s == "mileage_asc":
-            scored.sort(
-                key=lambda x: (
-                    x[0].mileage_km is None,
-                    x[0].mileage_km or 0,
-                    -x[0].id,
-                )
-            )
+            order = (Car.mileage_km.asc().nulls_last(), Car.id.desc())
         elif s == "power_desc":
-            scored.sort(
-                key=lambda x: (
-                    x[0].horsepower is None,
-                    -(x[0].horsepower or 0),
-                    -x[0].id,
-                )
-            )
+            order = (Car.horsepower.desc().nulls_last(), Car.id.desc())
         elif s == "relevance":
-            scored.sort(
-                key=lambda x: (
-                    not bool(x[0].is_popular),
-                    x[0].created_at is None,
-                    -(x[0].created_at.timestamp() if x[0].created_at else 0),
-                    -x[0].id,
-                )
-            )
+            order = (Car.is_popular.desc(), Car.created_at.desc(), Car.id.desc())
         else:
-            scored.sort(
-                key=lambda x: (
-                    x[0].created_at is None,
-                    -(x[0].created_at.timestamp() if x[0].created_at else 0),
-                    -x[0].id,
-                )
+            order = (Car.created_at.desc(), Car.id.desc())
+        cars = list(
+            db.execute(
+                turnkey_stmt.options(*list_load_opts)
+                .order_by(*order)
+                .offset((page - 1) * limit)
+                .limit(limit)
             )
-        total = len(scored)
-        start = max(0, (page - 1) * limit)
-        page_slice = scored[start : start + limit]
-        cars = [c for c, _ in page_slice]
-        est_by_id = {c.id: e for c, e in page_slice}
+            .unique()
+            .scalars()
+            .all()
+        )
+        for c in cars:
+            if c.estimated_total_rub is not None:
+                est_by_id[c.id] = float(c.estimated_total_rub)
+    elif filter_by_turnkey:
+        # Нет курса ЦБ — пустой результат по «под ключ».
+        total = 0
+        cars = []
     else:
         total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         if s == "price_asc":
@@ -2598,11 +2582,19 @@ def list_cars(
             order = (Car.is_popular.desc(), Car.created_at.desc(), Car.id.desc())
         else:
             order = (Car.created_at.desc(), Car.id.desc())
-        cars = db.execute(
-            stmt.order_by(*order)
-            .offset((page - 1) * limit)
-            .limit(limit)
-        ).unique().scalars().all()
+        cars = list(
+            db.execute(
+                stmt.options(*list_load_opts)
+                .order_by(*order)
+                .offset((page - 1) * limit)
+                .limit(limit)
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+
+    _attach_list_photos(db, list(cars), photo_limit)
 
     items: list[CarOut] = []
     for car in cars:
@@ -2617,12 +2609,19 @@ def list_cars(
             if pb is not None:
                 est = float(pb.total_rub)
             elif snap is not None:
-                try:
-                    est = _compute_estimated_total_rub(
-                        car, settings_row, snap, extras=extras_for_est
-                    )
-                except Exception:
-                    est = None
+                est = stored_estimate_if_fresh(car, snap.rate_date)
+                if est is None:
+                    try:
+                        est = refresh_car_stored_estimate(
+                            db,
+                            car,
+                            snap=snap,
+                            settings_row=settings_row,
+                            extras=extras_for_est,
+                            commit=False,
+                        )
+                    except Exception:
+                        est = None
         items.append(
             _car_to_out(
                 car,
@@ -2632,8 +2631,14 @@ def list_cars(
                 price_breakdown=pb,
                 estimated_total_rub=est,
                 photo_limit=photo_limit,
+                include_description=False,
             )
         )
+    if snap is not None and cars:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
     return CarsListOut(items=items, total=total, cbr=snap, cbr_error=cbr_err)
 
 
@@ -2708,13 +2713,13 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
             joinedload(Car.brand),
             joinedload(Car.model),
             joinedload(Car.generation),
-            joinedload(Car.photos),
         )
         .where(Car.created_by_user_id == user_id, Car.is_active.is_(True))
         .order_by(Car.updated_at.desc())
         .limit(100)
     )
     cars = db.execute(stmt).unique().scalars().all()
+    _attach_list_photos(db, list(cars), 8)
     snap, _ = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
     settings_row = ensure_settings_row(db)
@@ -2741,6 +2746,8 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
                 slug_maps=slug_maps,
                 price_breakdown=None,
                 estimated_total_rub=est,
+                include_description=False,
+                photo_limit=8,
             )
         )
     co = (user.company_name or "").strip()
@@ -3011,6 +3018,10 @@ async def _update_car_from_multipart(
     )
     _ping_indexnow_for_car(db, car)
     snap, _ = build_cbr_snapshot()
+    try:
+        refresh_car_stored_estimate(db, car, snap=snap, commit=True)
+    except Exception:
+        pass
     slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(car, cbr=snap, full_import=bool(snap), slug_maps=slug_maps)
 
@@ -3455,7 +3466,7 @@ def staff_my_posted_cars(
                 joinedload(Car.brand),
                 joinedload(Car.model),
                 joinedload(Car.generation),
-                joinedload(Car.photos),
+                selectinload(Car.photos),
             )
             .where(
                 Car.created_by_user_id == current_user.id,
@@ -3470,7 +3481,10 @@ def staff_my_posted_cars(
     snap, _ = build_cbr_snapshot()
     slug_maps = _get_cached_slug_maps(db)
     return [
-        _car_to_out(c, cbr=snap, full_import=False, slug_maps=slug_maps) for c in cars
+        _car_to_out(
+            c, cbr=snap, full_import=False, slug_maps=slug_maps, include_description=False
+        )
+        for c in cars
     ]
 
 
@@ -3570,6 +3584,7 @@ async def staff_create_car(
     for i, url in enumerate(paths):
         db.add(CarPhoto(car_id=car.id, storage_url=url, sort_order=i))
     db.commit()
+    _invalidate_catalog_meta_cache()
 
     car = (
         db.execute(
@@ -3587,6 +3602,10 @@ async def staff_create_car(
     )
     _ping_indexnow_for_car(db, car)
     snap, _ = build_cbr_snapshot()
+    try:
+        refresh_car_stored_estimate(db, car, snap=snap, commit=True)
+    except Exception:
+        pass
     slug_maps = _get_cached_slug_maps(db)
     return _car_to_out(car, cbr=snap, full_import=False, slug_maps=slug_maps)
 
@@ -3716,6 +3735,7 @@ def staff_delete_own_car(
         return {"ok": True}
     car.is_active = False
     db.commit()
+    _invalidate_catalog_meta_cache()
     # Снятое объявление вернёт 404 на каноническом URL — просим поисковики перепроверить и выкинуть из индекса.
     _ping_indexnow_for_car(db, car)
     car_dir = MEDIA_ROOT / "cars" / str(car_id)
@@ -4527,6 +4547,7 @@ def admin_delete_car(
         raise HTTPException(status_code=404, detail="Car not found")
     car.is_active = False
     db.commit()
+    _invalidate_catalog_meta_cache()
     # Снятое объявление вернёт 404 на каноническом URL — просим поисковики перепроверить и выкинуть из индекса.
     _ping_indexnow_for_car(db, car)
     car_dir = MEDIA_ROOT / "cars" / str(car_id)
@@ -4774,6 +4795,7 @@ def admin_update_customs_calculator_config(
     row.additional_expenses_json = _norm(payload.additional_expenses_json)
     db.commit()
     db.refresh(row)
+    clear_stored_estimates(db)
     return CustomsCalcConfigOut(
         config_yaml=row.config_yaml,
         util_coefficients_individual=row.util_coefficients_individual,

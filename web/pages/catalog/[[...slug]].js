@@ -1,4 +1,5 @@
 import Head from "next/head";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -11,12 +12,15 @@ import HomeCarCard from "../../components/HomeCarCard";
 import SiteHeaderDesktopNav from "../../components/SiteHeaderDesktopNav";
 import CatalogSortDropdown, { CATALOG_SORT_DEFAULT } from "../../components/CatalogSortDropdown";
 import SiteHeader from "../../components/SiteHeader";
-import CarDetailView from "../../components/CarDetailView";
 import HeaderMessagesLink from "../../components/HeaderMessagesLink";
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import HeaderFavoritesLink from "../../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLink";
 import RequestConfirmModal from "../../components/RequestConfirmModal";
+
+const CarDetailView = dynamic(() => import("../../components/CarDetailView"), {
+  ssr: true,
+});
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../../lib/auth";
 import { carSpecMetaBits } from "../../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../../lib/carRoutes";
@@ -25,6 +29,7 @@ import { canCreateListings } from "../../lib/roles";
 import {
   buildCatalogCarsQuery,
   catalogFetchKey,
+  CATALOG_PAGE_SIZE,
   isCarDetailSegments,
   resolveCatalogTree,
   segmentsFromSlugParam,
@@ -46,6 +51,7 @@ import {
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../../lib/schema";
 import { scheduleListScrollRestore } from "../../lib/listScrollRestore";
 import { getListingPageCache, setListingPageCache } from "../../lib/listingPageCache";
+import { fetchCatalogTreeCached, setCatalogMetaCache } from "../../lib/catalogMetaCache";
 import { absoluteUrl } from "../../lib/siteUrl";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -110,6 +116,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const [filterDraft, setFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [carsLoading, setCarsLoading] = useState(false);
+  const [carsLoadingMore, setCarsLoadingMore] = useState(false);
   const [carsRetryTick, setCarsRetryTick] = useState(0);
   const [similarCars, setSimilarCars] = useState([]);
 
@@ -312,26 +319,28 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const loadTree = useCallback(async () => {
     setTreeError(null);
     try {
-      const res = await fetch(`${API_URL}/catalog/tree`);
-      if (!res.ok) {
-        setTreeError(
-          `Каталог не отвечает (${res.status}). Убедитесь, что backend запущен: ${API_URL}`
-        );
-        setTree([]);
-        return;
+      if (listInitial?.tree?.length) {
+        setCatalogMetaCache("tree", listInitial.tree);
       }
-      const nextTree = await res.json();
+      const nextTree = await fetchCatalogTreeCached(API_URL);
       setTree(nextTree);
       if (router.asPath) {
         setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, { tree: nextTree });
       }
-    } catch {
-      setTreeError(
-        `Нет связи с API (${API_URL}). Запустите backend (docker compose / uvicorn) и проверьте адрес в NEXT_PUBLIC_API_URL.`
-      );
+    } catch (err) {
+      const statusMatch = String(err?.message || "").match(/tree\s+(\d+)/);
+      if (statusMatch) {
+        setTreeError(
+          `Каталог не отвечает (${statusMatch[1]}). Убедитесь, что backend запущен: ${API_URL}`
+        );
+      } else {
+        setTreeError(
+          `Нет связи с API (${API_URL}). Запустите backend (docker compose / uvicorn) и проверьте адрес в NEXT_PUBLIC_API_URL.`
+        );
+      }
       setTree([]);
     }
-  }, [router.asPath]);
+  }, [router.asPath, listInitial?.tree]);
 
   useEffect(() => {
     if (skipTreeLoadRef.current) {
@@ -598,11 +607,11 @@ export default function CatalogTreePage({ initialPayload = null }) {
       });
       return;
     }
+    // SSR отдал первую страницу — не дотягиваем до 100; остальное через «Показать ещё».
     if (skipCarsFetchKeyRef.current === fetchKey) {
       skipCarsFetchKeyRef.current = null;
       const initialCars = listInitial?.cars?.length ?? 0;
-      const initialTotal = listInitial?.total ?? 0;
-      if (initialTotal > 0 && initialCars >= initialTotal) {
+      if (initialCars > 0) {
         return;
       }
     }
@@ -622,7 +631,14 @@ export default function CatalogTreePage({ initialPayload = null }) {
       brandId: resolved.brand?.id ?? null,
       modelId: resolved.model?.id ?? null,
     });
-    const params = buildCatalogCarsQuery(resolved, listSort, undefined, filterQuery, textQuery);
+    const params = buildCatalogCarsQuery(
+      resolved,
+      listSort,
+      CATALOG_PAGE_SIZE,
+      filterQuery,
+      textQuery,
+      1
+    );
     if (!params) return;
     let cancelled = false;
     (async () => {
@@ -677,6 +693,83 @@ export default function CatalogTreePage({ initialPayload = null }) {
     listInitial?.total,
     isCatalogListRoute,
     carsRetryTick,
+  ]);
+
+  const loadMoreCars = useCallback(async () => {
+    if (
+      !isCatalogListRoute ||
+      carsLoading ||
+      carsLoadingMore ||
+      carsError ||
+      segments == null ||
+      cars.length === 0 ||
+      cars.length >= total
+    ) {
+      return;
+    }
+    const nextPage = Math.floor(cars.length / CATALOG_PAGE_SIZE) + 1;
+    const resolved = resolveCatalogTree(segments, tree);
+    const filterQuery = parseFiltersFromQuery(router.query, {
+      brandId: resolved.brand?.id ?? null,
+      modelId: resolved.model?.id ?? null,
+    });
+    const textQuery = catalogTextQueryFromRouter(router.query);
+    const params = buildCatalogCarsQuery(
+      resolved,
+      listSort,
+      CATALOG_PAGE_SIZE,
+      filterQuery,
+      textQuery,
+      nextPage
+    );
+    if (!params) return;
+    const filterKey = catalogFilterKeyFromQuery(router.query);
+    const fetchKey = catalogFetchKey(segments, listSort, filterKey, textQuery);
+    setCarsLoadingMore(true);
+    try {
+      const res = await fetch(`${API_URL}/cars?${params.toString()}`);
+      if (!res.ok) {
+        return;
+      }
+      const data = await res.json();
+      const more = data.items || [];
+      const nextTotal = Number(data.total) || total;
+      setTotal(nextTotal);
+      setCars((prev) => {
+        const seen = new Set(prev.map((c) => c.id));
+        const merged = [...prev];
+        for (const car of more) {
+          if (car?.id != null && !seen.has(car.id)) {
+            seen.add(car.id);
+            merged.push(car);
+          }
+        }
+        setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
+          cars: merged,
+          total: nextTotal,
+          tree,
+          listSort,
+          fetchKey,
+        });
+        return merged;
+      });
+    } catch {
+      /* список уже на экране — догрузку можно повторить кнопкой */
+    } finally {
+      setCarsLoadingMore(false);
+    }
+  }, [
+    isCatalogListRoute,
+    carsLoading,
+    carsLoadingMore,
+    carsError,
+    segments,
+    cars.length,
+    total,
+    tree,
+    listSort,
+    router.query,
+    router.asPath,
   ]);
 
   useEffect(() => {
@@ -1105,6 +1198,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                         ) : null}
                       </div>
                     ) : (
+                    <>
                     <div className="catalog-grid">
                       {cars.map((car) => {
                         const totalRub =
@@ -1191,6 +1285,24 @@ export default function CatalogTreePage({ initialPayload = null }) {
                         );
                       })}
                     </div>
+                    {cars.length < total ? (
+                      <div className="catalog-load-more">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={carsLoadingMore}
+                          onClick={() => loadMoreCars()}
+                        >
+                          {carsLoadingMore
+                            ? "Загружаем…"
+                            : `Показать ещё (${Math.min(
+                                CATALOG_PAGE_SIZE,
+                                Math.max(0, total - cars.length)
+                              )})`}
+                        </button>
+                      </div>
+                    ) : null}
+                    </>
                     )}
                   </section>
                 </div>

@@ -96,19 +96,28 @@ export function resolveCatalogTree(segments, tree) {
   };
 }
 
-/** Карточек в HTML при SSR корня каталога (/catalog без марки). */
-export const CATALOG_SSR_LIMIT = 12;
+/** Размер страницы ленты каталога (SSR и клиент одинаковые — корректный page=N). */
+export const CATALOG_PAGE_SIZE = 24;
 
-/** Максимум объявлений в ленте каталога на клиенте. */
+/** @deprecated используйте CATALOG_PAGE_SIZE; оставлено для совместимости импортов. */
+export const CATALOG_SSR_LIMIT = CATALOG_PAGE_SIZE;
+
+/** @deprecated жёсткий «всё сразу» больше не используется — пагинация через page. */
 export const CATALOG_LIST_LIMIT = 100;
 
-/** Сколько объявлений отдавать в HTML при SSR: на марке/модели — все (до лимита ленты). */
-export function catalogSsrCarsLimit(resolved) {
-  if (resolved?.brand) return CATALOG_LIST_LIMIT;
-  return CATALOG_SSR_LIMIT;
+/** Сколько объявлений отдавать в HTML при SSR (первая страница). */
+export function catalogSsrCarsLimit(_resolved) {
+  return CATALOG_PAGE_SIZE;
 }
 
-export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_LIMIT, filterQuery = null, textQuery = null) {
+export function buildCatalogCarsQuery(
+  resolved,
+  listSort,
+  limit = CATALOG_PAGE_SIZE,
+  filterQuery = null,
+  textQuery = null,
+  page = 1
+) {
   const params = new URLSearchParams();
   const { brand, model, generation, badGenSlug, unknownSlug } = resolved;
   if (unknownSlug) return null;
@@ -126,6 +135,8 @@ export function buildCatalogCarsQuery(resolved, listSort, limit = CATALOG_LIST_L
   if (qq) params.set("q", qq);
   params.set("photo_limit", "8");
   params.set("limit", String(limit));
+  const pageNum = Math.max(1, Number(page) || 1);
+  if (pageNum > 1) params.set("page", String(pageNum));
   return params;
 }
 

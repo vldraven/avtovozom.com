@@ -194,8 +194,12 @@ class Car(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     source: Mapped[str] = mapped_column(String(32), default="che168")
     source_listing_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    brand_id: Mapped[int] = mapped_column(ForeignKey("car_brands.id"), nullable=False)
-    model_id: Mapped[int] = mapped_column(ForeignKey("car_models.id"), nullable=False)
+    brand_id: Mapped[int] = mapped_column(
+        ForeignKey("car_brands.id"), nullable=False, index=True
+    )
+    model_id: Mapped[int] = mapped_column(
+        ForeignKey("car_models.id"), nullable=False, index=True
+    )
     generation_id: Mapped[int | None] = mapped_column(
         ForeignKey("car_generations.id"), nullable=True, index=True
     )
@@ -219,6 +223,9 @@ class Car(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Витрина «Популярные модели» на главной — флаг на карточке объявления.
     is_popular: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Денормализованный ориентир «под ключ» (₽) + дата курса ЦБ, с которым посчитан.
+    estimated_total_rub: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimate_cbr_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
@@ -238,7 +245,9 @@ class CarPhoto(Base):
     __tablename__ = "car_photos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    car_id: Mapped[int] = mapped_column(ForeignKey("cars.id"), nullable=False)
+    car_id: Mapped[int] = mapped_column(
+        ForeignKey("cars.id"), nullable=False, index=True
+    )
     storage_url: Mapped[str] = mapped_column(String(512), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
