@@ -888,6 +888,40 @@ def startup() -> None:
         )
         conn.execute(
             text(
+                "ALTER TABLE faq_items ADD COLUMN IF NOT EXISTS section VARCHAR(32) "
+                "NOT NULL DEFAULT 'general'"
+            )
+        )
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_faq_items_section ON faq_items (section)")
+        )
+        # One-shot backfill only while every row is still on the default section.
+        conn.execute(
+            text(
+                """
+                UPDATE faq_items
+                SET section = CASE
+                  WHEN question ~* 'китай|китае|китая|юан|che168|cny|из китая'
+                    OR answer ~* 'китай|китае|китая|юан|che168|cny|из китая' THEN 'china'
+                  WHEN question ~* 'коре|hyundai|kia|genesis|из кореи'
+                    OR answer ~* 'коре|hyundai|kia|genesis|из кореи' THEN 'korea'
+                  WHEN question ~* 'тамож|растамож|утиль|эптс|брокер|пошлин'
+                    OR answer ~* 'тамож|растамож|утиль|эптс|брокер|пошлин' THEN 'customs'
+                  WHEN question ~* 'оплат|договор|предоплат|реквизит|валют|счёт|счет'
+                    OR answer ~* 'оплат|договор|предоплат|реквизит|валют|счёт|счет' THEN 'payment'
+                  WHEN question ~* 'гарант|сервис|битый|проверк|осмотр|диагност|отчёт|отчет'
+                    OR answer ~* 'гарант|сервис|битый|проверк|осмотр|диагност|отчёт|отчет' THEN 'warranty'
+                  ELSE 'general'
+                END
+                WHERE section = 'general'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM faq_items fi2 WHERE fi2.section IS DISTINCT FROM 'general'
+                  )
+                """
+            )
+        )
+        conn.execute(
+            text(
                 "CREATE INDEX IF NOT EXISTS ix_cars_active_created_at "
                 "ON cars (created_at DESC, id DESC) WHERE is_active IS TRUE"
             )
