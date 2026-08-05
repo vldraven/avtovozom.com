@@ -565,6 +565,7 @@ def _car_to_out(
         horsepower=car.horsepower,
         fuel_type=car.fuel_type,
         transmission=car.transmission,
+        drive_type=getattr(car, "drive_type", None),
         body_color_slug=car.body_color_slug,
         body_color_label=label_for_slug(car.body_color_slug),
         location_city=car.location_city,
@@ -667,6 +668,9 @@ def startup() -> None:
         )
         conn.execute(
             text("ALTER TABLE cars ADD COLUMN IF NOT EXISTS transmission VARCHAR(64)")
+        )
+        conn.execute(
+            text("ALTER TABLE cars ADD COLUMN IF NOT EXISTS drive_type VARCHAR(64)")
         )
         conn.execute(
             text("ALTER TABLE cars ADD COLUMN IF NOT EXISTS location_city VARCHAR(128)")
@@ -2934,6 +2938,7 @@ async def _update_car_from_multipart(
     horsepower: int,
     fuel_type: str | None,
     transmission: str | None,
+    drive_type: str | None,
     location_city: str | None,
     price_cny: float,
     registration_date: str | None,
@@ -2981,6 +2986,7 @@ async def _update_car_from_multipart(
     car.horsepower = horsepower
     car.fuel_type = (fuel_type or "").strip() or None
     car.transmission = (transmission or "").strip() or None
+    car.drive_type = (drive_type or "").strip() or None
     car.location_city = (location_city or "").strip() or None
     car.price_cny = float(price_cny)
     car.registration_date = (registration_date or "").strip() or None
@@ -3535,6 +3541,7 @@ async def staff_create_car(
     horsepower: int = Form(),
     fuel_type: str | None = Form(None),
     transmission: str | None = Form(None),
+    drive_type: str | None = Form(None),
     location_city: str | None = Form(None),
     price_cny: float = Form(),
     registration_date: str | None = Form(None),
@@ -3589,6 +3596,7 @@ async def staff_create_car(
         horsepower=horsepower,
         fuel_type=(fuel_type or "").strip() or None,
         transmission=(transmission or "").strip() or None,
+        drive_type=(drive_type or "").strip() or None,
         location_city=(location_city or "").strip() or None,
         body_color_slug=_validated_body_color_slug_form(body_color_slug),
         price_cny=float(price_cny),
@@ -3690,6 +3698,7 @@ async def staff_update_own_car(
     horsepower: int = Form(),
     fuel_type: str | None = Form(None),
     transmission: str | None = Form(None),
+    drive_type: str | None = Form(None),
     location_city: str | None = Form(None),
     price_cny: float = Form(),
     registration_date: str | None = Form(None),
@@ -3738,6 +3747,7 @@ async def staff_update_own_car(
         horsepower=horsepower,
         fuel_type=fuel_type,
         transmission=transmission,
+        drive_type=drive_type,
         location_city=location_city,
         price_cny=price_cny,
         registration_date=registration_date,
@@ -4514,6 +4524,7 @@ async def admin_update_car(
     horsepower: int = Form(),
     fuel_type: str | None = Form(None),
     transmission: str | None = Form(None),
+    drive_type: str | None = Form(None),
     location_city: str | None = Form(None),
     price_cny: float = Form(),
     registration_date: str | None = Form(None),
@@ -4558,6 +4569,7 @@ async def admin_update_car(
         horsepower=horsepower,
         fuel_type=fuel_type,
         transmission=transmission,
+        drive_type=drive_type,
         location_city=location_city,
         price_cny=price_cny,
         registration_date=registration_date,

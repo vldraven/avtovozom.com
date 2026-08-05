@@ -214,6 +214,8 @@ class Car(Base):
     horsepower: Mapped[int] = mapped_column(Integer)
     fuel_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     transmission: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    drive_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    """Ручной привод (Передний/Задний/Полный); перекрывает значение из комплектации на карточке."""
     body_color_slug: Mapped[str | None] = mapped_column(String(32), nullable=True)
     """Справочное значение: white, black, silver, … см. BODY_COLOR_OPTIONS."""
     location_city: Mapped[str | None] = mapped_column(String(128), nullable=True)

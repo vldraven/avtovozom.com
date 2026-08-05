@@ -7,6 +7,7 @@ import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
 import { fuelTypeSelectOptions } from "../../lib/fuelTypes";
+import { driveTypeSelectOptions } from "../../lib/driveTypes";
 import { canCreateListings, isAdminRole } from "../../lib/roles";
 import SiteHeader from "../../components/SiteHeader";
 
@@ -30,6 +31,7 @@ export default function StaffNewListingPage() {
   const [horsepower, setHorsepower] = useState("");
   const [fuelType, setFuelType] = useState("");
   const [transmission, setTransmission] = useState("");
+  const [driveType, setDriveType] = useState("");
   const [city, setCity] = useState("");
   const [priceCny, setPriceCny] = useState("");
   const [registrationDate, setRegistrationDate] = useState("");
@@ -239,6 +241,7 @@ export default function StaffNewListingPage() {
     fd.append("horsepower", horsepower);
     fd.append("fuel_type", fuelType);
     fd.append("transmission", transmission);
+    fd.append("drive_type", driveType);
     fd.append("location_city", city);
     fd.append("price_cny", priceCny);
     fd.append("registration_date", registrationDate);
@@ -511,6 +514,14 @@ export default function StaffNewListingPage() {
                   />
                 </label>
               </div>
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="Привод"
+                placeholder="— не указано —"
+                value={driveType}
+                onChange={setDriveType}
+                options={driveTypeSelectOptions(driveType)}
+              />
               <SiteSelectDropdown
                 className="site-dropdown--block"
                 label="Цвет кузова"
