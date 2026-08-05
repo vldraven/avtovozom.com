@@ -61,6 +61,7 @@ export async function getServerSideProps({ req, res }) {
     "/dostavka-avtovozom-iz-kitaya",
     "/dostavka-avto-iz-korei",
     "/faq",
+    "/request-quote",
   ];
   const urls = staticPaths.map((loc) => ({
     loc: `${base}${loc}`,
