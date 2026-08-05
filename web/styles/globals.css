@@ -179,11 +179,13 @@ a:hover {
 
 .app-lock {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px))
-    max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
-  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+  padding: max(1.25rem, env(safe-area-inset-top, 0px)) max(1.25rem, env(safe-area-inset-right, 0px))
+    max(1.5rem, env(safe-area-inset-bottom, 0px)) max(1.25rem, env(safe-area-inset-left, 0px));
+  background: #0f172a;
+  color: #f8fafc;
 }
 
 .app-lock__card,
@@ -195,10 +197,32 @@ a:hover {
 }
 
 .app-lock__card {
-  padding: 1.35rem;
-  border-radius: 18px;
-  background: #fff;
-  box-shadow: var(--shadow-md);
+  padding: 0.5rem 0.35rem 1rem;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  align-items: center;
+  text-align: center;
+}
+
+.app-lock__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.75rem;
+}
+
+.app-lock__brand-mark {
+  width: 22px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.app-lock__brand-text {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #f8fafc;
 }
 
 .pin-panel {
@@ -218,12 +242,12 @@ a:hover {
   height: 3.35rem;
   display: grid;
   place-items: center;
-  border-radius: 1rem;
-  color: #fff;
-  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+  border-radius: 999px;
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.14);
   font-weight: 800;
   font-size: 1.35rem;
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+  box-shadow: none;
 }
 
 .app-lock__card h1,
@@ -232,10 +256,19 @@ a:hover {
   font-size: 1.35rem;
 }
 
+.app-lock__card h1 {
+  color: #f8fafc;
+  font-size: 1.55rem;
+}
+
 .app-lock__card p,
 .pin-panel p {
   margin: 0;
   color: var(--color-muted);
+}
+
+.app-lock__card p {
+  color: #94a3b8;
 }
 
 .pin-pad {
@@ -243,11 +276,17 @@ a:hover {
   flex-direction: column;
   align-items: center;
   gap: 1rem;
+  width: 100%;
 }
 
 .pin-panel__mobile-pad,
-.app-lock__mobile-pad {
+.app-lock__mobile-pad,
+.pin-panel__pad {
   display: none;
+}
+
+.pin-panel--keypad .pin-panel__pad {
+  display: flex;
 }
 
 .pin-panel__desktop-form,
@@ -255,6 +294,12 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+  width: 100%;
+}
+
+.pin-panel__desktop .btn-secondary.auth-submit-wide {
+  width: 100%;
+  min-height: 48px;
 }
 
 .pin-panel__desktop-form .input,
@@ -287,21 +332,31 @@ a:hover {
   transform: scale(1.08);
 }
 
+.app-lock .pin-dots__dot {
+  border-color: rgba(248, 250, 252, 0.22);
+  background: transparent;
+}
+
+.app-lock .pin-dots__dot--filled {
+  border-color: #38bdf8;
+  background: #38bdf8;
+}
+
 .pin-keypad {
-  width: min(100%, 18rem);
+  width: min(100%, 16.5rem);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.7rem;
+  gap: 0.55rem;
 }
 
 .pin-keypad__key {
   aspect-ratio: 1;
-  border: none;
-  border-radius: 999px;
-  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
   color: #0f172a;
   font: inherit;
-  font-size: 1.45rem;
+  font-size: 1.2rem;
   font-weight: 700;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -319,7 +374,37 @@ a:hover {
 
 .pin-keypad__key--muted {
   background: transparent;
+  border-color: transparent;
   color: var(--color-muted);
+}
+
+.app-lock .pin-keypad__key {
+  border: none;
+  border-radius: 4px;
+  background: rgba(248, 250, 252, 0.08);
+  color: #f8fafc;
+}
+
+.app-lock .pin-keypad__key:active {
+  background: rgba(248, 250, 252, 0.16);
+}
+
+.app-lock .pin-keypad__key--muted {
+  background: transparent;
+  color: #94a3b8;
+}
+
+.pin-keypad__key--bio {
+  border: none;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.18);
+  color: #38bdf8;
+  font-size: 1.35rem;
+}
+
+.app-lock .pin-keypad__key--bio {
+  background: rgba(56, 189, 248, 0.18);
+  color: #38bdf8;
 }
 
 .pin-pad__submit {
@@ -329,8 +414,8 @@ a:hover {
 .pin-panel__footer {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
+  align-items: stretch;
+  gap: 0.65rem;
   width: 100%;
 }
 
@@ -341,6 +426,26 @@ a:hover {
   color: var(--color-muted);
   font-size: 0.9rem;
   text-align: left;
+}
+
+.app-lock__password {
+  margin-top: 0.35rem;
+  border: none;
+  background: transparent;
+  color: #38bdf8;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.35rem;
+}
+
+.app-lock__password:hover {
+  color: #7dd3fc;
+}
+
+.app-lock__bio-desktop {
+  width: 100%;
 }
 
 .site-header {
@@ -6707,32 +6812,432 @@ html.is-standalone .site-header {
 }
 
 
-.auth-page-hero {
-  margin-bottom: 1rem;
+.auth-layout__main--page {
+  display: flex;
+  justify-content: center;
+  padding: 1.25rem 1rem 2.5rem;
 }
-.auth-page-hero__title { margin-bottom: 0.35rem; }
+
+.auth-page {
+  width: min(100%, 440px);
+  margin: 0 auto;
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 1.15rem 1.15rem 1.35rem;
+}
+
+.auth-card--pin {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  width: min(100%, 420px);
+}
+
+.auth-card--modal {
+  width: min(100%, 440px);
+  max-height: min(92vh, 760px);
+  overflow: auto;
+  border: none;
+  border-radius: 18px;
+  box-shadow: var(--shadow-md);
+  padding: 1.5rem 1.65rem 1.75rem;
+}
+
+.auth-card--modal.auth-card--pin {
+  background: var(--color-surface);
+  padding: 1.5rem 1.65rem 1.75rem;
+  max-height: min(92vh, 760px);
+  overflow: auto;
+  box-shadow: var(--shadow-md);
+}
+
+.pin-panel__desktop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.pin-panel__mobile {
+  display: none;
+}
+
+.pin-panel__desktop .pin-panel__desktop-form {
+  display: flex;
+}
+
+.pin-panel__desktop .auth-submit-wide + .auth-submit-wide,
+.pin-panel__desktop .pin-panel__desktop-form + .auth-submit-wide {
+  margin-top: 0;
+}
+
+@media (min-width: 768px) {
+  .auth-layout:has(.panel--pin-setup) .auth-layout__main--page {
+    background: transparent;
+  }
+}
+
+@media (max-width: 767px) {
+  .pin-panel__desktop {
+    display: none;
+  }
+
+  .pin-panel__mobile {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .auth-layout:has(.pin-panel__mobile.pin-panel--dark) {
+    background: #0f172a;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .auth-layout:has(.pin-panel__mobile.pin-panel--dark) .site-header {
+    display: none;
+  }
+
+  .auth-layout:has(.pin-panel__mobile.pin-panel--dark) .auth-layout__main--page {
+    min-height: 100vh;
+    min-height: 100dvh;
+    align-items: center;
+    background: #0f172a;
+    padding: max(1.25rem, env(safe-area-inset-top, 0px)) 1rem max(1.5rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .auth-prompt-overlay:has(.pin-panel__mobile.pin-panel--dark) {
+    background: #0f172a;
+  }
+
+  .auth-prompt-flow:has(.pin-panel__mobile.pin-panel--dark) {
+    width: min(100%, 24rem);
+  }
+
+  .auth-card--modal.auth-card--pin {
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+.pin-panel--dark {
+  color: #f8fafc;
+}
+
+.pin-panel--dark .pin-panel__step {
+  color: #94a3b8;
+}
+
+.pin-panel--dark h2 {
+  color: #f8fafc;
+}
+
+.pin-panel--dark p {
+  color: #94a3b8;
+}
+
+.pin-panel--dark .pin-dots__dot {
+  border-color: rgba(248, 250, 252, 0.22);
+  background: transparent;
+}
+
+.pin-panel--dark .pin-dots__dot--filled {
+  border-color: #38bdf8;
+  background: #38bdf8;
+}
+
+.pin-panel--dark .pin-keypad__key {
+  border: none;
+  border-radius: 4px;
+  background: rgba(248, 250, 252, 0.08);
+  color: #f8fafc;
+  box-shadow: none;
+}
+
+.pin-panel--dark .pin-keypad__key:active {
+  background: rgba(248, 250, 252, 0.16);
+}
+
+.pin-panel--dark .pin-keypad__key--muted {
+  background: transparent;
+  color: #94a3b8;
+}
+
+.pin-panel--dark .pin-panel__check {
+  color: #94a3b8;
+}
+
+.pin-panel--dark .btn-secondary.auth-submit-wide {
+  width: 100%;
+  min-height: 48px;
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(248, 250, 252, 0.08);
+  border: 1px solid rgba(248, 250, 252, 0.22);
+  color: #f8fafc;
+}
+
+.pin-panel--dark .btn-secondary.auth-submit-wide:hover:not(:disabled) {
+  background: rgba(248, 250, 252, 0.14);
+  border-color: rgba(248, 250, 252, 0.3);
+  color: #fff;
+}
+
+.pin-panel--dark .btn-primary.pin-pad__submit {
+  width: 100%;
+  min-height: 48px;
+  border-radius: var(--radius-sm, 8px);
+}
+
+.pin-panel--dark .btn-ghost {
+  color: #94a3b8;
+}
+
+.pin-panel__back {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.92rem;
+  padding: 0;
+  margin: 0 0 0.15rem;
+  cursor: pointer;
+}
+
+.pin-panel__back:hover:not(:disabled) {
+  color: #f8fafc;
+}
+
+.pin-panel__back:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pin-panel--confirm {
+  gap: 0.4rem;
+  max-height: 100dvh;
+  overflow: hidden;
+  justify-content: flex-start;
+}
+
+.pin-panel--confirm .pin-panel__hero {
+  gap: 0.2rem;
+}
+
+.pin-panel--confirm .pin-panel__hero h2 {
+  font-size: 1.2rem;
+}
+
+.pin-panel--confirm .pin-panel__hero p {
+  font-size: 0.82rem;
+}
+
+.pin-panel--confirm .pin-pad {
+  gap: 0.55rem;
+}
+
+.pin-panel--confirm .pin-dots {
+  margin: 0.1rem 0 0.15rem;
+}
+
+.pin-panel--confirm .pin-keypad {
+  width: min(100%, 16.5rem);
+  max-width: 16.5rem;
+  gap: 0.45rem;
+}
+
+.pin-panel--confirm .pin-keypad__key {
+  font-size: clamp(1.15rem, 4.2vw, 1.45rem);
+}
+
+.pin-panel--confirm .pin-pad__submit,
+.pin-panel--confirm .btn-secondary.auth-submit-wide {
+  min-height: 44px;
+}
+
+.pin-panel--confirm .pin-panel__footer {
+  gap: 0.45rem;
+}
+
+.pin-panel--confirm .pin-panel__check {
+  font-size: 0.8rem;
+  gap: 0.4rem;
+}
+
+.auth-prompt-overlay {
+  align-items: center;
+}
+
+.auth-prompt-flow {
+  width: min(100%, 440px);
+}
+
+.auth-prompt-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.auth-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.auth-card__brand .site-logo {
+  gap: 0.45rem;
+}
+
+.auth-card__brand .site-logo__mark {
+  width: 22px;
+  height: 26px;
+}
+
+.auth-card__brand .site-logo__text {
+  font-size: 1.05rem;
+}
+
+.auth-card__close {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-neutral-100, #f1f5f9);
+  color: var(--color-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.auth-card__close:hover {
+  color: var(--color-text);
+  background: #e2e8f0;
+}
+
+.auth-card__back {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.92rem;
+  padding: 0;
+  cursor: pointer;
+}
+
+.auth-card__back:hover {
+  color: var(--color-text);
+}
+
+.auth-page-hero {
+  margin: 0;
+}
+
+.auth-page-hero__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.45rem;
+}
+
 .auth-page-hero__lead {
   margin: 0;
   font-size: 0.95rem;
   line-height: 1.45;
   max-width: 36rem;
 }
-.auth-panel { margin-top: 0.35rem; }
+
+.auth-panel {
+  margin-top: 0.15rem;
+}
+
 .auth-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
+
 .auth-field__label {
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--color-muted);
 }
-.auth-register-steps {
-  margin: 0 0 0.85rem;
-  font-size: 0.9rem;
-  line-height: 1.45;
+
+.auth-password {
+  position: relative;
+  display: flex;
+  align-items: center;
 }
+
+.auth-password__input {
+  width: 100%;
+  padding-right: 5.5rem;
+}
+
+.auth-password__toggle {
+  position: absolute;
+  right: 0.65rem;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.25rem 0.15rem;
+}
+
+.auth-password__toggle:hover {
+  color: var(--color-accent-hover);
+}
+
+.auth-otp {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.auth-otp__cell {
+  width: 100%;
+  height: 3.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #f8fafc;
+  text-align: center;
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text);
+  outline: none;
+}
+
+.auth-otp__cell:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18);
+  background: #fff;
+}
+
+.auth-resend {
+  margin: 0;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
 .pin-panel__step {
   margin: 0;
   font-size: 0.78rem;
@@ -6740,13 +7245,87 @@ html.is-standalone .site-header {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+.pin-panel__bio-warn {
+  margin: 0 0 0.65rem;
+}
+
+.pin-panel--keypad .pin-panel__pad {
+  display: flex;
+}
+
+.pin-panel--keypad .pin-panel__desktop-form {
+  display: none !important;
+}
+
+.pin-panel--keypad {
+  width: min(100%, 24rem);
+  margin: 0 auto;
+  gap: 0.55rem;
+}
+
+.pin-panel--keypad .pin-dots {
+  gap: 1rem;
+  margin: 0.35rem 0 0.5rem;
+}
+
+.pin-panel--keypad .pin-dots__dot {
+  width: 0.82rem;
+  height: 0.82rem;
+  border-width: 2px;
+}
+
+.pin-panel--keypad .pin-keypad {
+  width: min(100%, 17rem);
+  max-width: 17rem;
+  gap: 0.5rem;
+  margin: 0 auto;
+}
+
+.pin-panel--keypad .pin-keypad__key {
+  aspect-ratio: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  font-size: clamp(1.25rem, 4.6vw, 1.55rem);
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.pin-panel--keypad:not(.pin-panel--dark) .pin-keypad__key {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.pin-panel--keypad .pin-keypad__key--muted {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.pin-panel--keypad .pin-pad__submit,
+.pin-panel--keypad .auth-submit-wide {
+  min-height: 48px;
+  border-radius: var(--radius-sm, 8px);
+}
+
+.app-lock__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.75rem;
+}
+
 .auth-prompt-modal__title {
   font-size: 1.2rem;
-  margin-top: 0;
+  margin: 0;
 }
+
 .auth-prompt-modal__desc {
   margin: 0 0 0.85rem;
 }
+
 .auth-prompt-modal__benefits {
   margin: 0 0 1.15rem;
   padding: 0 0 0 1.1rem;
@@ -6756,12 +7335,17 @@ html.is-standalone .site-header {
   color: var(--color-text);
   font-size: 0.92rem;
 }
+
 .auth-prompt-modal__actions {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
-.auth-prompt-modal__actions .btn { width: 100%; justify-content: center; }
+
+.auth-prompt-modal__actions .btn {
+  width: 100%;
+  justify-content: center;
+}
 
 .page-narrow--auth {
   max-width: 460px;
@@ -6769,24 +7353,27 @@ html.is-standalone .site-header {
 
 .auth-tabs {
   display: flex;
-  gap: 1.5rem;
-  margin: 0 0 1.25rem;
+  gap: 0;
+  margin: 0;
   border-bottom: 1px solid var(--color-border);
 }
 
 .auth-tabs__tab {
+  flex: 1;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 0 0 0.75rem;
+  margin-bottom: -1px;
+  padding: 0.65rem 0.35rem 0.75rem;
   font-size: 1rem;
   font-weight: 700;
   color: var(--color-muted);
   cursor: pointer;
+  text-align: center;
 }
 
 .auth-tabs__tab--active {
-  color: var(--color-ink);
+  color: var(--color-ink, var(--color-text));
   border-bottom-color: var(--color-accent);
 }
 
@@ -6802,21 +7389,29 @@ html.is-standalone .site-header {
   color: var(--color-muted);
 }
 
-@media (min-width: 1024px) {
-  .site-main:has(.page-narrow--auth) {
-    display: flex;
-    align-items: center;
-    min-height: calc(100vh - 200px);
-  }
+.auth-actions--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
 
-  .page-narrow--auth .auth-panel {
-    box-shadow: var(--shadow-md);
-    border-radius: 16px;
-    padding: 2rem 2.25rem;
+@media (min-width: 768px) {
+  .auth-layout__main--page {
+    min-height: calc(100vh - 5rem);
+    align-items: center;
   }
 
   .auth-page-hero__title {
-    font-size: 1.75rem;
+    font-size: 1.55rem;
+  }
+
+  .auth-otp {
+    gap: 0.55rem;
+  }
+
+  .auth-otp__cell {
+    height: 3.75rem;
+    font-size: 1.35rem;
   }
 }
 
@@ -8585,6 +9180,10 @@ html.is-standalone .site-header {
     display: none;
   }
 
+  .pin-panel--keypad .pin-panel__app-icon {
+    display: none;
+  }
+
   .pin-panel__hero {
     gap: 0.2rem;
     flex-shrink: 0;
@@ -8620,7 +9219,8 @@ html.is-standalone .site-header {
   }
 
   .pin-panel__mobile-pad,
-  .app-lock__mobile-pad {
+  .app-lock__mobile-pad,
+  .pin-panel--keypad .pin-panel__pad {
     display: flex;
     flex-shrink: 0;
   }
@@ -8641,9 +9241,9 @@ html.is-standalone .site-header {
 
   .panel--pin-setup .pin-keypad,
   .app-lock .pin-keypad {
-    width: min(100%, 20.5rem);
-    max-width: 20.5rem;
-    gap: 0.65rem;
+    width: min(100%, 17rem);
+    max-width: 17rem;
+    gap: 0.5rem;
     margin: 0 auto;
   }
 
@@ -8653,11 +9253,47 @@ html.is-standalone .site-header {
     min-height: 0;
     min-width: 0;
     width: 100%;
-    font-size: clamp(1.5rem, 5.4vw, 1.9rem);
+    font-size: clamp(1.25rem, 4.6vw, 1.55rem);
     font-weight: 600;
-    background: #eef2f7;
-    border: 1px solid #dbe3ee;
+    border-radius: 4px;
+  }
+
+  .panel--pin-setup .pin-panel--confirm {
+    max-height: calc(
+      100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
+        var(--mobile-viewport-offset, 0px)
+    );
+    overflow: hidden;
+  }
+
+  .panel--pin-setup .pin-panel--confirm .pin-keypad {
+    width: min(100%, 15.5rem);
+    max-width: 15.5rem;
+    gap: 0.4rem;
+  }
+
+  .panel--pin-setup .pin-panel--confirm .pin-keypad__key {
+    font-size: clamp(1.1rem, 4vw, 1.35rem);
+  }
+
+  .panel--pin-setup .pin-panel--confirm .pin-pad__submit,
+  .panel--pin-setup .pin-panel--confirm .btn-secondary.auth-submit-wide {
+    min-height: 42px;
+    font-size: 0.95rem;
+  }
+
+  .panel--pin-setup .pin-panel:not(.pin-panel--dark) .pin-keypad__key {
+    background: #fff;
+    border: 1px solid #e2e8f0;
     box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  }
+
+  .panel--pin-setup .pin-panel--dark .pin-keypad__key,
+  .app-lock .pin-keypad__key {
+    background: rgba(248, 250, 252, 0.08);
+    border: none;
+    box-shadow: none;
+    color: #f8fafc;
   }
 
   .panel--pin-setup .pin-keypad__key--muted,
@@ -8706,28 +9342,30 @@ html.is-standalone .site-header {
   }
 
   .app-lock {
-    align-items: stretch;
-    padding: max(0.45rem, env(safe-area-inset-top, 0px)) max(0.65rem, env(safe-area-inset-right, 0px))
-      max(0.45rem, env(safe-area-inset-bottom, 0px)) max(0.65rem, env(safe-area-inset-left, 0px));
+    align-items: center;
+    padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px))
+      max(1.25rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px));
+    background: #0f172a;
   }
 
   .app-lock__card {
     width: min(100%, 24rem);
     min-height: 0;
-    max-height: calc(
-      100dvh - 0.9rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) -
-        var(--mobile-viewport-offset, 0px)
-    );
+    max-height: none;
     justify-content: flex-start;
-    border-radius: 20px;
+    border-radius: 0;
+    background: transparent;
     box-shadow: none;
-    padding: 0.65rem 0.75rem;
-    gap: 0.45rem;
+    padding: 0.35rem 0.25rem;
+    gap: 0.65rem;
   }
 
-  .app-lock .btn.btn-secondary,
-  .app-lock .btn.btn-ghost {
-    min-height: 40px;
+  .app-lock .btn.btn-secondary.app-lock__bio-desktop {
+    display: none;
+  }
+
+  .app-lock__password {
+    margin-top: 0.75rem;
   }
 
   .mobile-bottom-nav__inner {

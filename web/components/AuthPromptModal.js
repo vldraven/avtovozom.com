@@ -1,15 +1,11 @@
-import Link from "next/link";
 import { useRouter } from "next/router";
+import { useEffect, useState } from "react";
 
-const DEFAULT_BENEFITS = [
-  "Безопасный чат с менеджером",
-  "Избранное и уведомления о снижении цены",
-  "Статус доставки и документы по сделке",
-];
+import AuthFlow from "./AuthFlow";
 
 /**
- * Гейт входа при действии (избранное, чат и т.п.).
- * Заявка без входа остаётся доступной отдельно.
+ * Модалка входа/регистрации поверх текущей страницы.
+ * Deep-link `/auth` остаётся отдельной страницей для staff и прямых ссылок.
  */
 export default function AuthPromptModal({
   open,
@@ -17,10 +13,17 @@ export default function AuthPromptModal({
   title = "Войдите, чтобы продолжить",
   description = "Переписка по сделке, избранное и договорённости хранятся в вашем кабинете.",
   nextPath,
-  benefits = DEFAULT_BENEFITS,
+  benefits,
   showQuoteCta = true,
+  initialMode = "login",
 }) {
   const router = useRouter();
+  const [step, setStep] = useState("gate");
+
+  useEffect(() => {
+    if (!open) setStep("gate");
+  }, [open]);
+
   if (!open) return null;
 
   const next =
@@ -29,47 +32,69 @@ export default function AuthPromptModal({
 
   return (
     <div
-      className="modal-overlay"
+      className="modal-overlay auth-prompt-overlay"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
-        className="modal-dialog auth-prompt-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="auth-prompt-title"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <h2 id="auth-prompt-title" className="section-title auth-prompt-modal__title">
-          {title}
-        </h2>
-        <p className="muted auth-prompt-modal__desc">{description}</p>
-        {benefits?.length ? (
-          <ul className="auth-prompt-modal__benefits">
-            {benefits.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        ) : null}
-        <div className="auth-prompt-modal__actions">
-          <Link
-            href={`/auth?next=${encodeURIComponent(next)}`}
-            className="btn btn-primary"
-            onClick={onClose}
-          >
-            Войти или зарегистрироваться
-          </Link>
-          {showQuoteCta ? (
-            <Link href="/request-quote" className="btn btn-secondary" onClick={onClose}>
-              Оставить заявку без входа
-            </Link>
+      {step === "gate" ? (
+        <div
+          className="modal-dialog auth-prompt-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="auth-prompt-title"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="auth-prompt-modal__head">
+            <h2 id="auth-prompt-title" className="section-title auth-prompt-modal__title">
+              {title}
+            </h2>
+            <button type="button" className="auth-card__close" aria-label="Закрыть" onClick={onClose}>
+              ✕
+            </button>
+          </div>
+          <p className="muted auth-prompt-modal__desc">{description}</p>
+          {benefits?.length ? (
+            <ul className="auth-prompt-modal__benefits">
+              {benefits.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
           ) : null}
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Закрыть
-          </button>
+          <div className="auth-prompt-modal__actions">
+            <button type="button" className="btn btn-primary" onClick={() => setStep("auth")}>
+              Войти или зарегистрироваться
+            </button>
+            {showQuoteCta ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  onClose();
+                  router.push("/request-quote");
+                }}
+              >
+                Оставить заявку без входа
+              </button>
+            ) : null}
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Закрыть
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="auth-prompt-flow" onMouseDown={(e) => e.stopPropagation()}>
+          <AuthFlow
+            variant="modal"
+            initialMode={initialMode}
+            nextUrl={next}
+            onClose={onClose}
+            onComplete={() => {
+              onClose();
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

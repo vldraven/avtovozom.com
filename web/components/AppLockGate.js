@@ -15,6 +15,7 @@ import {
   rotatePinnedSession,
   shouldLockAfterHidden,
 } from "../lib/auth";
+import { humanizeWebAuthnError } from "../lib/webauthnErrors";
 import PinPad from "./PinPad";
 
 /** Пути, где без разблокировки по ПИН нельзя продолжить. */
@@ -132,7 +133,7 @@ export default function AppLockGate({ children }) {
         router.replace(next);
       }
     } catch (err) {
-      setError(err?.message || "Биометрический вход не сработал");
+      setError(humanizeWebAuthnError(err, "Биометрический вход не сработал"));
     } finally {
       setBusy(false);
     }
@@ -150,12 +151,16 @@ export default function AppLockGate({ children }) {
   return (
     <div className="app-lock">
       <div className="app-lock__card">
+        <div className="app-lock__brand" aria-hidden>
+          <img src="/logo-avtovozom-white.png" alt="" className="app-lock__brand-mark" width={22} height={26} />
+          <span className="app-lock__brand-text">avtovozom</span>
+        </div>
         <div className="pin-panel__hero">
           <div className="pin-panel__app-icon" aria-hidden>
             A
           </div>
-          <h1>Введите PIN-код</h1>
-          <p>Быстрый вход в avtovozom на этом устройстве.</p>
+          <h1>Здравствуйте</h1>
+          <p>Введите PIN-код</p>
         </div>
         {error ? <div className="alert alert--danger">{error}</div> : null}
         <form className="app-lock__desktop-form" onSubmit={unlockWithPinSubmit}>
@@ -165,12 +170,12 @@ export default function AppLockGate({ children }) {
             autoComplete="current-password"
             autoFocus
             type="password"
-            maxLength={6}
+            maxLength={4}
             placeholder="PIN-код"
             value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
           />
-          <button type="submit" className="btn btn-primary" disabled={busy || pin.length < 4}>
+          <button type="submit" className="btn btn-primary" disabled={busy || pin.length !== 4}>
             {busy ? "Проверяем..." : "Войти"}
           </button>
         </form>
@@ -179,15 +184,32 @@ export default function AppLockGate({ children }) {
           value={pin}
           onChange={setPin}
           onSubmit={unlockWithPinSubmit}
-          submitLabel={busy ? "Проверяем..." : "Войти"}
+          showSubmit={false}
+          minLength={4}
+          maxLength={4}
           disabled={busy}
+          bottomLeft={
+            canUseWebAuthn() ? (
+              <button
+                type="button"
+                className="pin-keypad__key pin-keypad__key--bio"
+                onClick={unlockWithBio}
+                disabled={busy}
+                aria-label="Войти по биометрии"
+              >
+                ⌽
+              </button>
+            ) : (
+              <span aria-hidden />
+            )
+          }
         />
         {canUseWebAuthn() ? (
-          <button type="button" className="btn btn-secondary" onClick={unlockWithBio} disabled={busy}>
+          <button type="button" className="btn btn-secondary app-lock__bio-desktop" onClick={unlockWithBio} disabled={busy}>
             Войти по биометрии
           </button>
         ) : null}
-        <button type="button" className="btn btn-ghost" onClick={passwordLogin}>
+        <button type="button" className="app-lock__password" onClick={passwordLogin}>
           Войти по паролю
         </button>
       </div>
