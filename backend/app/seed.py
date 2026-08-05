@@ -300,6 +300,7 @@ def seed_faq_items(db: Session) -> None:
             FaqItem(
                 question=item["question"],
                 answer=item["answer"],
+                section=item.get("section", "general"),
                 sort_order=i * 10,
                 is_published=True,
             )

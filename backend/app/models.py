@@ -379,6 +379,7 @@ class FaqItem(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     question: Mapped[str] = mapped_column(String(512), nullable=False)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
+    section: Mapped[str] = mapped_column(String(32), default="general", index=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
