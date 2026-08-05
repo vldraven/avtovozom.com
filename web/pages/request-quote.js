@@ -2,13 +2,37 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
-import { publicCarHref } from "../lib/carRoutes";
+import SiteHeader from "../components/SiteHeader";
 import { saveToken } from "../lib/auth";
+import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 import { formatRuPhoneMask, normalizeRuPhoneDigits, phoneDigitsToApi } from "../lib/ruPhoneMask";
-import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const NEXT_STEPS = [
+  {
+    n: "01",
+    title: "Расчёт стоимости до вашего города",
+    text: "В течение 2 часов в рабочее время",
+  },
+  {
+    n: "02",
+    title: "Подходящие варианты",
+    text: "С фото и ключевыми параметрами",
+  },
+  {
+    n: "03",
+    title: "Чат с менеджером",
+    text: "Ответы по срокам, доставке и условиям",
+  },
+];
+
+const BENEFITS = [
+  "Расчёт стоимости до вашего города",
+  "Подходящие варианты под задачу",
+  "Чат с менеджером по заявке",
+];
 
 function parseApiDetail(body) {
   if (!body || typeof body !== "object") return null;
@@ -30,12 +54,9 @@ function packQuoteComment({ comment, city }) {
 export default function RequestQuotePage() {
   const router = useRouter();
   const rawCar = router.query.car_id;
-  const carId =
-    rawCar == null ? "" : String(Array.isArray(rawCar) ? rawCar[0] : rawCar).trim();
+  const carId = rawCar == null ? "" : String(Array.isArray(rawCar) ? rawCar[0] : rawCar).trim();
   const nextUrl =
-    typeof router.query.next === "string" && router.query.next.startsWith("/")
-      ? router.query.next
-      : null;
+    typeof router.query.next === "string" && router.query.next.startsWith("/") ? router.query.next : null;
 
   const [car, setCar] = useState(null);
   const [loadError, setLoadError] = useState("");
@@ -45,7 +66,7 @@ export default function RequestQuotePage() {
   const [phoneDigits, setPhoneDigits] = useState("7");
   const [city, setCity] = useState("");
   const [comment, setComment] = useState(
-    "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки."
+    "Нужен расчёт доставки и растаможки до РФ. Прошу уточнить сроки и стоимость."
   );
   const [step, setStep] = useState("form");
   const [code, setCode] = useState("");
@@ -163,142 +184,202 @@ export default function RequestQuotePage() {
   }
 
   const backHref = nextUrl || (car ? publicCarHref(car) : "/");
+  const authNext = nextUrl || (car ? publicCarHref(car) : "/");
 
   return (
-    <div className="layout">
+    <div className="layout request-quote-layout-root">
       <SiteHeader tagline="Заявка на подбор">
-          <Link href={backHref} className="btn btn-ghost btn-sm">
-            ← Назад
-          </Link>
-          <Link href="/auth" className="btn btn-secondary btn-sm">
-            Вход
-          </Link>
-        </SiteHeader>
+        <Link href={backHref} className="btn btn-ghost btn-sm">
+          ← Назад
+        </Link>
+        <Link href={`/auth?next=${encodeURIComponent(authNext)}`} className="btn btn-secondary btn-sm">
+          Вход
+        </Link>
+      </SiteHeader>
       <main className="site-main">
-        <div className="container page-narrow request-quote-page">
-          <header className="request-quote-hero">
-            <h1 className="section-title">Заявка на подбор</h1>
-            <p className="muted request-quote-hero__lead">
-              Опишите задачу — подготовим ориентир под ключ и ответим в чате. Аккаунт не обязателен.
-            </p>
-          </header>
+        <div className="container request-quote-page">
+          {loadError ? <div className="alert alert--danger">{loadError}</div> : null}
+          {error ? <div className="alert alert--danger">{error}</div> : null}
+          {message && step !== "form" ? <div className="alert alert--success">{message}</div> : null}
 
-          {loadError && <div className="alert alert--danger">{loadError}</div>}
-          {error && <div className="alert alert--danger">{error}</div>}
-          {message && step !== "form" && <div className="alert alert--success">{message}</div>}
+          {step === "form" && (car || !carId) ? (
+            <div className="request-quote-shell">
+              <div className="request-quote-main">
+                <header className="request-quote-hero">
+                  <h1 className="request-quote-hero__title">Заявка на подбор</h1>
+                  <p className="request-quote-hero__lead muted">
+                    Опишите, что ищете — вернёмся со сметой и вариантами в течение 2 часов.
+                  </p>
+                </header>
 
-          {car && !loadError && (
-            <div className="panel request-quote-car-panel">
+                {car && !loadError ? (
+                  <div className="request-quote-car-panel">
+                    {(() => {
+                      const ph = car.photos?.length
+                        ? [...car.photos].sort((a, b) => a.sort_order - b.sort_order)[0]
+                        : null;
+                      return ph?.storage_url ? (
+                        <img
+                          className="request-quote-car-panel__img"
+                          src={mediaSrc(ph.storage_url)}
+                          alt=""
+                          width={112}
+                          height={84}
+                        />
+                      ) : null;
+                    })()}
+                    <div>
+                      <div className="request-quote-car-panel__title">{car.title}</div>
+                      <div className="muted request-quote-car-panel__meta">
+                        {car.brand} {car.model} · {car.year}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <form className="request-quote-form" onSubmit={submitLead}>
+                  <div className="request-quote-fields">
+                    <label className="request-quote-field">
+                      <span className="request-quote-field__label">Имя</span>
+                      <input
+                        className="input"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="Как к вам обращаться"
+                        autoComplete="name"
+                        required
+                      />
+                    </label>
+                    <label className="request-quote-field">
+                      <span className="request-quote-field__label">Email</span>
+                      <input
+                        className="input"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="На этот адрес придёт код"
+                        autoComplete="email"
+                        required
+                      />
+                    </label>
+                    <label className="request-quote-field">
+                      <span className="request-quote-field__label">Телефон</span>
+                      <input
+                        className="input"
+                        type="tel"
+                        inputMode="numeric"
+                        autoComplete="tel"
+                        value={formatRuPhoneMask(phoneDigits)}
+                        onChange={(e) => setPhoneDigits(normalizeRuPhoneDigits(e.target.value))}
+                        placeholder="+7 (999) 123-45-67"
+                      />
+                    </label>
+                    <label className="request-quote-field">
+                      <span className="request-quote-field__label">Город получения</span>
+                      <input
+                        className="input"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        placeholder="Москва"
+                        autoComplete="address-level2"
+                      />
+                    </label>
+                    <label className="request-quote-field request-quote-field--full">
+                      <span className="request-quote-field__label">
+                        {carId ? "Комментарий к заявке" : "Какой автомобиль вас интересует"}
+                      </span>
+                      <textarea
+                        className="input"
+                        rows={4}
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        placeholder={
+                          carId
+                            ? "Комплектация, цвет, сроки, пожелания…"
+                            : "Например: BMW X5, 2021–2023, бензин, сроки доставки"
+                        }
+                        required={!carId}
+                      />
+                    </label>
+                  </div>
+
+                  <aside className="request-quote-benefits request-quote-benefits--mobile" aria-label="Что вы получите">
+                    <h2 className="request-quote-benefits__title">Что вы получите</h2>
+                    <ul className="request-quote-benefits__list">
+                      {BENEFITS.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </aside>
+
+                  <div className="request-quote-actions">
+                    <button type="submit" className="btn btn-primary request-quote-submit" disabled={busy}>
+                      {busy ? "Отправка…" : "Отправить заявку"}
+                    </button>
+                    <p className="muted request-quote-footnote">
+                      Нажимая кнопку, вы соглашаетесь с обработкой персональных данных. Уже есть аккаунт?{" "}
+                      <Link href={`/auth?next=${encodeURIComponent(authNext)}`}>Войдите</Link> и отправьте заявку
+                      в один клик.
+                    </p>
+                  </div>
+                </form>
+              </div>
+
+              <aside className="request-quote-aside" aria-label="Что будет дальше">
+                <div className="request-quote-aside__card">
+                  <h2 className="request-quote-aside__title">Что будет дальше</h2>
+                  <ol className="request-quote-steps">
+                    {NEXT_STEPS.map((item) => (
+                      <li key={item.n} className="request-quote-steps__item">
+                        <span className="request-quote-steps__n" aria-hidden>
+                          {item.n}
+                        </span>
+                        <div>
+                          <div className="request-quote-steps__title">{item.title}</div>
+                          <p className="request-quote-steps__text">{item.text}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="request-quote-aside__note">
+                  <p className="request-quote-aside__note-title">Есть быстрый вопрос?</p>
+                  <p className="muted request-quote-aside__note-text">
+                    Напишите в комментарии — ответим в чате после заявки.
+                  </p>
+                </div>
+              </aside>
+            </div>
+          ) : null}
+
+          {step !== "form" && car && !loadError ? (
+            <div className="request-quote-car-panel request-quote-car-panel--solo">
               {(() => {
                 const ph = car.photos?.length
                   ? [...car.photos].sort((a, b) => a.sort_order - b.sort_order)[0]
                   : null;
                 return ph?.storage_url ? (
-                <img
-                  className="request-quote-car-panel__img"
-                  src={mediaSrc(ph.storage_url)}
-                  alt=""
-                  width={96}
-                  height={72}
-                />
+                  <img
+                    className="request-quote-car-panel__img"
+                    src={mediaSrc(ph.storage_url)}
+                    alt=""
+                    width={112}
+                    height={84}
+                  />
                 ) : null;
               })()}
               <div>
                 <div className="request-quote-car-panel__title">{car.title}</div>
-                <div className="muted">
+                <div className="muted request-quote-car-panel__meta">
                   {car.brand} {car.model} · {car.year}
                 </div>
               </div>
             </div>
-          )}
+          ) : null}
 
-          {step === "form" && (car || !carId) && (
-            <>
-              <aside className="request-quote-benefits" aria-label="Что вы получите">
-                <h2 className="request-quote-benefits__title">Что вы получите</h2>
-                <ul className="request-quote-benefits__list">
-                  <li>Ориентир стоимости под ключ до РФ</li>
-                  <li>Подбор и проверка вариантов</li>
-                  <li>Чат по сделке после заявки</li>
-                </ul>
-              </aside>
-
-              <form className="panel form-stack" onSubmit={submitLead}>
-                <label className="muted form-label">
-                  Имя
-                  <input
-                    className="input"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Как к вам обращаться"
-                    required
-                  />
-                </label>
-                <label className="muted form-label">
-                  Email
-                  <input
-                    className="input"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="На этот адрес придёт код"
-                    required
-                  />
-                </label>
-                <label className="muted form-label">
-                  Телефон
-                  <input
-                    className="input"
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    value={formatRuPhoneMask(phoneDigits)}
-                    onChange={(e) => setPhoneDigits(normalizeRuPhoneDigits(e.target.value))}
-                    placeholder="+7 (999) 123-45-67"
-                  />
-                </label>
-
-                <label className="muted form-label">
-                  Город получения
-                  <input
-                    className="input"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="Москва"
-                    autoComplete="address-level2"
-                  />
-                </label>
-
-                <label className="muted form-label">
-                  {carId ? "Комментарий к заявке" : "Какой автомобиль вас интересует"}
-                  <textarea
-                    className="input"
-                    rows={4}
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder="Например: BMW X5, 2021-2023, бензин, нужна доставка под ключ."
-                    required={!carId}
-                  />
-                </label>
-                <button type="submit" className="btn btn-primary" disabled={busy}>
-                  {busy ? "Отправка…" : "Отправить заявку"}
-                </button>
-                <p className="muted request-quote-footnote">
-                  Нажимая кнопку, вы соглашаетесь на обработку данных для связи по заявке. Уже есть аккаунт?{" "}
-                  <Link
-                    href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : "/"))}`}
-                  >
-                    Войдите
-                  </Link>{" "}
-                  и отправьте заявку в один клик.
-                </p>
-              </form>
-            </>
-          )}
-
-          {step === "verify" && (
-            <div className="panel form-stack">
-              <h2 className="section-title verify-panel-title">Подтвердите email</h2>
+          {step === "verify" ? (
+            <div className="request-quote-card form-stack">
+              <h2 className="request-quote-card__title">Подтвердите email</h2>
               <p className="muted verify-panel-intro">
                 Введите код из письма, отправленного на <strong>{email.trim().toLowerCase()}</strong>.
               </p>
@@ -309,16 +390,21 @@ export default function RequestQuotePage() {
                 onChange={(e) => setCode(e.target.value)}
                 autoComplete="one-time-code"
               />
-              <button type="button" className="btn btn-primary" disabled={busy || !code.trim()} onClick={verifyEmail}>
+              <button
+                type="button"
+                className="btn btn-primary request-quote-submit"
+                disabled={busy || !code.trim()}
+                onClick={verifyEmail}
+              >
                 {busy ? "Проверка…" : "Подтвердить"}
               </button>
             </div>
-          )}
+          ) : null}
 
-          {step === "done" && (
-            <div className="panel form-stack">
+          {step === "done" ? (
+            <div className="request-quote-card form-stack">
               {verifyMode === "freeform" ? (
-                <Link href="/" className="btn btn-primary">
+                <Link href="/" className="btn btn-primary request-quote-submit">
                   На главную
                 </Link>
               ) : verifyMode === "authed" ? (
@@ -328,14 +414,14 @@ export default function RequestQuotePage() {
                       ? `/messages?chat=${encodeURIComponent(String(pendingPlatformChatId))}`
                       : "/messages"
                   }
-                  className="btn btn-primary"
+                  className="btn btn-primary request-quote-submit"
                 >
                   Открыть чат с Avtovozom
                 </Link>
               ) : (
                 <Link
-                  href={`/auth?next=${encodeURIComponent(nextUrl || (car ? publicCarHref(car) : "/"))}`}
-                  className="btn btn-primary"
+                  href={`/auth?next=${encodeURIComponent(authNext)}`}
+                  className="btn btn-primary request-quote-submit"
                 >
                   Перейти ко входу
                 </Link>
@@ -346,7 +432,7 @@ export default function RequestQuotePage() {
                 </Link>
               ) : null}
             </div>
-          )}
+          ) : null}
         </div>
       </main>
     </div>

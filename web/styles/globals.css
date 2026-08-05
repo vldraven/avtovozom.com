@@ -8520,30 +8520,68 @@ html.is-standalone .site-header {
 }
 
 /* --- Заявка без входа (request-quote) --- */
+.request-quote-page {
+  max-width: 1120px;
+  padding-block: 1.25rem 2.5rem;
+}
+
+.request-quote-shell {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.request-quote-main {
+  min-width: 0;
+}
+
 .request-quote-hero {
   margin-bottom: 1.25rem;
 }
 
-.request-quote-hero .section-title {
-  margin-bottom: 0.4rem;
+.request-quote-hero__title {
+  margin: 0 0 0.4rem;
+  font-size: 1.375rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
 }
 
 .request-quote-hero__lead {
   margin: 0;
+  font-size: 0.95rem;
   line-height: 1.5;
 }
 
+.request-quote-fields {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.request-quote-field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.request-quote-field__label {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
 .request-quote-benefits {
-  margin: 0 0 1rem;
-  padding: 1rem 1.125rem;
-  border-radius: 12px;
-  background: #f1f5f9;
+  margin: 1rem 0 0;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-accent-border);
 }
 
 .request-quote-benefits__title {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.45rem;
   font-size: 0.95rem;
-  font-weight: 700;
+  font-weight: 800;
+  color: #075985;
 }
 
 .request-quote-benefits__list {
@@ -8551,31 +8589,151 @@ html.is-standalone .site-header {
   padding-left: 1.15rem;
   display: grid;
   gap: 0.35rem;
+  font-size: 0.875rem;
   line-height: 1.45;
-  color: var(--color-text);
+  color: #0c4a6e;
+}
+
+.request-quote-actions {
+  margin-top: 1.1rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.request-quote-submit {
+  width: 100%;
 }
 
 .request-quote-car-panel {
-  margin-bottom: 20px;
+  margin-bottom: 1.15rem;
   display: flex;
   flex-direction: row;
   gap: 14px;
   align-items: center;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  background: var(--color-neutral-200, #f1f5f9);
+  border: 1px solid var(--color-border, #e2e8f0);
+}
+
+.request-quote-car-panel--solo {
+  margin-bottom: 1.25rem;
 }
 
 .request-quote-car-panel__img {
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: 10px;
   flex-shrink: 0;
+  width: 112px;
+  height: 84px;
 }
 
 .request-quote-car-panel__title {
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.request-quote-car-panel__meta {
+  margin-top: 0.2rem;
+  font-size: 0.875rem;
 }
 
 .request-quote-footnote {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   margin: 0;
+  line-height: 1.45;
+}
+
+.request-quote-aside {
+  display: none;
+}
+
+.request-quote-aside__card {
+  padding: 1.35rem 1.4rem;
+  border-radius: 16px;
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.request-quote-aside__title {
+  margin: 0 0 1rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #38bdf8;
+}
+
+.request-quote-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 1rem;
+}
+
+.request-quote-steps__item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.request-quote-steps__n {
+  flex: 0 0 1.6rem;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  color: #38bdf8;
+  line-height: 1.4;
+}
+
+.request-quote-steps__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.35;
+}
+
+.request-quote-steps__text {
+  margin: 0.15rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.request-quote-aside__note {
+  margin-top: 1rem;
+  padding: 1.25rem 1.4rem;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid var(--color-border, #e2e8f0);
+}
+
+.request-quote-aside__note-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.request-quote-aside__note-text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.request-quote-card {
+  max-width: 32rem;
+  padding: 1.5rem;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid var(--color-border, #e2e8f0);
+}
+
+.request-quote-card__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .verify-panel-title {
@@ -10274,8 +10432,79 @@ html.is-standalone .site-header {
     max-width: 40rem;
   }
 
+  .request-quote-page {
+    padding-block: 2rem 3rem;
+  }
+
+  .request-quote-main {
+    padding: 1.75rem 2rem 2rem;
+    border-radius: 16px;
+    background: #ffffff;
+    border: 1px solid var(--color-border, #e2e8f0);
+  }
+
+  .request-quote-hero {
+    margin-bottom: 1.5rem;
+  }
+
+  .request-quote-hero__title {
+    font-size: 1.875rem;
+  }
+
+  .request-quote-hero__lead {
+    font-size: 0.95rem;
+  }
+
+  .request-quote-fields {
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem 1rem;
+  }
+
+  .request-quote-field--full {
+    grid-column: 1 / -1;
+  }
+
+  .request-quote-benefits--mobile {
+    display: none;
+  }
+
+  .request-quote-actions {
+    margin-top: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+  }
+
+  .request-quote-submit {
+    width: auto;
+    min-width: 12rem;
+    flex-shrink: 0;
+  }
+
+  .request-quote-footnote {
+    max-width: 42ch;
+  }
+
+  .request-quote-aside {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .request-quote-aside__note {
+    margin-top: 0;
+  }
+
   .messenger {
     min-height: calc(100dvh - 5.5rem);
+  }
+}
+
+@media (min-width: 1024px) {
+  .request-quote-shell {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 1.75rem;
+    align-items: start;
   }
 }
 
@@ -12602,18 +12831,25 @@ html.is-standalone .site-header {
   border-color: var(--color-accent);
 }
 
-.request-quote-benefits {
-  background: var(--color-accent-soft);
-  border: 1px solid var(--color-accent-border);
-  border-radius: 14px;
-  padding: 14px 16px;
-}
-
 .request-quote-page .input,
 .request-quote-page textarea {
   border-radius: 12px;
   background: var(--color-neutral-200);
   border-color: var(--color-border-strong);
+  min-height: 50px;
+}
+
+.request-quote-page textarea {
+  min-height: 100px;
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+.request-quote-page .input:focus,
+.request-quote-page textarea:focus {
+  border-width: 2px;
+  border-color: var(--color-accent);
+  background: #ffffff;
 }
 
 .request-quote-page .btn-primary {
