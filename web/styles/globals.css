@@ -381,12 +381,12 @@ a:hover {
 .app-lock .pin-keypad__key {
   border: none;
   border-radius: 4px;
-  background: rgba(248, 250, 252, 0.08);
-  color: #f8fafc;
+  background: #0284c7;
+  color: #fff;
 }
 
 .app-lock .pin-keypad__key:active {
-  background: rgba(248, 250, 252, 0.16);
+  background: #0369a1;
 }
 
 .app-lock .pin-keypad__key--muted {
@@ -6961,13 +6961,13 @@ html.is-standalone .site-header {
 .pin-panel--dark .pin-keypad__key {
   border: none;
   border-radius: 4px;
-  background: rgba(248, 250, 252, 0.08);
-  color: #f8fafc;
+  background: #0284c7;
+  color: #fff;
   box-shadow: none;
 }
 
 .pin-panel--dark .pin-keypad__key:active {
-  background: rgba(248, 250, 252, 0.16);
+  background: #0369a1;
 }
 
 .pin-panel--dark .pin-keypad__key--muted {
@@ -9282,25 +9282,36 @@ html.is-standalone .site-header {
     font-size: 0.95rem;
   }
 
-  .panel--pin-setup .pin-panel:not(.pin-panel--dark) .pin-keypad__key {
+  /* Только светлая desktop-форма внутри .pin-panel__desktop — не трогаем тёмный mobile keypad */
+  .panel--pin-setup .pin-panel__desktop .pin-keypad__key {
     background: #fff;
     border: 1px solid #e2e8f0;
     box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+    color: #0f172a;
   }
 
   .panel--pin-setup .pin-panel--dark .pin-keypad__key,
+  .panel--pin-setup .pin-panel__mobile .pin-keypad__key,
   .app-lock .pin-keypad__key {
-    background: rgba(248, 250, 252, 0.08);
+    background: #0284c7;
     border: none;
     box-shadow: none;
-    color: #f8fafc;
+    color: #fff;
   }
 
-  .panel--pin-setup .pin-keypad__key--muted,
+  .panel--pin-setup .pin-panel--dark .pin-keypad__key:active,
+  .panel--pin-setup .pin-panel__mobile .pin-keypad__key:active,
+  .app-lock .pin-keypad__key:active {
+    background: #0369a1;
+  }
+
+  .panel--pin-setup .pin-panel--dark .pin-keypad__key--muted,
+  .panel--pin-setup .pin-panel__mobile .pin-keypad__key--muted,
   .app-lock .pin-keypad__key--muted {
     background: transparent;
     border-color: transparent;
     box-shadow: none;
+    color: #94a3b8;
     font-size: clamp(1.2rem, 4.5vw, 1.45rem);
     font-weight: 500;
   }
