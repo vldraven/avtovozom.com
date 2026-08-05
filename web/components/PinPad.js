@@ -19,12 +19,19 @@ export default function PinPad({
   className = "",
   submitLabel = "Продолжить",
   minLength = 4,
-  maxLength = 6,
+  maxLength = 4,
   disabled = false,
+  showSubmit = true,
+  bottomLeft = null,
 }) {
   function appendDigit(digit) {
     if (disabled || value.length >= maxLength) return;
-    onChange(`${value}${digit}`);
+    const next = `${value}${digit}`;
+    onChange(next);
+    if (next.length >= maxLength && !showSubmit) {
+      // Auto-submit after paint so parent state is ready
+      window.setTimeout(() => onSubmit?.(), 0);
+    }
   }
 
   function backspace() {
@@ -50,7 +57,7 @@ export default function PinPad({
             {digit}
           </button>
         ))}
-        <span aria-hidden />
+        {bottomLeft || <span aria-hidden />}
         <button
           type="button"
           className="pin-keypad__key"
@@ -66,12 +73,14 @@ export default function PinPad({
           disabled={disabled || !value}
           aria-label="Удалить цифру"
         >
-          ←
+          ⌫
         </button>
       </div>
-      <button type="button" className="btn btn-primary pin-pad__submit" onClick={onSubmit} disabled={!canSubmit}>
-        {submitLabel}
-      </button>
+      {showSubmit ? (
+        <button type="button" className="btn btn-primary pin-pad__submit" onClick={onSubmit} disabled={!canSubmit}>
+          {submitLabel}
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { humanizeWebAuthnError } from "./webauthnErrors";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "avt_token";
 const PENDING_REFRESH_KEY = "avt_refresh_pending";
@@ -454,9 +456,14 @@ export async function registerPasskey(accessToken) {
   });
   if (!optionsRes.ok) throw new Error(await readApiError(optionsRes, "Не удалось начать настройку биометрии"));
   const options = await optionsRes.json();
-  const credential = await navigator.credentials.create({
-    publicKey: prepareCreationOptions(options),
-  });
+  let credential;
+  try {
+    credential = await navigator.credentials.create({
+      publicKey: prepareCreationOptions(options),
+    });
+  } catch (err) {
+    throw new Error(humanizeWebAuthnError(err));
+  }
   const verifyRes = await authFetch(`${API_URL}/auth/webauthn/register/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
@@ -477,9 +484,14 @@ export async function loginWithPasskey() {
   });
   if (!optionsRes.ok) throw new Error(await readApiError(optionsRes, "Биометрический вход недоступен"));
   const options = await optionsRes.json();
-  const credential = await navigator.credentials.get({
-    publicKey: prepareRequestOptions(options),
-  });
+  let credential;
+  try {
+    credential = await navigator.credentials.get({
+      publicKey: prepareRequestOptions(options),
+    });
+  } catch (err) {
+    throw new Error(humanizeWebAuthnError(err, "Биометрический вход не сработал"));
+  }
   const verifyRes = await authFetch(`${API_URL}/auth/webauthn/login/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

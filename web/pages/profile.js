@@ -21,6 +21,7 @@ import {
 import { publicCarHref } from "../lib/carRoutes";
 import { mediaSrc } from "../lib/media";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
+import { humanizeWebAuthnError } from "../lib/webauthnErrors";
 import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -281,7 +282,7 @@ export default function ProfilePage() {
       await registerPasskey(token);
       setMessage("Биометрический вход включён для этого устройства.");
     } catch (err) {
-      setError(err?.message || "Не удалось включить биометрию");
+      setError(humanizeWebAuthnError(err, "Не удалось включить биометрию"));
     } finally {
       setPasskeyBusy(false);
     }
