@@ -61,17 +61,24 @@ def _item_value(valueitems: list[dict[str, Any]] | None) -> str:
     raw = strip_obfuscation(str(vi.get("value") or ""))
     sublist = vi.get("sublist") or []
     if isinstance(sublist, list) and sublist:
-        parts: list[str] = []
+        named_parts: list[str] = []
+        bare_values: list[str] = []
         for sub in sublist:
             if not isinstance(sub, dict):
                 continue
-            if str(sub.get("subvalue", "")).strip() in ("", "0"):
+            subvalue = strip_obfuscation(str(sub.get("subvalue") or ""))
+            if subvalue in ("", "0", "-"):
                 continue
-            name = strip_obfuscation(str(sub.get("subname") or ""))
-            if name:
-                parts.append(name)
-        if parts:
-            return ", ".join(parts)
+            subname = strip_obfuscation(str(sub.get("subname") or ""))
+            if subname:
+                named_parts.append(subname)
+            else:
+                # Drive type etc.: Autohome puts the label in subvalue with empty subname.
+                bare_values.append(subvalue)
+        if named_parts:
+            return ", ".join(named_parts)
+        if bare_values:
+            return ", ".join(bare_values)
     if not raw or raw == "-":
         return "—"
     return raw

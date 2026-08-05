@@ -29,12 +29,13 @@ _PARAM_GROUP_RU_RE = re.compile(
 )
 
 # Группы param Autohome для блока «Характеристики» на карточке
-_PARAM_UI_GROUP_ZH = frozenset({"基本参数", "发动机", "车身"})
+_PARAM_UI_GROUP_ZH = frozenset({"基本参数", "发动机", "车身", "底盘转向"})
 
 _PARAM_UI_GROUP_RU: dict[str, str] = {
     "基本参数": "Основные параметры",
     "发动机": "Двигатель",
     "车身": "Габариты",
+    "底盘转向": "Ходовая часть",
 }
 
 _PARAM_SKIP_ITEM_ZH = frozenset(
@@ -64,6 +65,7 @@ _PARAM_SKIP_ITEM_ZH = frozenset(
 
 _PARAM_ITEM_ZH: dict[str, str] = {
     "发动机": "Двигатель",
+    "驱动方式": "Привод",
     "长*宽*高(mm)": "Габариты",
     "长*宽*高（mm）": "Габариты",
     "长宽高(mm)": "Габариты",
@@ -210,6 +212,18 @@ _VALUE_ZH: dict[str, str] = {
     "插电混动": "Подключаемый гибрид",
     "纯电动": "Полностью электрический",
     "柴油": "Дизель",
+    # Привод (Autohome 驱动方式)
+    "前置前驱": "Передний",
+    "前置后驱": "Задний",
+    "后置后驱": "Задний",
+    "后置前驱": "Передний",
+    "中置后驱": "Задний",
+    "四驱": "Полный",
+    "全时四驱": "Полный",
+    "适时四驱": "Полный",
+    "分时四驱": "Полный",
+    "电动四驱": "Полный",
+    "双电机四驱": "Полный",
 }
 
 # Фрагменты для подстановки внутри составных значений param (длинные — первыми).
@@ -370,7 +384,25 @@ def _translate_cjk_in_param_value(value: str) -> str:
     return v
 
 
+def _format_drive_value(value: str) -> str:
+    """Китайские обозначения привода → Передний / Задний / Полный."""
+    v = _clean_trim_text_value(value)
+    if not v or classify_trim_value(v) == "absent":
+        return v
+    if v in _VALUE_ZH:
+        return _VALUE_ZH[v]
+    if "四驱" in v or "4WD" in v.upper() or "AWD" in v.upper():
+        return "Полный"
+    if "后驱" in v or "RWD" in v.upper():
+        return "Задний"
+    if "前驱" in v or "FWD" in v.upper():
+        return "Передний"
+    return _translate_cjk_in_param_value(v)
+
+
 def _format_param_value(name_zh: str, value: str) -> str:
+    if name_zh == "驱动方式":
+        return _format_drive_value(value)
     v = _clean_trim_text_value(value)
     if name_zh in ("发动机",) or "发动机" in name_zh:
         v = v.replace("马力", " л.с.")
@@ -405,6 +437,9 @@ def _translate_param_item(
     name = (name_zh or "").strip()
     value = (value_zh or "").strip()
     if not name or classify_trim_value(value) == "absent":
+        return None
+    # Из «Ходовая» на карточку берём только привод — остальное шум.
+    if group_zh == "底盘转向" and name != "驱动方式":
         return None
     if name in _PARAM_SKIP_ITEM_ZH:
         return None

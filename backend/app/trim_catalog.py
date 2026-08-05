@@ -96,6 +96,152 @@ def rebuild_trim_spec_from_source(trim: CarTrim) -> bool:
     return True
 
 
+def _param_drive_value(doc) -> str | None:
+    for sec in doc.param_sections or []:
+        if not isinstance(sec, dict):
+            continue
+        for it in sec.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            if str(it.get("name") or "") == "Привод":
+                val = str(it.get("value") or "").strip()
+                if val and val != "—":
+                    return val
+    return None
+
+
+def refresh_trim_from_autohome(trim: CarTrim) -> dict[str, Any]:
+    """
+    Повторный fetch GetModelConfig2 → source_spec_json + русский spec_sections.
+    Нужен после правок парсера (_item_value), т.к. старый source уже с «—».
+
+    Если config-секции уже богатые на русском — обновляем только param_sections
+    (где «Привод»), без повторного онлайн-перевода всей комплектации.
+    """
+    from .trim_display import prepare_param_sections_from_zh
+    from .trim_spec_storage import TrimSpecDocument, parse_trim_spec_document
+
+    if not trim.autohome_spec_id:
+        return {"ok": False, "reason": "no_spec_id"}
+    try:
+        parsed = fetch_spec_config(int(trim.autohome_spec_id))
+    except Exception as exc:
+        log.warning(
+            "autohome refresh failed trim_id=%s spec_id=%s: %s",
+            trim.id,
+            trim.autohome_spec_id,
+            exc,
+        )
+        return {"ok": False, "reason": "fetch_failed", "error": str(exc)}
+
+    if not parsed.sections:
+        return {"ok": False, "reason": "empty_sections"}
+
+    source_json = json.dumps(parsed.sections, ensure_ascii=False)
+    trim.source_spec_json = source_json
+    trim.spec_json = source_json
+
+    new_params = prepare_param_sections_from_zh(parsed.sections)
+    existing = parse_trim_spec_document(trim.spec_sections or trim.spec_json_ru or "")
+    if existing and is_rich_trim_spec(existing) and existing.sections:
+        doc = TrimSpecDocument(
+            sections=existing.sections,
+            param_sections=new_params or existing.param_sections,
+        )
+    else:
+        doc = build_trim_spec_from_source_sections(parsed.sections)
+    if doc.is_empty:
+        return {"ok": False, "reason": "empty_doc"}
+
+    save_trim_spec_to_row(trim, doc)
+    trim.spec_json_ru = trim.spec_sections
+
+    drive = _param_drive_value(doc)
+    return {
+        "ok": True,
+        "trim_id": trim.id,
+        "autohome_spec_id": trim.autohome_spec_id,
+        "has_drive": bool(drive),
+        "drive": drive,
+    }
+
+
+def refresh_all_trims_from_autohome(
+    db: Session,
+    *,
+    limit: int | None = None,
+    sleep_s: float = 0.35,
+) -> dict[str, Any]:
+    """Обновить все car_trims с autohome_spec_id. Возвращает сводку."""
+    import time
+
+    q = (
+        select(CarTrim)
+        .where(CarTrim.autohome_spec_id.is_not(None))
+        .order_by(CarTrim.id.asc())
+    )
+    if limit is not None:
+        q = q.limit(limit)
+    trims = db.execute(q).scalars().all()
+
+    updated = 0
+    with_drive = 0
+    failed = 0
+    errors: list[dict[str, Any]] = []
+    drives_sample: list[dict[str, Any]] = []
+
+    for i, trim in enumerate(trims):
+        result = refresh_trim_from_autohome(trim)
+        if result.get("ok"):
+            try:
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                failed += 1
+                errors.append(
+                    {
+                        "trim_id": trim.id,
+                        "spec_id": trim.autohome_spec_id,
+                        "reason": "commit_failed",
+                        "error": str(exc),
+                    }
+                )
+            else:
+                updated += 1
+                if result.get("has_drive"):
+                    with_drive += 1
+                    if len(drives_sample) < 20:
+                        drives_sample.append(
+                            {
+                                "trim_id": trim.id,
+                                "spec_id": trim.autohome_spec_id,
+                                "drive": result.get("drive"),
+                            }
+                        )
+        else:
+            db.rollback()
+            failed += 1
+            errors.append(
+                {
+                    "trim_id": trim.id,
+                    "spec_id": trim.autohome_spec_id,
+                    "reason": result.get("reason"),
+                    "error": result.get("error"),
+                }
+            )
+        if sleep_s > 0 and i + 1 < len(trims):
+            time.sleep(sleep_s)
+
+    return {
+        "scanned": len(trims),
+        "updated": updated,
+        "with_drive": with_drive,
+        "failed": failed,
+        "errors_sample": errors[:15],
+        "drives_sample": drives_sample,
+    }
+
+
 def migrate_legacy_trim_specs(db: Session) -> int:
     """Неполный spec_sections или legacy без kind → пересборка из source_spec_json."""
     updated = 0
