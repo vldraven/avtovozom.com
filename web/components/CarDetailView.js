@@ -1067,7 +1067,7 @@ export default function CarDetailView({
                       </>
                     ) : (
                       <div className="detail-breakdown__summary">
-                        <span>Итого под ключ</span>
+                        <span>Итого в Москве</span>
                         <strong>{formatRubInt(car.price_breakdown.total_rub)} ₽</strong>
                       </div>
                     )}

@@ -26,6 +26,7 @@ import { carSpecMetaBits } from "../../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../../lib/carRoutes";
 import { saveListingReturnPath, markScrollRestoreTarget, isListingBackNavigation } from "../../lib/listingNavigation";
 import { canCreateListings } from "../../lib/roles";
+import { catalogHubLinks } from "../../lib/catalogHubLinks";
 import {
   buildCatalogCarsQuery,
   catalogFetchKey,
@@ -860,6 +861,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
     [brand, model, generation]
   );
 
+  const hubLinks = useMemo(() => catalogHubLinks({ tree, brand, model }), [tree, brand, model]);
+
   /** Похожие предложения для пустого состояния — та же марка, без остальных фильтров. */
   useEffect(() => {
     if (!isCatalogListRoute || carsLoading || carsError || cars.length > 0) {
@@ -1312,6 +1315,30 @@ export default function CatalogTreePage({ initialPayload = null }) {
                     </>
                     )}
                   </section>
+
+                  {isCatalogListRoute && hubLinks ? (
+                    <nav className="catalog-hub-links" aria-label={hubLinks.title}>
+                      <h2 className="catalog-hub-links__title">{hubLinks.title}</h2>
+                      <div className="catalog-hub-links__list">
+                        {hubLinks.items.map((item) => (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className="catalog-hub-links__item"
+                          >
+                            {item.name}
+                            <span className="catalog-hub-links__count">{item.count}</span>
+                          </Link>
+                        ))}
+                      </div>
+                      <p className="catalog-hub-links__cta">
+                        Не нашли подходящего авто? —{" "}
+                        <Link href="/request-quote" className="catalog-hub-links__cta-link">
+                          Опишите нам свой запрос
+                        </Link>
+                      </p>
+                    </nav>
+                  ) : null}
                 </div>
               </div>
             </>
