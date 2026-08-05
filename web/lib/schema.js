@@ -17,25 +17,40 @@ function normalizeJsonLd(data) {
   return data;
 }
 
+/**
+ * Кириллическое написание бренда — основное. Латиница остаётся в alternateName:
+ * без этого поисковик не связывает сайт с запросами вида «автовозом авто из Китая».
+ */
+export const BRAND_NAME = "Автовозом";
+export const BRAND_ALT_NAMES = ["avtovozom", "Avtovozom", "avtovozom.com"];
+export const BRAND_EMAIL = "hello@avtovozom.com";
+export const BRAND_SAME_AS = ["https://t.me/avtovozom"];
+
 export function organizationAndWebSiteJsonLd() {
   const url = absoluteUrl("/");
-  const logo = absoluteUrl("/favicon.png");
   return {
     "@context": SCHEMA_CONTEXT,
     "@graph": [
       {
         "@type": "Organization",
-        name: "avtovozom",
+        name: BRAND_NAME,
+        alternateName: BRAND_ALT_NAMES,
         url,
-        logo,
+        logo: absoluteUrl("/logo-avtovozom.png"),
+        image: absoluteUrl("/logo-avtovozom.png"),
+        email: BRAND_EMAIL,
+        sameAs: BRAND_SAME_AS,
+        areaServed: { "@type": "Country", name: "Россия" },
         description:
           "Сервис подбора и доставки автомобилей из Китая и Кореи в Россию под ключ.",
       },
       {
         "@type": "WebSite",
-        name: "avtovozom",
+        name: BRAND_NAME,
+        alternateName: BRAND_ALT_NAMES,
         url,
         inLanguage: "ru-RU",
+        publisher: { "@type": "Organization", name: BRAND_NAME, url },
         potentialAction: {
           "@type": "SearchAction",
           target: {
@@ -46,6 +61,26 @@ export function organizationAndWebSiteJsonLd() {
         },
       },
     ],
+  };
+}
+
+/**
+ * Список объявлений на странице каталога. Помогает поисковику понять, что хаб —
+ * витрина с товарами, а не текстовая страница.
+ */
+export function itemListJsonLd(items) {
+  const list = (items || []).filter((it) => it?.url);
+  if (!list.length) return null;
+  return {
+    "@context": SCHEMA_CONTEXT,
+    "@type": "ItemList",
+    numberOfItems: list.length,
+    itemListElement: list.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      url: absoluteUrl(item.url),
+      ...(item.name ? { name: item.name } : {}),
+    })),
   };
 }
 

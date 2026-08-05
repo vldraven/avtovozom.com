@@ -50,7 +50,7 @@ import {
   catalogCanonicalPath,
   catalogSeoCopy,
 } from "../../lib/catalogSeo";
-import { breadcrumbListJsonLd, jsonLdScriptProps } from "../../lib/schema";
+import { breadcrumbListJsonLd, itemListJsonLd, jsonLdScriptProps } from "../../lib/schema";
 import { scheduleListScrollRestore } from "../../lib/listScrollRestore";
 import { getListingPageCache, setListingPageCache } from "../../lib/listingPageCache";
 import { fetchCatalogTreeCached, setCatalogMetaCache } from "../../lib/catalogMetaCache";
@@ -895,6 +895,14 @@ export default function CatalogTreePage({ initialPayload = null }) {
     [breadcrumbItems]
   );
 
+  const catalogItemListLd = useMemo(
+    () =>
+      itemListJsonLd(
+        cars.map((car) => ({ url: publicCarHref(car), name: car.title }))
+      ),
+    [cars]
+  );
+
   const detailCarId = useMemo(() => {
     if (segments != null && isCarDetailSegments(segments)) {
       return String(segments[2]);
@@ -946,6 +954,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
         <meta property="og:description" content={catalogSeo.desc} />
         <meta property="og:url" content={absoluteUrl(catalogCanon)} />
         {catalogBreadcrumbLd ? <script {...jsonLdScriptProps(catalogBreadcrumbLd)} /> : null}
+        {catalogItemListLd ? <script {...jsonLdScriptProps(catalogItemListLd)} /> : null}
       </Head>
       <SiteHeader className="home-only-mobile" tagline="Доставка автомобилей из Китая и Кореи">
         {!token ? (

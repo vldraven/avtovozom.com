@@ -48,13 +48,13 @@ export default function DeliveryFromKoreaPage() {
   return (
     <div className="layout">
       <Head>
-        <title>Доставка автомобилей из Кореи под ключ | avtovozom</title>
+        <title>Доставка автомобилей из Кореи под ключ | Автовозом</title>
         <meta
           name="description"
           content="Доставка авто из Кореи (Kia, Hyundai, Genesis): подбор, выкуп и доставка в РФ. Сроки, маршрут и расчёт под ключ — оставьте заявку."
         />
         <link rel="canonical" href={absoluteUrl("/dostavka-avto-iz-korei")} />
-        <meta property="og:title" content="Доставка автомобилей из Кореи под ключ | avtovozom" />
+        <meta property="og:title" content="Доставка автомобилей из Кореи под ключ | Автовозом" />
         <meta
           property="og:description"
           content="Доставка автомобилей из Кореи под ключ: подбор, выкуп, доставка в РФ и помощь с растаможкой."

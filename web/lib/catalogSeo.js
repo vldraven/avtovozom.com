@@ -3,30 +3,30 @@
 export function catalogSeoCopy({ unknownSlug, brand, model, generation }) {
   if (unknownSlug) {
     return {
-      title: "Раздел не найден — avtovozom",
+      title: "Раздел не найден — Автовозом",
       desc: "Проверьте адрес каталога или вернитесь к списку марок.",
     };
   }
   if (generation && brand && model) {
     return {
-      title: `${brand.name} ${model.name} ${generation.name} — авто из Китая | avtovozom`,
+      title: `${brand.name} ${model.name} ${generation.name} — авто из Китая | Автовозом`,
       desc: `${brand.name} ${model.name}, ${generation.name}: объявления с ценой в ¥ и расчётом под ключ до РФ. Выберите авто и закажите доставку.`,
     };
   }
   if (model && brand) {
     return {
-      title: `${brand.name} ${model.name} — купить из Китая | avtovozom`,
+      title: `${brand.name} ${model.name} — купить из Китая | Автовозом`,
       desc: `Каталог ${brand.name} ${model.name}: цены в ¥, пробег, комплектации. Доставка и растаможка под ключ — смотрите объявления онлайн.`,
     };
   }
   if (brand) {
     return {
-      title: `${brand.name} из Китая — цены и доставка в РФ | avtovozom`,
+      title: `${brand.name} из Китая — цены и доставка в РФ | Автовозом`,
       desc: `${brand.name} из Китая: модели, цены и доставка под ключ до России. Сравните объявления и закажите расчёт стоимости.`,
     };
   }
   return {
-    title: "Каталог автомобилей из Китая | avtovozom",
+    title: "Каталог автомобилей из Китая | Автовозом",
     desc: "Каталог авто из Китая и Кореи: марки, модели, цены в ¥ и ориентир под ключ до РФ. Выберите автомобиль и оставьте заявку на расчёт.",
   };
 }

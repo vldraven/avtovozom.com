@@ -117,7 +117,7 @@ export default function App({ Component, pageProps }) {
   return (
     <>
       <Head>
-        <title>avtovozom — каталог автомобилей</title>
+        <title>Автовозом — авто из Китая под заказ</title>
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
@@ -133,7 +133,7 @@ export default function App({ Component, pageProps }) {
         />
         <link rel="manifest" href="/manifest.webmanifest" />
         {noindex ? <meta name="robots" content="noindex, nofollow" /> : null}
-        <meta property="og:site_name" content="avtovozom" />
+        <meta property="og:site_name" content="Автовозом" />
         <meta property="og:locale" content="ru_RU" />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />

@@ -1392,13 +1392,13 @@ export default function Home({ initialData = null }) {
   return (
     <>
       <Head>
-        <title>Доставка автомобилей из Китая и Кореи в Россию | avtovozom</title>
+        <title>Доставка автомобилей из Китая и Кореи в Россию | Автовозом</title>
         <meta
           name="description"
           content="Каталог авто из Китая и Кореи с расчётом под ключ до РФ. Подбор, выкуп, доставка — смотрите цены в ¥ и ориентир в рублях, оставьте заявку."
         />
         <link rel="canonical" href={absoluteUrl("/")} />
-        <meta property="og:title" content="Доставка автомобилей из Китая и Кореи в Россию | avtovozom" />
+        <meta property="og:title" content="Доставка автомобилей из Китая и Кореи в Россию | Автовозом" />
         <meta
           property="og:description"
           content="Каталог авто из Китая и Кореи с расчётом под ключ до РФ. Подбор, выкуп, доставка — смотрите цены и оставьте заявку."
