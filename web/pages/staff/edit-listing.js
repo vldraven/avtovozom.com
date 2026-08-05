@@ -8,6 +8,7 @@ import { clearToken, getStoredToken } from "../../lib/auth";
 import { publicCarHref } from "../../lib/carRoutes";
 import { mediaSrc } from "../../lib/media";
 import { fuelTypeSelectOptions, normalizeFuelTypeValue } from "../../lib/fuelTypes";
+import { driveTypeSelectOptions, normalizeDriveTypeValue } from "../../lib/driveTypes";
 import { canCreateListings, isAdminRole } from "../../lib/roles";
 import SiteHeader from "../../components/SiteHeader";
 
@@ -68,6 +69,7 @@ export default function StaffEditListingPage() {
   const [horsepower, setHorsepower] = useState("");
   const [fuelType, setFuelType] = useState("");
   const [transmission, setTransmission] = useState("");
+  const [driveType, setDriveType] = useState("");
   const [city, setCity] = useState("");
   const [priceCny, setPriceCny] = useState("");
   const [registrationDate, setRegistrationDate] = useState("");
@@ -160,6 +162,8 @@ export default function StaffEditListingPage() {
       const rawFuel = c.fuel_type || "";
       setFuelType(normalizeFuelTypeValue(rawFuel) || rawFuel);
       setTransmission(c.transmission || "");
+      const rawDrive = c.drive_type || "";
+      setDriveType(normalizeDriveTypeValue(rawDrive) || rawDrive);
       setCity(c.location_city || "");
       setPriceCny(String(c.price_cny ?? ""));
       setRegistrationDate(c.registration_date || "");
@@ -346,6 +350,7 @@ export default function StaffEditListingPage() {
     fd.append("horsepower", horsepower);
     fd.append("fuel_type", fuelType);
     fd.append("transmission", transmission);
+    fd.append("drive_type", driveType);
     fd.append("location_city", city);
     fd.append("price_cny", priceCny);
     fd.append("registration_date", registrationDate);
@@ -674,6 +679,17 @@ export default function StaffEditListingPage() {
                   />
                 </label>
               </div>
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                label="Привод"
+                placeholder="— из комплектации / не указано —"
+                value={driveType}
+                onChange={setDriveType}
+                options={driveTypeSelectOptions(
+                  driveType,
+                  "— из комплектации / не указано —"
+                )}
+              />
               <SiteSelectDropdown
                 className="site-dropdown--block"
                 label="Цвет кузова"

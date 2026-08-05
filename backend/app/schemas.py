@@ -122,6 +122,8 @@ class CarOut(BaseModel):
     horsepower: int
     fuel_type: str | None = None
     transmission: str | None = None
+    drive_type: str | None = None
+    """Ручной привод; если задан — приоритетнее «Привод» из комплектации."""
     body_color_slug: str | None = None
     """Ключ цвета (white/black/…); null — не указан."""
     body_color_label: str | None = None

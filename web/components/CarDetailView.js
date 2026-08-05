@@ -199,6 +199,7 @@ export default function CarDetailView({
   const hero = sortedPhotos[safeIndex];
   const trimEngine = pickTrimParam(car?.trim, "Двигатель");
   const trimDrive = pickTrimParam(car?.trim, "Привод");
+  const driveDisplay = (car?.drive_type || "").trim() || trimDrive?.value || "—";
   const breakdownRows = useMemo(
     () => buildBreakdownDisplayRows(car?.price_breakdown?.components),
     [car?.price_breakdown?.components]
@@ -289,10 +290,10 @@ export default function CarDetailView({
       { label: "Топливо", value: car.fuel_type || "—" },
       { label: "Пробег", value: mileageLabel },
       { label: "Цвет кузова", value: car.body_color_label || "—" },
-      { label: "Привод", value: trimDrive?.value || "—" },
+      { label: "Привод", value: driveDisplay },
       { label: "КПП", value: car.transmission || "—" },
     ];
-  }, [car, engineLabel, powerLabel, registrationLabel, mileageLabel, trimDrive]);
+  }, [car, engineLabel, powerLabel, registrationLabel, mileageLabel, driveDisplay]);
 
   const hasTrimConfig = Boolean(car?.trim?.sections?.length || car?.trim?.param_sections?.length);
 
