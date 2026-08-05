@@ -4,13 +4,19 @@ import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import { clearToken, getStoredToken } from "../../lib/auth";
+import {
+  FAQ_SECTION_DEFAULT,
+  FAQ_SECTION_OPTIONS,
+  faqSectionLabel,
+  normalizeFaqSection,
+} from "../../lib/faqSections";
 import { isAdminRole } from "../../lib/roles";
 import SiteHeader from "../../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function emptyDraft() {
-  return { question: "", answer: "", sort_order: "", is_published: true };
+  return { question: "", answer: "", section: FAQ_SECTION_DEFAULT, sort_order: "", is_published: true };
 }
 
 export default function AdminFaqPage() {
@@ -24,6 +30,7 @@ export default function AdminFaqPage() {
   const [message, setMessage] = useState("");
   const [createDraft, setCreateDraft] = useState(emptyDraft);
   const [createOpen, setCreateOpen] = useState(false);
+  const [adminSection, setAdminSection] = useState("all");
 
   const loadItems = useCallback(async (t) => {
     const res = await fetch(`${API_URL}/admin/faq`, {
@@ -40,6 +47,7 @@ export default function AdminFaqPage() {
       next[item.id] = {
         question: item.question,
         answer: item.answer,
+        section: normalizeFaqSection(item.section),
         sort_order: String(item.sort_order),
         is_published: item.is_published,
       };
@@ -102,6 +110,7 @@ export default function AdminFaqPage() {
       body: JSON.stringify({
         question,
         answer,
+        section: normalizeFaqSection(d.section),
         sort_order,
         is_published: Boolean(d.is_published),
       }),
@@ -141,7 +150,12 @@ export default function AdminFaqPage() {
       return;
     }
     const sortRaw = createDraft.sort_order.trim();
-    const payload = { question, answer, is_published: createDraft.is_published };
+    const payload = {
+      question,
+      answer,
+      section: normalizeFaqSection(createDraft.section),
+      is_published: createDraft.is_published,
+    };
     if (sortRaw !== "") {
       const sort_order = Number.parseInt(sortRaw, 10);
       if (Number.isNaN(sort_order)) {
@@ -165,6 +179,11 @@ export default function AdminFaqPage() {
     setMessage("Добавлено");
     await loadItems(token);
   }
+
+  const displayItems =
+    adminSection === "all"
+      ? items
+      : items.filter((item) => normalizeFaqSection(item.section) === adminSection);
 
   if (loading) {
     return (
@@ -200,15 +219,61 @@ export default function AdminFaqPage() {
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              onClick={() => setCreateOpen((v) => !v)}
+              onClick={() => {
+                setCreateOpen((open) => {
+                  const next = !open;
+                  if (next && adminSection !== "all") {
+                    setCreateDraft({ ...emptyDraft(), section: adminSection });
+                  }
+                  return next;
+                });
+              }}
             >
               {createOpen ? "Скрыть форму" : "Добавить вопрос"}
             </button>
           </div>
 
+          <div className="faq-page-tabs admin-faq-section-tabs" role="tablist" aria-label="Разделы FAQ">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={adminSection === "all"}
+              className={`faq-page-tabs__btn${adminSection === "all" ? " is-active" : ""}`}
+              onClick={() => setAdminSection("all")}
+            >
+              Все
+            </button>
+            {FAQ_SECTION_OPTIONS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                role="tab"
+                aria-selected={adminSection === s.id}
+                className={`faq-page-tabs__btn${adminSection === s.id ? " is-active" : ""}`}
+                onClick={() => setAdminSection(s.id)}
+              >
+                {s.mobileLabel || s.label}
+              </button>
+            ))}
+          </div>
+
           {createOpen ? (
             <section className="panel admin-faq-editor">
               <h2 className="section-title section-title--flush-top">Новый вопрос</h2>
+              <label className="field-label">
+                Раздел
+                <select
+                  className="input"
+                  value={createDraft.section}
+                  onChange={(e) => setCreateDraft((d) => ({ ...d, section: e.target.value }))}
+                >
+                  {FAQ_SECTION_OPTIONS.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="field-label">
                 Вопрос
                 <input
@@ -251,10 +316,30 @@ export default function AdminFaqPage() {
           ) : null}
 
           <div className="admin-faq-list">
-            {items.map((item) => {
+            {displayItems.length === 0 ? (
+              <p className="muted">В этом разделе пока нет вопросов.</p>
+            ) : null}
+            {displayItems.map((item) => {
               const d = drafts[item.id] || {};
               return (
                 <section key={item.id} className="panel admin-faq-editor">
+                  <p className="admin-faq-editor__section-badge muted">
+                    Раздел: {faqSectionLabel(normalizeFaqSection(d.section))}
+                  </p>
+                  <label className="field-label">
+                    Раздел
+                    <select
+                      className="input"
+                      value={d.section || FAQ_SECTION_DEFAULT}
+                      onChange={(e) => updateDraft(item.id, "section", e.target.value)}
+                    >
+                      {FAQ_SECTION_OPTIONS.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="field-label">
                     Вопрос
                     <input

@@ -991,6 +991,7 @@ class FaqItemOut(BaseModel):
     id: int
     question: str
     answer: str
+    section: str
     sort_order: int
     is_published: bool
     updated_at: datetime | None = None
@@ -1002,6 +1003,7 @@ class FaqItemOut(BaseModel):
 class FaqItemCreateIn(BaseModel):
     question: str = Field(..., min_length=1, max_length=512)
     answer: str = Field(..., min_length=1)
+    section: str = "general"
     sort_order: int | None = None
     is_published: bool = True
 
@@ -1009,6 +1011,7 @@ class FaqItemCreateIn(BaseModel):
 class FaqItemUpdateIn(BaseModel):
     question: str | None = Field(default=None, min_length=1, max_length=512)
     answer: str | None = Field(default=None, min_length=1)
+    section: str | None = None
     sort_order: int | None = None
     is_published: bool | None = None
 

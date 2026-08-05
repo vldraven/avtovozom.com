@@ -99,6 +99,7 @@ from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_sour
 from .trim_spec_storage import TrimSpecDocument, load_trim_spec_from_row, save_trim_spec_to_row
 from .trim_display import filter_param_sections_for_card, normalize_spec_heading
 from .email_utils import send_email
+from .faq_sections import normalize_faq_section
 from .media_storage import (
     delete_brand_logo_files,
     delete_car_photo_files,
@@ -3144,14 +3145,14 @@ def admin_list_car_brands(
 
 @app.get("/admin/faq", response_model=list[FaqItemOut])
 def admin_faq_list(
+    section: str | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ):
-    rows = (
-        db.execute(select(FaqItem).order_by(FaqItem.sort_order.asc(), FaqItem.id.asc()))
-        .scalars()
-        .all()
-    )
+    q = select(FaqItem).order_by(FaqItem.sort_order.asc(), FaqItem.id.asc())
+    if section:
+        q = q.where(FaqItem.section == normalize_faq_section(section))
+    rows = db.execute(q).scalars().all()
     return rows
 
 
@@ -3168,6 +3169,7 @@ def admin_faq_create(
     row = FaqItem(
         question=payload.question.strip(),
         answer=payload.answer.strip(),
+        section=normalize_faq_section(payload.section),
         sort_order=sort_order,
         is_published=payload.is_published,
     )
@@ -3192,6 +3194,8 @@ def admin_faq_update(
         row.question = data["question"].strip()
     if "answer" in data and data["answer"] is not None:
         row.answer = data["answer"].strip()
+    if "section" in data and data["section"] is not None:
+        row.section = normalize_faq_section(data["section"])
     if "sort_order" in data and data["sort_order"] is not None:
         row.sort_order = data["sort_order"]
     if "is_published" in data and data["is_published"] is not None:

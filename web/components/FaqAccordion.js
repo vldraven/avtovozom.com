@@ -1,17 +1,24 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /**
- * @param {{ items: { id?: number, question: string, answer: string }[] }} props
+ * @param {{
+ *   items: { id?: number, question: string, answer: string }[],
+ *   resetKey?: string | number,
+ * }} props
  */
-export default function FaqAccordion({ items }) {
+export default function FaqAccordion({ items, resetKey = "" }) {
   const [openId, setOpenId] = useState(null);
+
+  useEffect(() => {
+    setOpenId(null);
+  }, [resetKey]);
 
   const toggle = useCallback((id) => {
     setOpenId((prev) => (prev === id ? null : id));
   }, []);
 
   if (!items?.length) {
-    return <p className="muted">Пока нет опубликованных вопросов.</p>;
+    return <p className="muted faq-accordion__empty">Пока нет вопросов в этом разделе.</p>;
   }
 
   return (
@@ -23,7 +30,7 @@ export default function FaqAccordion({ items }) {
         const buttonId = `faq-trigger-${id}`;
 
         return (
-          <article key={id} className="faq-accordion__item" role="listitem">
+          <article key={id} className={`faq-accordion__item${isOpen ? " is-open" : ""}`} role="listitem">
             <button
               type="button"
               id={buttonId}
@@ -33,7 +40,9 @@ export default function FaqAccordion({ items }) {
               onClick={() => toggle(id)}
             >
               <span className="faq-accordion__question">{item.question}</span>
-              <span className="faq-accordion__chevron" aria-hidden />
+              <span className="faq-accordion__toggle" aria-hidden>
+                {isOpen ? "−" : "+"}
+              </span>
             </button>
             <div
               id={panelId}
