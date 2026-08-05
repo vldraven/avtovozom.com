@@ -93,7 +93,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const lastExplicitScrollSaveRef = useRef({ path: "", at: 0 });
   const listInitial = initialPayload?.mode === "list" ? initialPayload : null;
   const skipCarsFetchKeyRef = useRef(listInitial?.fetchKey ?? null);
-  const skipTreeLoadRef = useRef(Boolean(listInitial?.tree?.length));
+  // SSR отдаёт только разделы с объявлениями, поэтому полное дерево всё равно нужно догрузить.
+  const skipTreeLoadRef = useRef(Boolean(listInitial?.tree?.length && listInitial?.treeComplete));
 
   /* Без useMemo сегменты — новый массив на каждом рендере, и useEffect с fetch(/cars) зацикливается. */
   const segments = useMemo(() => {
@@ -296,7 +297,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
         keepCatalogListRef.current = true;
         if (!tree.length && initialPayload.tree?.length) {
           setTree(initialPayload.tree);
-          skipTreeLoadRef.current = true;
+          skipTreeLoadRef.current = Boolean(initialPayload.treeComplete);
         }
         return;
       }
@@ -305,7 +306,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
       setTotal(initialPayload.total ?? 0);
       setListSort(initialPayload.listSort ?? CATALOG_SORT_DEFAULT);
       skipCarsFetchKeyRef.current = initialPayload.fetchKey ?? null;
-      skipTreeLoadRef.current = Boolean(initialPayload.tree?.length);
+      skipTreeLoadRef.current = Boolean(initialPayload.tree?.length && initialPayload.treeComplete);
       if (router.asPath && (initialPayload.cars?.length || initialPayload.tree?.length)) {
         setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
           cars: initialPayload.cars ?? [],
@@ -321,7 +322,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const loadTree = useCallback(async () => {
     setTreeError(null);
     try {
-      if (listInitial?.tree?.length) {
+      // Урезанное SSR-дерево в общий кэш не кладём: его переиспользуют фильтры других страниц.
+      if (listInitial?.tree?.length && listInitial?.treeComplete) {
         setCatalogMetaCache("tree", listInitial.tree);
       }
       const nextTree = await fetchCatalogTreeCached(API_URL);

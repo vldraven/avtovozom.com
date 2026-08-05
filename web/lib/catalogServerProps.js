@@ -9,6 +9,7 @@ import {
 } from "./catalogResolve";
 import { catalogFilterKeyFromQuery, parseFiltersFromQuery } from "./catalogFilters";
 import { getServerApiBase } from "./serverApiUrl";
+import { trimCatalogTreeForSsr } from "./catalogTreeSsr";
 
 const VALID_SORTS = new Set([
   "relevance",
@@ -121,7 +122,9 @@ export async function fetchCatalogPageProps({ params, query }) {
         mode: "list",
         segments,
         listSort,
-        tree,
+        // Разрешение адреса выше идёт по полному дереву, в пейлоад уходит урезанное.
+        tree: trimCatalogTreeForSsr(tree, segments),
+        treeComplete: false,
         cars,
         total,
         fetchKey: catalogFetchKey(
