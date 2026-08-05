@@ -232,9 +232,9 @@ export default function CarDetailView({
   }, [car]);
 
   const stockBadge = useMemo(() => {
-    if (!car) return "В наличии";
+    if (!car) return "Под заказ";
     const city = String(car.location_city || "").trim();
-    return city ? `В наличии · ${city}` : "В наличии";
+    return city ? `Под заказ · ${city}` : "Под заказ";
   }, [car]);
 
   const thumbSlots = useMemo(() => {
@@ -720,7 +720,7 @@ export default function CarDetailView({
             "@type": "Offer",
             priceCurrency: "RUB",
             price: Math.round(Number(totalRubRf)),
-            availability: "https://schema.org/InStock",
+            availability: "https://schema.org/PreOrder",
             url: canonical,
           },
         }
