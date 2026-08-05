@@ -19,17 +19,26 @@ function escapeXml(s) {
     .replace(/'/g, "&apos;");
 }
 
+function hasListings(node) {
+  return Number(node?.listings_count) > 0;
+}
+
+/**
+ * Только хабы с активными объявлениями. Справочник марок и моделей намного
+ * шире того, что реально продаётся, и пустые разделы в sitemap Яндекс
+ * трактует как малоценные страницы — вместе с деградацией оценки хоста.
+ */
 function catalogTreeUrls(base, tree) {
   const urls = [];
   for (const brand of tree || []) {
-    if (!brand?.slug) continue;
+    if (!brand?.slug || !hasListings(brand)) continue;
     urls.push({
       loc: `${base}/catalog/${brand.slug}`,
       changefreq: "daily",
       priority: "0.85",
     });
     for (const model of brand.models || []) {
-      if (!model?.slug) continue;
+      if (!model?.slug || !hasListings(model)) continue;
       urls.push({
         loc: `${base}/catalog/${brand.slug}/${model.slug}`,
         changefreq: "daily",

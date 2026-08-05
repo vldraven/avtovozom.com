@@ -96,6 +96,21 @@ export function resolveCatalogTree(segments, tree) {
   };
 }
 
+/**
+ * Хаб каталога без активных объявлений. Такая страница остаётся доступной
+ * пользователю, но закрывается от индексации: пустые разделы Яндекс помечает
+ * как малоценные и снижает оценку хоста целиком.
+ *
+ * Если дерево не загрузилось или счётчика нет, считаем хаб непустым — иначе
+ * при сбое API из индекса выпадут живые разделы.
+ */
+export function isEmptyCatalogHub({ brand, model, generation } = {}) {
+  const target = generation || model || brand;
+  if (!target) return false;
+  const count = Number(target.listings_count);
+  return Number.isFinite(count) && count === 0;
+}
+
 /** Размер страницы ленты каталога (SSR и клиент одинаковые — корректный page=N). */
 export const CATALOG_PAGE_SIZE = 24;
 

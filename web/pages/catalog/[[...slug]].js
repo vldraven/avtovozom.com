@@ -31,6 +31,7 @@ import {
   catalogFetchKey,
   CATALOG_PAGE_SIZE,
   isCarDetailSegments,
+  isEmptyCatalogHub,
   resolveCatalogTree,
   segmentsFromSlugParam,
   catalogTextQueryFromRouter,
@@ -854,6 +855,11 @@ export default function CatalogTreePage({ initialPayload = null }) {
     [unknownSlug, brand, model, generation]
   );
 
+  const isEmptyHub = useMemo(
+    () => isEmptyCatalogHub({ brand, model, generation }),
+    [brand, model, generation]
+  );
+
   /** Похожие предложения для пустого состояния — та же марка, без остальных фильтров. */
   useEffect(() => {
     if (!isCatalogListRoute || carsLoading || carsError || cars.length > 0) {
@@ -931,6 +937,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
       <Head>
         <title>{catalogSeo.title}</title>
         <meta name="description" content={catalogSeo.desc} />
+        {isEmptyHub ? <meta name="robots" content="noindex, follow" /> : null}
         <link rel="canonical" href={absoluteUrl(catalogCanon)} />
         <meta property="og:title" content={catalogSeo.title} />
         <meta property="og:description" content={catalogSeo.desc} />
