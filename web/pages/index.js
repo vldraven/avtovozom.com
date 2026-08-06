@@ -1511,9 +1511,6 @@ export default function Home({ initialData = null }) {
                 <Link href="/dostavka-avto-iz-kitaya" className="site-header-mobile-menu__link">
                   Доставка авто из Китая
                 </Link>
-                <Link href="/dostavka-avto-iz-korei" className="site-header-mobile-menu__link">
-                  Доставка авто из Кореи
-                </Link>
                 <Link href="/faq" className="site-header-mobile-menu__link">
                   Частые вопросы
                 </Link>
