@@ -12,7 +12,7 @@ export default function SiteFooter() {
             avtovozom
           </Link>
           <p className="site-footer__tagline">
-            Автовозом — платформа подбора и доставки автомобилей из Китая и Кореи под ключ.
+            Платформа подбора и доставки автомобилей из Китая напрямую от дилеров
           </p>
         </div>
 

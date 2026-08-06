@@ -1394,16 +1394,19 @@ export default function Home({ initialData = null }) {
   return (
     <>
       <Head>
-        <title>Доставка автомобилей из Китая и Кореи в Россию | Автовозом</title>
+        <title>Автовозом — Платформа подбора и доставки автомобилей из Китая в РФ напрямую от дилеров.</title>
         <meta
           name="description"
-          content="Каталог авто из Китая и Кореи с расчётом под ключ до РФ. Подбор, выкуп, доставка — смотрите цены в ¥ и ориентир в рублях, оставьте заявку."
+          content="Каталог автомобилей, подбор, выкуп, доставка, таможенное оформление."
         />
         <link rel="canonical" href={absoluteUrl("/")} />
-        <meta property="og:title" content="Доставка автомобилей из Китая и Кореи в Россию | Автовозом" />
+        <meta
+          property="og:title"
+          content="Автовозом — Платформа подбора и доставки автомобилей из Китая в РФ напрямую от дилеров."
+        />
         <meta
           property="og:description"
-          content="Каталог авто из Китая и Кореи с расчётом под ключ до РФ. Подбор, выкуп, доставка — смотрите цены и оставьте заявку."
+          content="Каталог автомобилей, подбор, выкуп, доставка, таможенное оформление."
         />
         <meta property="og:url" content={absoluteUrl("/")} />
         <script {...jsonLdScriptProps(organizationAndWebSiteJsonLd())}></script>
