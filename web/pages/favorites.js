@@ -240,7 +240,7 @@ export default function FavoritesPage() {
   return (
     <div className="layout">
       <Head>
-        <title>Избранное — avtovozom</title>
+        <title>Избранное — Автовозом</title>
         <meta name="robots" content="noindex" />
       </Head>
       <SiteHeader tagline="Избранное">

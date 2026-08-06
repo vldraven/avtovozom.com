@@ -12,7 +12,7 @@ export default function SiteFooter() {
             avtovozom
           </Link>
           <p className="site-footer__tagline">
-            Платформа подбора и доставки автомобилей из Китая и Кореи под ключ.
+            Автовозом — платформа подбора и доставки автомобилей из Китая и Кореи под ключ.
           </p>
         </div>
 
@@ -26,6 +26,7 @@ export default function SiteFooter() {
             <p className="site-footer__col-title">Помощь</p>
             <Link href="/faq">FAQ общий</Link>
             <Link href="/dostavka-avto-iz-kitaya">Доставка из Китая</Link>
+            <Link href="/dostavka-avtovozom-iz-kitaya">Доставка автовозом</Link>
             <Link href="/dostavka-avto-iz-korei">Доставка из Кореи</Link>
           </div>
           <div className="site-footer__col">

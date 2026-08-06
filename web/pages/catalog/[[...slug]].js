@@ -26,6 +26,7 @@ import { carSpecMetaBits } from "../../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../../lib/carRoutes";
 import { saveListingReturnPath, markScrollRestoreTarget, isListingBackNavigation } from "../../lib/listingNavigation";
 import { canCreateListings } from "../../lib/roles";
+import { catalogHubLinks } from "../../lib/catalogHubLinks";
 import {
   buildCatalogCarsQuery,
   catalogFetchKey,
@@ -49,7 +50,7 @@ import {
   catalogCanonicalPath,
   catalogSeoCopy,
 } from "../../lib/catalogSeo";
-import { breadcrumbListJsonLd, jsonLdScriptProps } from "../../lib/schema";
+import { breadcrumbListJsonLd, itemListJsonLd, jsonLdScriptProps } from "../../lib/schema";
 import { scheduleListScrollRestore } from "../../lib/listScrollRestore";
 import { getListingPageCache, setListingPageCache } from "../../lib/listingPageCache";
 import { fetchCatalogTreeCached, setCatalogMetaCache } from "../../lib/catalogMetaCache";
@@ -92,7 +93,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const lastExplicitScrollSaveRef = useRef({ path: "", at: 0 });
   const listInitial = initialPayload?.mode === "list" ? initialPayload : null;
   const skipCarsFetchKeyRef = useRef(listInitial?.fetchKey ?? null);
-  const skipTreeLoadRef = useRef(Boolean(listInitial?.tree?.length));
+  // SSR отдаёт только разделы с объявлениями, поэтому полное дерево всё равно нужно догрузить.
+  const skipTreeLoadRef = useRef(Boolean(listInitial?.tree?.length && listInitial?.treeComplete));
 
   /* Без useMemo сегменты — новый массив на каждом рендере, и useEffect с fetch(/cars) зацикливается. */
   const segments = useMemo(() => {
@@ -295,7 +297,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
         keepCatalogListRef.current = true;
         if (!tree.length && initialPayload.tree?.length) {
           setTree(initialPayload.tree);
-          skipTreeLoadRef.current = true;
+          skipTreeLoadRef.current = Boolean(initialPayload.treeComplete);
         }
         return;
       }
@@ -304,7 +306,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
       setTotal(initialPayload.total ?? 0);
       setListSort(initialPayload.listSort ?? CATALOG_SORT_DEFAULT);
       skipCarsFetchKeyRef.current = initialPayload.fetchKey ?? null;
-      skipTreeLoadRef.current = Boolean(initialPayload.tree?.length);
+      skipTreeLoadRef.current = Boolean(initialPayload.tree?.length && initialPayload.treeComplete);
       if (router.asPath && (initialPayload.cars?.length || initialPayload.tree?.length)) {
         setListingPageCache(CATALOG_LIST_CACHE_NS, router.asPath, {
           cars: initialPayload.cars ?? [],
@@ -320,7 +322,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const loadTree = useCallback(async () => {
     setTreeError(null);
     try {
-      if (listInitial?.tree?.length) {
+      // Урезанное SSR-дерево в общий кэш не кладём: его переиспользуют фильтры других страниц.
+      if (listInitial?.tree?.length && listInitial?.treeComplete) {
         setCatalogMetaCache("tree", listInitial.tree);
       }
       const nextTree = await fetchCatalogTreeCached(API_URL);
@@ -860,6 +863,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
     [brand, model, generation]
   );
 
+  const hubLinks = useMemo(() => catalogHubLinks({ tree, brand, model }), [tree, brand, model]);
+
   /** Похожие предложения для пустого состояния — та же марка, без остальных фильтров. */
   useEffect(() => {
     if (!isCatalogListRoute || carsLoading || carsError || cars.length > 0) {
@@ -890,6 +895,14 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const catalogBreadcrumbLd = useMemo(
     () => breadcrumbListJsonLd(breadcrumbItems),
     [breadcrumbItems]
+  );
+
+  const catalogItemListLd = useMemo(
+    () =>
+      itemListJsonLd(
+        cars.map((car) => ({ url: publicCarHref(car), name: car.title }))
+      ),
+    [cars]
   );
 
   const detailCarId = useMemo(() => {
@@ -943,6 +956,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
         <meta property="og:description" content={catalogSeo.desc} />
         <meta property="og:url" content={absoluteUrl(catalogCanon)} />
         {catalogBreadcrumbLd ? <script {...jsonLdScriptProps(catalogBreadcrumbLd)} /> : null}
+        {catalogItemListLd ? <script {...jsonLdScriptProps(catalogItemListLd)} /> : null}
       </Head>
       <SiteHeader className="home-only-mobile" tagline="Доставка автомобилей из Китая и Кореи">
         {!token ? (
@@ -1312,6 +1326,30 @@ export default function CatalogTreePage({ initialPayload = null }) {
                     </>
                     )}
                   </section>
+
+                  {isCatalogListRoute && hubLinks ? (
+                    <nav className="catalog-hub-links" aria-label={hubLinks.title}>
+                      <h2 className="catalog-hub-links__title">{hubLinks.title}</h2>
+                      <div className="catalog-hub-links__list">
+                        {hubLinks.items.map((item) => (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className="catalog-hub-links__item"
+                          >
+                            {item.name}
+                            <span className="catalog-hub-links__count">{item.count}</span>
+                          </Link>
+                        ))}
+                      </div>
+                      <p className="catalog-hub-links__cta">
+                        Не нашли подходящего авто? —{" "}
+                        <Link href="/request-quote" className="catalog-hub-links__cta-link">
+                          Опишите нам свой запрос
+                        </Link>
+                      </p>
+                    </nav>
+                  ) : null}
                 </div>
               </div>
             </>

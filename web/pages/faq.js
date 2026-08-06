@@ -90,13 +90,13 @@ export default function FaqPage({ initialItems = [] }) {
   return (
     <div className="layout">
       <Head>
-        <title>Частые вопросы — доставка авто из Китая и Кореи | avtovozom</title>
+        <title>Частые вопросы — доставка авто из Китая и Кореи | Автовозом</title>
         <meta
           name="description"
           content="Ответы на частые вопросы о доставке авто из Китая и Кореи: сроки, стоимость, растаможка, документы и оплата. avtovozom."
         />
         <link rel="canonical" href={absoluteUrl("/faq")} />
-        <meta property="og:title" content="Частые вопросы — avtovozom" />
+        <meta property="og:title" content="Частые вопросы — Автовозом" />
         <meta
           property="og:description"
           content="Сроки, стоимость, растаможка и документы при заказе автомобиля из Китая и Кореи."

@@ -48,13 +48,13 @@ export default function DeliveryFromChinaPage() {
   return (
     <div className="layout">
       <Head>
-        <title>Доставка автомобилей из Китая под ключ | avtovozom</title>
+        <title>Доставка автомобилей из Китая под ключ | Автовозом</title>
         <meta
           name="description"
           content="Доставка авто из Китая под ключ: подбор, выкуп, логистика и помощь с растаможкой. Узнайте ориентировочную цену в РФ — оставьте заявку."
         />
         <link rel="canonical" href={absoluteUrl("/dostavka-avto-iz-kitaya")} />
-        <meta property="og:title" content="Доставка автомобилей из Китая под ключ | avtovozom" />
+        <meta property="og:title" content="Доставка автомобилей из Китая под ключ | Автовозом" />
         <meta
           property="og:description"
           content="Доставка автомобилей из Китая под ключ: подбор, выкуп, доставка в РФ и помощь с растаможкой."
@@ -121,6 +121,9 @@ export default function DeliveryFromChinaPage() {
             </Link>
             <Link href="/catalog" className="btn btn-secondary">
               Смотреть каталог
+            </Link>
+            <Link href="/dostavka-avtovozom-iz-kitaya" className="btn btn-secondary">
+              Доставка автовозом
             </Link>
           </div>
         </div>

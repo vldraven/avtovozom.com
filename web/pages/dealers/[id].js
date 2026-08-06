@@ -58,7 +58,7 @@ export default function DealerPublicPage() {
     <div className="layout">
       {data && !error && dealerIdStr ? (
         <Head>
-          <title>{`${data.headline} — дилер | avtovozom`}</title>
+          <title>{`${data.headline} — дилер | Автовозом`}</title>
           <meta
             name="description"
             content={`Профиль дилера на avtovozom: ${data.listings_total} объявлений в каталоге.`}

@@ -32,6 +32,7 @@ import {
 } from "../lib/catalogMetaCache";
 import { absoluteUrl } from "../lib/siteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
+import { trimCatalogTreeForSsr } from "../lib/catalogTreeSsr";
 import {
   appendFiltersToSearchParams,
   catalogFiltersToQuery,
@@ -1191,10 +1192,11 @@ export default function Home({ initialData = null }) {
     if (initialData?.brands?.length) {
       setCatalogMetaCache("brands", initialData.brands);
     }
-    if (initialData?.tree?.length) {
+    // Урезанное SSR-дерево в общий кэш не кладём — фильтрам нужен полный справочник.
+    if (initialData?.tree?.length && initialData?.treeComplete) {
       setCatalogMetaCache("tree", initialData.tree);
     }
-    if (catalogTree.length > 0) return;
+    if (catalogTree.length > 0 && initialData?.treeComplete) return;
     let cancelled = false;
     (async () => {
       try {
@@ -1392,13 +1394,13 @@ export default function Home({ initialData = null }) {
   return (
     <>
       <Head>
-        <title>Доставка автомобилей из Китая и Кореи в Россию | avtovozom</title>
+        <title>Доставка автомобилей из Китая и Кореи в Россию | Автовозом</title>
         <meta
           name="description"
           content="Каталог авто из Китая и Кореи с расчётом под ключ до РФ. Подбор, выкуп, доставка — смотрите цены в ¥ и ориентир в рублях, оставьте заявку."
         />
         <link rel="canonical" href={absoluteUrl("/")} />
-        <meta property="og:title" content="Доставка автомобилей из Китая и Кореи в Россию | avtovozom" />
+        <meta property="og:title" content="Доставка автомобилей из Китая и Кореи в Россию | Автовозом" />
         <meta
           property="og:description"
           content="Каталог авто из Китая и Кореи с расчётом под ключ до РФ. Подбор, выкуп, доставка — смотрите цены и оставьте заявку."
@@ -2477,7 +2479,8 @@ export async function getServerSideProps({ query }) {
         total,
         cbr,
         cbrError,
-        tree,
+        tree: trimCatalogTreeForSsr(tree),
+        treeComplete: false,
         listSort: "date_desc",
       },
     },

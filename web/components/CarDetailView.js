@@ -731,7 +731,7 @@ export default function CarDetailView({
   return (
     <>
       <Head>
-        <title>{`${car.title} — купить из Китая | avtovozom`}</title>
+        <title>{`${car.title} — купить из Китая | Автовозом`}</title>
         <meta name="description" content={metaDesc} />
         <link rel="canonical" href={canonical} />
         <meta property="og:type" content="product" />
@@ -1067,7 +1067,7 @@ export default function CarDetailView({
                       </>
                     ) : (
                       <div className="detail-breakdown__summary">
-                        <span>Итого под ключ</span>
+                        <span>Итого в Москве</span>
                         <strong>{formatRubInt(car.price_breakdown.total_rub)} ₽</strong>
                       </div>
                     )}
