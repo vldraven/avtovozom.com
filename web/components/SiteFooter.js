@@ -30,7 +30,7 @@ export default function SiteFooter() {
           </div>
           <div className="site-footer__col">
             <p className="site-footer__col-title">Контакты</p>
-            <a href="mailto:hello@avtovozom.com">hello@avtovozom.com</a>
+            <a href="mailto:noreply@avtovozom.com">noreply@avtovozom.com</a>
             <a href={TELEGRAM_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
               Telegram
             </a>
