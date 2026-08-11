@@ -227,7 +227,7 @@ class Car(Base):
     is_popular: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Денормализованный ориентир «под ключ» (₽) + дата курса ЦБ, с которым посчитан.
     estimated_total_rub: Mapped[float | None] = mapped_column(Float, nullable=True)
-    estimate_cbr_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    estimate_cbr_date: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
