@@ -77,7 +77,7 @@ docker compose up --build
 
 ## Цены в рублях и таможня
 
-- Курс **CNY → RUB** — по данным [ЦБ РФ](https://www.cbr.ru/scripts/XML_daily.asp) (котировка CNY на дату).
+- Курс **CNY → RUB** на витрине — продажа в [ВТБ Онлайн](https://www.vtb.ru/personal/platezhi-i-perevody/obmen-valjuty/yuan/) (ступень до 5 млн); таможня — по [ЦБ РФ](https://www.cbr.ru/scripts/XML_daily.asp).
 - **Таможенные платежи** на сайте не считаются автоматически (без платных API): в карточке авто — сводка параметров и ссылка на бесплатный [калькулятор ТКС](https://www.tks.ru/auto/calc/) для самостоятельного расчёта.
 
 ## Важно

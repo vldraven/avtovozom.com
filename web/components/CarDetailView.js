@@ -305,9 +305,9 @@ export default function CarDetailView({
     const dateLabel = formatRuDate(guide.cbr_date) || guide.cbr_date;
     const rate = Number(guide.cbr_rub_per_cny);
     const rateLabel = Number.isFinite(rate)
-      ? rate.toLocaleString("ru-RU", { maximumFractionDigits: 2 })
+      ? rate.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : String(guide.cbr_rub_per_cny);
-    return `${cny} · курс на ${dateLabel}: 1 ¥ = ${rateLabel} ₽`;
+    return `${cny} · курс ВТБ Онлайн на ${dateLabel}: 1 ¥ = ${rateLabel} ₽`;
   }, [car]);
 
   async function loadMe(accessToken) {
@@ -975,7 +975,7 @@ export default function CarDetailView({
 
                 {car.rub_china == null ? (
                   <p className="detail-sidebar__note muted">
-                    Пересчёт в рубли по расчётному курсу сейчас недоступен. В карточке указана ориентировочная цена в
+                    Пересчёт в рубли по курсу ВТБ сейчас недоступен. В карточке указана ориентировочная цена в
                     юанях.
                   </p>
                 ) : null}
