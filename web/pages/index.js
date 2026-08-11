@@ -2271,10 +2271,11 @@ export default function Home({ initialData = null }) {
         <p className="muted catalog-cbr-line">
           {catalogCbr ? (
             <>
-              Расчётный курс на {catalogCbr.rate_date}: <b>1 ¥ = {catalogCbr.rub_per_cny.toFixed(2)} ₽</b>
+              Курс ВТБ Онлайн на {catalogCbr.rate_date}:{" "}
+              <b>1 ¥ = {catalogCbr.rub_per_cny.toFixed(2)} ₽</b>
             </>
           ) : (
-            <>Расчётный курс недоступен ({catalogCbrError || "ошибка"}).</>
+            <>Курс ВТБ недоступен ({catalogCbrError || "ошибка"}).</>
           )}
         </p>
       ) : null}
