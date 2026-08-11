@@ -124,6 +124,7 @@ from .car_estimates import (
     clear_stored_estimates,
     compute_estimated_total_rub as _compute_estimated_total_rub,
     ensure_active_estimates_fresh,
+    estimate_freshness_key,
     get_etc_customs_rubs as _get_etc_customs_rubs,
     invalidate_etc_estimate_caches as _invalidate_etc_estimate_caches,
     refresh_car_stored_estimate,
@@ -880,8 +881,12 @@ def startup() -> None:
         )
         conn.execute(
             text(
-                "ALTER TABLE cars ADD COLUMN IF NOT EXISTS estimate_cbr_date VARCHAR(32)"
+                "ALTER TABLE cars ADD COLUMN IF NOT EXISTS estimate_cbr_date VARCHAR(64)"
             )
+        )
+        # Было VARCHAR(32): ключ свежести теперь «дата|курс».
+        conn.execute(
+            text("ALTER TABLE cars ALTER COLUMN estimate_cbr_date TYPE VARCHAR(64)")
         )
         conn.execute(
             text(
@@ -2557,7 +2562,7 @@ def list_cars(
         )
         turnkey_stmt = stmt.where(
             Car.estimated_total_rub.isnot(None),
-            Car.estimate_cbr_date == (snap.rate_date or ""),
+            Car.estimate_cbr_date == estimate_freshness_key(snap),
         )
         if rub_from is not None:
             turnkey_stmt = turnkey_stmt.where(Car.estimated_total_rub >= float(rub_from))
@@ -2647,7 +2652,7 @@ def list_cars(
             if pb is not None:
                 est = float(pb.total_rub)
             elif snap is not None:
-                est = stored_estimate_if_fresh(car, snap.rate_date)
+                est = stored_estimate_if_fresh(car, estimate_freshness_key(snap))
                 if est is None:
                     try:
                         est = refresh_car_stored_estimate(

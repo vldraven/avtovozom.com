@@ -36,7 +36,21 @@ _TARIFFS_CFG_CACHE: dict[int, dict[str, Any]] = {}
 _TARIFFS_CFG_LOCK = Lock()
 
 _estimates_ready_lock = Lock()
-_estimates_ready_for_cbr_date: str | None = None
+_estimates_ready_for_key: str | None = None
+
+
+def estimate_freshness_key(snap: CbrSnapshot | None) -> str:
+    """Ключ свежести оценки: дата + курс (курс ВТБ меняется внутри дня)."""
+    if snap is None:
+        return ""
+    date_part = (snap.rate_date or "").strip()
+    try:
+        rate_part = f"{float(snap.rub_per_cny):.4f}"
+    except (TypeError, ValueError):
+        rate_part = ""
+    if not date_part and not rate_part:
+        return ""
+    return f"{date_part}|{rate_part}"
 
 
 def _parse_car_registration_date(s: str | None) -> date | None:
@@ -236,14 +250,14 @@ def compute_estimated_total_rub(
     return round(float(total), 2)
 
 
-def stored_estimate_is_fresh(car: Car, cbr_date: str | None) -> bool:
+def stored_estimate_is_fresh(car: Car, freshness_key: str | None) -> bool:
     if car.estimated_total_rub is None:
         return False
-    return (car.estimate_cbr_date or "") == (cbr_date or "")
+    return (car.estimate_cbr_date or "") == (freshness_key or "")
 
 
-def stored_estimate_if_fresh(car: Car, cbr_date: str | None) -> float | None:
-    if stored_estimate_is_fresh(car, cbr_date):
+def stored_estimate_if_fresh(car: Car, freshness_key: str | None) -> float | None:
+    if stored_estimate_is_fresh(car, freshness_key):
         try:
             return float(car.estimated_total_rub)
         except (TypeError, ValueError):
@@ -251,9 +265,9 @@ def stored_estimate_if_fresh(car: Car, cbr_date: str | None) -> float | None:
     return None
 
 
-def write_car_estimate(car: Car, est: float | None, cbr_date: str | None) -> None:
+def write_car_estimate(car: Car, est: float | None, freshness_key: str | None) -> None:
     car.estimated_total_rub = est
-    car.estimate_cbr_date = (cbr_date or "") or None
+    car.estimate_cbr_date = (freshness_key or "") or None
 
 
 def refresh_car_stored_estimate(
@@ -274,7 +288,7 @@ def refresh_car_stored_estimate(
     if extras is None:
         extras = parse_additional_expenses_json(settings_row.additional_expenses_json)
     est = compute_estimated_total_rub(car, settings_row, snap, extras=extras)
-    write_car_estimate(car, est, snap.rate_date)
+    write_car_estimate(car, est, estimate_freshness_key(snap))
     if commit:
         db.commit()
     return est
@@ -282,7 +296,7 @@ def refresh_car_stored_estimate(
 
 def clear_stored_estimates(db: Session) -> None:
     """Сброс денормализованных оценок (после смены тарифов в админке)."""
-    global _estimates_ready_for_cbr_date
+    global _estimates_ready_for_key
     db.execute(
         text(
             "UPDATE cars SET estimated_total_rub = NULL, estimate_cbr_date = NULL "
@@ -291,7 +305,7 @@ def clear_stored_estimates(db: Session) -> None:
     )
     db.commit()
     with _estimates_ready_lock:
-        _estimates_ready_for_cbr_date = None
+        _estimates_ready_for_key = None
     invalidate_etc_estimate_caches()
 
 
@@ -302,13 +316,13 @@ def ensure_active_estimates_fresh(
     settings_row: CustomsCalcSettings,
     extras: dict[str, Any] | None = None,
 ) -> None:
-    """Досчитать/обновить estimated_total_rub у активных лотов под текущий rate_date."""
-    global _estimates_ready_for_cbr_date
-    rate_date = snap.rate_date or ""
+    """Досчитать/обновить estimated_total_rub у активных лотов под текущий курс."""
+    global _estimates_ready_for_key
+    freshness_key = estimate_freshness_key(snap)
     if extras is None:
         extras = parse_additional_expenses_json(settings_row.additional_expenses_json)
     with _estimates_ready_lock:
-        if _estimates_ready_for_cbr_date == rate_date:
+        if _estimates_ready_for_key == freshness_key:
             return
         stale = (
             db.execute(
@@ -317,7 +331,7 @@ def ensure_active_estimates_fresh(
                     or_(
                         Car.estimated_total_rub.is_(None),
                         Car.estimate_cbr_date.is_(None),
-                        Car.estimate_cbr_date != rate_date,
+                        Car.estimate_cbr_date != freshness_key,
                     ),
                 )
             )
@@ -331,8 +345,8 @@ def ensure_active_estimates_fresh(
                 )
             except Exception:
                 est = None
-            write_car_estimate(car, est, rate_date)
+            write_car_estimate(car, est, freshness_key)
             if (i + 1) % 100 == 0:
                 db.commit()
         db.commit()
-        _estimates_ready_for_cbr_date = rate_date
+        _estimates_ready_for_key = freshness_key
