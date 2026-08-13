@@ -273,16 +273,78 @@ def car_source_for_marketplace(marketplace: str) -> str:
     return "che168"
 
 
+# Autohome/che168 CDN: …/120x90_q87_….jpg, …/640x480_…, …/1024x0_…
+_CDN_SIZE_TOKEN_RE = re.compile(r"(?i)(?<![A-Za-z0-9])(\d{2,4})x(\d{1,4})(?![A-Za-z0-9])")
+# Крупный кадр галереи (0 = пропорциональная высота на стороне CDN).
+_PREFERRED_CDN_SIZE = "1024x0"
+
+
+def _normalize_photo_url(url: str) -> str:
+    u = (url or "").strip()
+    if u.startswith("//"):
+        u = "https:" + u
+    return u
+
+
+def vehicle_photo_size_score(url: str) -> int:
+    """Оценка разрешения по токену WxH в пути; 1024x0 важнее 720x540."""
+    path = urlparse(_normalize_photo_url(url)).path
+    m = _CDN_SIZE_TOKEN_RE.search(path)
+    if not m:
+        return 0
+    w = int(m.group(1))
+    h = int(m.group(2))
+    if h == 0:
+        return w * 10_000
+    return w * h
+
+
+def upgrade_vehicle_photo_url(url: str) -> str:
+    """Поднять размер CDN-кадра Autohome/che168 до крупного варианта галереи."""
+    u = _normalize_photo_url(url)
+    if not u or not is_likely_vehicle_photo_url(u):
+        return u
+    parsed = urlparse(u)
+    if not _CDN_SIZE_TOKEN_RE.search(parsed.path):
+        return u
+    new_path = _CDN_SIZE_TOKEN_RE.sub(_PREFERRED_CDN_SIZE, parsed.path, count=1)
+    if new_path == parsed.path:
+        return u
+    return parsed._replace(path=new_path).geturl()
+
+
+def vehicle_photo_identity_key(url: str) -> str:
+    """Ключ кадра без размера — чтобы схлопнуть 120x90 и 720x540 одной фотографии."""
+    u = _normalize_photo_url(url)
+    parsed = urlparse(u)
+    path = _CDN_SIZE_TOKEN_RE.sub("{w}x{h}", parsed.path.lower())
+    return f"{parsed.netloc.lower()}{path}"
+
+
 def filter_vehicle_photo_urls(urls: list[str] | None) -> list[str]:
+    """
+    Нормализует URL фото: https, апгрейд CDN-размера, дедуп по кадру
+    (оставляем более крупный вариант). Лимит — 16 до скачивания.
+    """
     if not urls:
         return []
-    out: list[str] = []
-    for x in urls:
-        if x and is_likely_vehicle_photo_url(x) and x not in out:
-            out.append(x)
-        if len(out) >= 16:
-            break
-    return out
+    best_by_key: dict[str, str] = {}
+    order: list[str] = []
+    for raw in urls:
+        x = _normalize_photo_url(str(raw or ""))
+        if not x or not is_likely_vehicle_photo_url(x):
+            continue
+        upgraded = upgrade_vehicle_photo_url(x)
+        key = vehicle_photo_identity_key(upgraded)
+        prev = best_by_key.get(key)
+        if prev is None:
+            if len(order) >= 16:
+                continue
+            best_by_key[key] = upgraded
+            order.append(key)
+        elif vehicle_photo_size_score(upgraded) > vehicle_photo_size_score(prev):
+            best_by_key[key] = upgraded
+    return [best_by_key[k] for k in order]
 
 
 @dataclass
