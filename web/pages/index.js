@@ -1589,11 +1589,13 @@ export default function Home({ initialData = null }) {
             </div>
 
             <section className="home-m-hero" aria-label="Витрина">
-              <p className="home-m-hero__eyebrow">Авто из Китая</p>
-              <h1 className="home-m-hero__title">Весь путь автомобиля — под вашим контролем</h1>
+              <p className="home-m-hero__eyebrow">Автовозом</p>
+              <h1 className="home-m-hero__title">
+                Авто из Китая напрямую от дилеров — легко с Автовозом
+              </h1>
               <p className="home-m-hero__subtitle">
-                Проверенные китайские дилеры, сопровождение сделки и таможенное оформление в России.
-                Весь процесс — в личном кабинете.
+                Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном
+                кабинете.
               </p>
               <div className="home-m-hero__cta-row">
                 <Link href="/request-quote" className="btn btn-primary home-m-hero__cta">
@@ -1754,11 +1756,13 @@ export default function Home({ initialData = null }) {
           {/* ===================== DESKTOP showcase ===================== */}
           <div className="home-d home-only-desktop">
             <section className="home-d-hero" aria-label="Витрина">
-              <p className="home-d-hero__eyebrow">Авто из Китая</p>
-              <h1 className="home-d-hero__title">Весь путь автомобиля — под вашим контролем</h1>
+              <p className="home-d-hero__eyebrow">Автовозом</p>
+              <h1 className="home-d-hero__title">
+                Авто из Китая напрямую от дилеров — легко с Автовозом
+              </h1>
               <p className="home-d-hero__subtitle">
-                Проверенные китайские дилеры, сопровождение сделки и таможенное оформление в России.
-                Весь процесс — в личном кабинете.
+                Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном
+                кабинете.
               </p>
               <form className="home-d-filters" onSubmit={onHeroFiltersSubmit}>
                 <div className="home-d-filters__field">
