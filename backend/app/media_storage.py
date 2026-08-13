@@ -8,7 +8,11 @@ from pathlib import Path
 
 import httpx
 
-from .che168_parser import http_referer_for_request_url
+from .che168_parser import (
+    filter_vehicle_photo_urls,
+    http_referer_for_request_url,
+    upgrade_vehicle_photo_url,
+)
 
 _HEADERS_BASE = {
     "User-Agent": (
@@ -39,6 +43,10 @@ def _looks_like_image(data: bytes) -> bool:
     return False
 
 
+# Отсекаем CDN-миниатюры вроде 120×90 (~3 КБ), если апгрейд URL не сработал.
+_MIN_CAR_PHOTO_BYTES = 8_000
+
+
 def download_car_photos(car_id: int, urls: list[str], max_count: int = 12) -> list[str]:
     """
     Сохраняет файлы в MEDIA_ROOT/cars/{car_id}/ и возвращает относительные URL (/media/...).
@@ -46,12 +54,16 @@ def download_car_photos(car_id: int, urls: list[str], max_count: int = 12) -> li
     """
     if not urls:
         return []
+    # Ещё раз нормализуем (на случай вызова в обход filter_vehicle_photo_urls).
+    normalized = filter_vehicle_photo_urls(list(urls)) or [
+        upgrade_vehicle_photo_url(u) for u in urls if u
+    ]
     root = media_root()
     car_dir = root / "cars" / str(car_id)
     car_dir.mkdir(parents=True, exist_ok=True)
     saved: list[str] = []
     with httpx.Client(timeout=45.0, follow_redirects=True) as client:
-        for i, url in enumerate(urls[:max_count]):
+        for i, url in enumerate(normalized[:max_count]):
             if not url or not url.startswith("http"):
                 continue
             try:
@@ -64,13 +76,15 @@ def download_car_photos(car_id: int, urls: list[str], max_count: int = 12) -> li
                 data = r.content
                 if not _looks_like_image(data):
                     continue
+                if len(data) < _MIN_CAR_PHOTO_BYTES:
+                    continue
                 if data[:8] == b"\x89PNG\r\n\x1a\n":
                     ext = ".png"
                 elif len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
                     ext = ".webp"
                 else:
                     ext = ".jpg"
-                fname = f"{i}{ext}"
+                fname = f"{len(saved)}{ext}"
                 path = car_dir / fname
                 path.write_bytes(data)
                 saved.append(f"/media/cars/{car_id}/{fname}")
@@ -78,7 +92,7 @@ def download_car_photos(car_id: int, urls: list[str], max_count: int = 12) -> li
                 continue
     if saved:
         return saved
-    return [u for u in urls[:max_count] if u.startswith("http")]
+    return [u for u in normalized[:max_count] if u.startswith("http")]
 
 
 def delete_car_photo_files(car_id: int, storage_urls: list[str]) -> None:

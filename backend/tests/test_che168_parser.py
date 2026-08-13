@@ -11,8 +11,11 @@ from app.che168_parser import (
     _parse_is_complete,
     _parse_quality_score,
     _playwright_fetch_urls,
+    filter_vehicle_photo_urls,
     normalize_import_detail_url,
     source_listing_id_from_url,
+    upgrade_vehicle_photo_url,
+    vehicle_photo_identity_key,
 )
 
 MOBILE_SAMPLE = (
@@ -201,6 +204,68 @@ class ListingCopyRuTests(unittest.TestCase):
             pick_listing_title("BMW", "3 Series", 2022, "3 2022 320Li M"),
             "BMW 3 Series 2022 320Li M",
         )
+
+
+class VehiclePhotoUrlNormalizeTests(unittest.TestCase):
+    THUMB = (
+        "https://2sc2.autoimg.cn/escimg/g26/M00/sample/"
+        "120x90_0_q87_c42_wautohomecar__abc.jpg"
+    )
+    GALLERY = (
+        "https://2sc2.autoimg.cn/escimg/g26/M00/sample/"
+        "720x540_0_q87_c42_wautohomecar__abc.jpg"
+    )
+    OTHER = (
+        "https://2sc2.autoimg.cn/escimg/g26/M00/other/"
+        "640x480_0_q87_c42_wautohomecar__def.jpg"
+    )
+
+    def test_upgrade_rewrites_size_token(self):
+        out = upgrade_vehicle_photo_url(self.THUMB)
+        self.assertIn("/1024x0_", out)
+        self.assertNotIn("/120x90_", out)
+
+    def test_identity_ignores_size(self):
+        self.assertEqual(
+            vehicle_photo_identity_key(self.THUMB),
+            vehicle_photo_identity_key(self.GALLERY),
+        )
+
+    def test_filter_dedupes_and_keeps_upgraded(self):
+        # Сначала мелкие из API, потом нормальные из HTML — в хвост не должны
+        # попасть миниатюры-дубликаты.
+        urls = [
+            self.GALLERY.replace("720x540", "720x540"),
+            self.OTHER,
+            self.THUMB,  # тот же кадр, что GALLERY
+            "//2sc2.autoimg.cn/escimg/g26/M00/other/120x90_0_q87_c42_wautohomecar__def.jpg",
+        ]
+        # Добавим ещё «уникальных» кадров, чтобы проверить лимит хвоста
+        more = [
+            f"https://2sc2.autoimg.cn/escimg/g26/M00/p{i}/720x540_q87_{i}.jpg"
+            for i in range(10)
+        ]
+        out = filter_vehicle_photo_urls([self.GALLERY, self.OTHER, self.THUMB] + more)
+        self.assertTrue(all("1024x0" in u for u in out))
+        self.assertTrue(all("120x90" not in u for u in out))
+        # GALLERY и THUMB — один кадр
+        keys = [vehicle_photo_identity_key(u) for u in out]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertLessEqual(len(out), 16)
+
+    def test_merge_style_last_thumbs_collapse(self):
+        """Имитация бага: 9 крупных + 3 превью тех же кадров → 9 URL."""
+        big = [
+            f"https://2sc2.autoimg.cn/escimg/g26/M00/c{i}/720x540_q87_{i}.jpg"
+            for i in range(9)
+        ]
+        thumbs = [
+            f"https://2sc2.autoimg.cn/escimg/g26/M00/c{i}/120x90_q87_{i}.jpg"
+            for i in range(3)
+        ]
+        out = filter_vehicle_photo_urls(big + thumbs)
+        self.assertEqual(len(out), 9)
+        self.assertTrue(all("1024x0" in u for u in out))
 
 
 if __name__ == "__main__":
