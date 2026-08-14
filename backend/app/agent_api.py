@@ -503,8 +503,19 @@ def _coerce_positive_id(value: Any) -> int | None:
     return n if n > 0 else None
 
 
+def _is_junk_series_token(raw: Any) -> bool:
+    """JS String(object) → '[object Object]'; старая админка так затирала ссылки."""
+    if isinstance(raw, dict):
+        blob = str(raw.get("url") or raw.get("series_url") or "")
+    else:
+        blob = str(raw or "")
+    return "[object object]" in blob.lower()
+
+
 def parse_series_url_item(raw: Any) -> tuple[str, int | None, int | None]:
     """Элемент criteria.series_urls: строка или {url, brand_id, model_id}."""
+    if _is_junk_series_token(raw):
+        return "", None, None
     if isinstance(raw, dict):
         url = normalize_series_url(str(raw.get("url") or raw.get("series_url") or ""))
         return url, _coerce_positive_id(raw.get("brand_id")), _coerce_positive_id(raw.get("model_id"))
@@ -521,7 +532,11 @@ def series_url_entries_from_payload(raw_urls: Any) -> list[dict[str, Any]]:
         raise ValueError("series_urls must be list or text")
     seen: set[str] = set()
     out: list[dict[str, Any]] = []
+    junk = 0
     for item in raw_list:
+        if _is_junk_series_token(item):
+            junk += 1
+            continue
         url, brand_id, model_id = parse_series_url_item(item)
         if not url or url in seen:
             continue
@@ -532,6 +547,10 @@ def series_url_entries_from_payload(raw_urls: Any) -> list[dict[str, Any]]:
         if model_id:
             entry["model_id"] = model_id
         out.append(entry)
+    if junk and not out:
+        raise ValueError(
+            "series_urls contains [object Object]; refuse to overwrite saved brand/model links"
+        )
     return out
 
 
