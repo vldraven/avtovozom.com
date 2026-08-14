@@ -245,6 +245,7 @@ from .n8n_bot_integration import (
     verify_n8n_bot_api_secret,
 )
 from .agent_api import router as agent_api_router
+from .social_agent import router as social_agent_router
 from .n8n_client import (
     guest_chat_ai_webhook_configured,
     n8n_webhook_post,
@@ -302,6 +303,7 @@ except Exception:  # pragma: no cover - dependency may be absent in local dev un
 
 app = FastAPI(title="Avtovozom API", version="0.1.0")
 app.include_router(agent_api_router)
+app.include_router(social_agent_router)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
@@ -4331,6 +4333,9 @@ def admin_car_telegram_publish(
             detail=str(data.get("error") or data.get("detail") or "Отказ в n8n")[:600],
             n8n=n8n_dict,
         )
+    from .social_publish import upsert_telegram_publication
+
+    upsert_telegram_publication(db, car.id, status="published", text=payload.text)
     return TelegramPublishOut(ok=True, detail=None, n8n=n8n_dict)
 
 

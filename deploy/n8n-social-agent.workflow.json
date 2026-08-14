@@ -1,0 +1,925 @@
+{
+  "name": "Avtovozom — Social agent (Telegram)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Social: очередь → 1 лот → апрув\n\nCron 08/09/10/13/17/18/19 MSK: generate_text (как кнопка в админке) + все фото.\n\nОператор: ✅ publish, ❌ skip это объявление на сегодня, 🔄 другое авто (release + новый лот), текст = generate_text(revision) или готовый текст в send_draft.\n\nОтдельный Telegram-бот. Ручная кнопка в админке не меняется.",
+        "height": 320,
+        "width": 460
+      },
+      "id": "soc-sticky-00",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8,9,10,13,17,18,19 * * *"
+            }
+          ]
+        }
+      },
+      "id": "soc-cron-01",
+      "name": "Cron MSK",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "id": "soc-tg-trigger-01",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        320
+      ],
+      "webhookId": "avtovozom-social-agent",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_SOCIAL_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Social Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "apiBaseUrl",
+              "value": "https://api.avtovozom.com",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "agentApiSecret",
+              "value": "ЗАМЕНИТЕ_на_AGENT_API_SECRET",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "operatorTelegramUserId",
+              "value": "ВАШ_TELEGRAM_USER_ID",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "operatorChatId",
+              "value": "ВАШ_TELEGRAM_CHAT_ID",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "telegramBotToken",
+              "value": "REPLACE_WITH_SOCIAL_BOT_TOKEN",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "webOrigin",
+              "value": "https://avtovozom.com",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "llmModel",
+              "value": "gpt-5.5",
+              "type": "string"
+            },
+            {
+              "id": "c8",
+              "name": "picksPerRun",
+              "value": "1",
+              "type": "string"
+            },
+            {
+              "id": "c9",
+              "name": "systemPrompt",
+              "value": "Ты social-сотрудник avtovozom.com. Готовишь ОДИН черновик поста в Telegram-канал. Отвечай по-русски, кратко.\n\nРоль LLM:\n• из ГОТОВОЙ очереди выбрать 1 самый интересный лот без публикации в Telegram\n• текст поста НЕ пиши сам — tool generate_text (тот же ИИ, что кнопка «Сгенерировать» в админке), если оператор не прислал готовый новый текст\n• send_draft: все фото лота (до 10) + текст\n• после ответа оператора умеешь: опубликовать, отклонить, ПОМЕНЯТЬ АВТО, ПОМЕНЯТЬ/ПОПРАВИТЬ ТЕКСТ\n\nОчередь уже собрал воркер (cron / /run) или tool get_queue. Не выдумывай автомобили.\n\nДоступные инструменты:\n• get_queue — свежие лоты (можно exclude_ids). published/pending_review исключены; skipped только за сегодня (МСК)\n• get_pending — черновики на апруве\n• get_car — факты и фото\n• generate_text — ИИ-черновик; revision — указания, как переписать текст\n• send_draft — альбом оператору, pending_review. Можно передать готовый text от оператора\n• publish — в КАНАЛ только после явного ✅ / «опубликовать» / pub:ID\n• skip — отклонить ЭТО объявление только на сегодня (МСК); завтра можно предложить снова\n• release — снять черновик и ВЕРНУТЬ лот в очередь (не skip). Для «другое авто»\n• get_memory / save_memory — уроки (agent_key=social)\n\nCron или /run (таблица уже в user message):\n1) get_memory\n2) Если очередь пуста — «нет свежих лотов без публикации», СТОП\n3) Выбери 1 лот. Интересность: свежесть, is_popular, цена под ключ, мощность, число фото.\n4) generate_text(car_id) → send_draft(car_id, text). НЕ вызывай publish.\n5) Краткий отчёт: какой лот ушёл на апрув.\n\nЧат оператора (исполняй сразу, не спрашивай лишнего):\n• ✅ / опубликовать / pub:ID → publish с last_draft_text\n• ❌ / отклонить / skip:ID → skip этот car_id только на сегодня (завтра снова можно)\n• Поменять авто / другое авто / swap:ID / «возьми другую машину» / «возьми BMW X5»:\n  1) release(текущий car_id) — НЕ skip\n  2) get_queue(exclude_ids=текущий)\n  3) выбери другой лот (если оператор назвал марку/модель/id — из очереди под это; иначе следующий интересный)\n  4) generate_text → send_draft\n• Поменять/поправить текст («короче», «без эмодзи», «добавь про расход», «перепиши»):\n  generate_text(car_id, revision=указания оператора) → send_draft с новым текстом. Тот же car_id.\n• Если оператор прислал ГОТОВЫЙ новый текст поста (несколько абзацев) — send_draft(car_id, text) без generate_text.\n• /status → get_pending\n• /run → как cron\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "soc-set-config",
+      "name": "Настройки workflow",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        432,
+        400
+      ],
+      "notesInFlow": true,
+      "notes": "Отдельный бот. agentApiSecret = AGENT_API_SECRET. telegramBotToken — тот же, что credential Trigger."
+    },
+    {
+      "parameters": {
+        "jsCode": "let source = 'cron';\ntry {\n  const tg = $('Telegram Trigger').first().json;\n  if (tg && (tg.message || tg.callback_query)) source = 'telegram';\n} catch (e) {\n  source = 'cron';\n}\nconst settings = items[0].json;\nreturn [{ json: { ...settings, __source: source } }];"
+      },
+      "id": "soc-router",
+      "name": "Источник запуска",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-tg",
+              "leftValue": "={{ $json.__source }}",
+              "rightValue": "telegram",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "soc-if-source",
+      "name": "Из Telegram?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        752,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst webOrigin = String(settings.webOrigin || 'https://avtovozom.com').replace(/\\/$/, '');\nconst allowId = String(settings.operatorTelegramUserId || '').trim();\nconst token = String(settings.telegramBotToken || '').trim();\n\nconst raw = $('Telegram Trigger').first().json;\nconst cb = raw.callback_query || null;\nconst msg = (cb && cb.message) || raw.message || {};\nconst from = (cb && cb.from) || msg.from || {};\nconst chat = msg.chat || {};\nconst chatId = String(chat.id || '');\nconst userId = String(from.id || '');\nconst isPrivate = chat.type === 'private';\nconst allowed = isPrivate && (!allowId || allowId.includes('ВАШ') || userId === allowId);\n\nlet userText = String(msg.text || msg.caption || '').trim();\nif (cb && cb.data) {\n  const data = String(cb.data || '');\n  if (data.startsWith('pub:')) userText = 'Опубликовать car_id=' + data.slice(4);\n  else if (data.startsWith('skip:')) userText = 'Отклонить car_id=' + data.slice(5);\n  else if (data.startsWith('swap:')) userText = 'Поменять авто. Текущий черновик car_id=' + data.slice(5) + '. Сделай release этого id (вернуть в очередь, НЕ skip). Выбери ДРУГОЙ лот: get_queue(exclude_ids=' + data.slice(5) + '), generate_text, send_draft.';\n  else userText = data;\n  if (token && !token.includes('REPLACE')) {\n    try {\n      await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://api.telegram.org/bot' + token + '/answerCallbackQuery',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ callback_query_id: cb.id }),\n        json: false,\n        ignoreHttpStatusErrors: true,\n      });\n    } catch (e) {}\n  }\n}\nconst reply = msg.reply_to_message;\nif (reply) {\n  const rt = String(reply.text || reply.caption || '').trim();\n  if (rt) userText = 'Ответ на черновик:\\n' + rt.slice(0, 800) + '\\n\\nСообщение оператора:\\n' + userText;\n}\n\nreturn [{\n  json: {\n    chatId,\n    userId,\n    username: from.username || '',\n    firstName: from.first_name || '',\n    userText,\n    llmModel: settings.llmModel || 'gpt-5.5',\n    systemPrompt: String(settings.systemPrompt || '') + '\\n\\nСайт: ' + webOrigin,\n    allowed,\n    fromCron: false,\n  }\n}];"
+      },
+      "id": "soc-ctx-code",
+      "name": "Контекст чата",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cc1",
+              "name": "chatId",
+              "value": "={{ $('Настройки workflow').first().json.operatorChatId }}",
+              "type": "string"
+            },
+            {
+              "id": "cc2",
+              "name": "userId",
+              "value": "={{ $('Настройки workflow').first().json.operatorTelegramUserId }}",
+              "type": "string"
+            },
+            {
+              "id": "cc3",
+              "name": "userText",
+              "value": "/run Автозапуск соцпостов. Очередь уже загрузил воркер. Выбери 1 лот, generate_text, send_draft, не публикуй без апрува.",
+              "type": "string"
+            },
+            {
+              "id": "cc4",
+              "name": "llmModel",
+              "value": "={{ $('Настройки workflow').first().json.llmModel || 'gpt-5.5' }}",
+              "type": "string"
+            },
+            {
+              "id": "cc5",
+              "name": "systemPrompt",
+              "value": "={{ $('Настройки workflow').first().json.systemPrompt }}",
+              "type": "string"
+            },
+            {
+              "id": "cc6",
+              "name": "allowed",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "cc7",
+              "name": "fromCron",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "soc-cron-ctx",
+      "name": "Контекст cron",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "allowed",
+              "leftValue": "={{ $json.allowed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "soc-if-allowed",
+      "name": "Только оператор",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-run",
+              "leftValue": "={{ String($json.userText || '') }}",
+              "rightValue": "/run",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "soc-if-run",
+      "name": "Это /run?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst ctx = items[0].json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst picks = Math.min(5, Math.max(1, Number(settings.picksPerRun || 1) || 1));\n\nasync function agentRequest(method, path) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', message: 'agentApiSecret не настроен', count: 0, items: [] };\n  }\n  if (!base) return { error: 'config', message: 'apiBaseUrl пуст', count: 0, items: [] };\n  try {\n    const resp = await this.helpers.httpRequest({\n      method,\n      url: base + path,\n      headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n      json: false,\n      returnFullResponse: true,\n      ignoreHttpStatusErrors: true,\n      timeout: 30000,\n    });\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, message: text.slice(0, 400), count: 0, items: [] };\n    }\n    try { return JSON.parse(text); } catch { return { error: 'parse', message: text.slice(0, 400), count: 0, items: [] }; }\n  } catch (error) {\n    return { error: 'http', message: String(error.message || error).slice(0, 400), count: 0, items: [] };\n  }\n}\n\nfunction toTsv(items) {\n  const header = 'id\\tbrand\\tmodel\\tmodel_id\\tyear\\tmileage_km\\thorsepower\\testimated_total_rub\\tis_popular\\tphoto_count\\turl';\n  const lines = (items || []).map((r) => [\n    r.id ?? '',\n    r.brand ?? '',\n    r.model ?? '',\n    r.model_id ?? '',\n    r.year ?? '',\n    r.mileage_km ?? '',\n    r.horsepower ?? '',\n    r.estimated_total_rub ?? '',\n    r.is_popular ? '1' : '0',\n    r.photo_count ?? '',\n    r.canonical_web_url ?? '',\n  ].join('\\t'));\n  return [header, ...lines].join('\\n');\n}\n\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/social/queue?limit=40');\nconst itemsQueue = Array.isArray(data.items) ? data.items : [];\nconst models = [];\nconst seen = new Set();\nfor (const row of itemsQueue) {\n  const key = String(row.model_id || row.brand + '|' + row.model);\n  if (seen.has(key)) continue;\n  seen.add(key);\n  models.push(`${row.brand} ${row.model} (model_id=${row.model_id}, свежий лот id=${row.id})`);\n}\n\nconst userText = [\n  String(ctx.userText || '').trim(),\n  '',\n  'Воркер уже загрузил очередь каталога. НЕ выдумывай авто. Выбери ' + picks + ' лот, вызови generate_text, затем send_draft со всеми фото. Не вызывай publish.',\n  '',\n  data.error ? ('Ошибка очереди: ' + (data.message || data.error)) : ('В очереди лотов: ' + (data.count ?? itemsQueue.length)),\n  models.length ? ('Уникальные модели:\\n- ' + models.join('\\n- ')) : 'Уникальных моделей нет.',\n  '',\n  'Таблица:',\n  toTsv(itemsQueue) || '(пусто)',\n].join('\\n');\n\nreturn [{ json: { ...ctx, userText, queueCount: data.count ?? itemsQueue.length } }];"
+      },
+      "id": "soc-worker-queue",
+      "name": "Воркер: очередь",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        480
+      ],
+      "notesInFlow": true,
+      "notes": "GET /agent/v1/social/queue. ИИ выбирает 1 лот, generate_text, send_draft."
+    },
+    {
+      "parameters": {
+        "model": "={{ $('Настройки workflow').first().json.llmModel || 'gpt-5.5' }}",
+        "options": {}
+      },
+      "id": "soc-openai",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        736,
+        1056
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI"
+        }
+      },
+      "notes": "Модель из Настройки (llmModel)"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Контекст cron').isExecuted ? $('Контекст cron').item.json.chatId : $('Контекст чата').item.json.chatId }}"
+      },
+      "id": "soc-memory",
+      "name": "Память диалога",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        992,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.userText }}",
+        "options": {
+          "systemMessage": "={{ $json.systemPrompt }}"
+        }
+      },
+      "id": "soc-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        2320,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String(items[0].json.output ?? '').trim();\nfunction dedupeReply(text) {\n  if (!text) return text;\n  const half = Math.floor(text.length / 2);\n  if (text.length > 30) {\n    const left = text.slice(0, half).trim();\n    const right = text.slice(half).trim();\n    if (left === right) return left;\n  }\n  const parts = text.split(/\\n+/).map((p) => p.trim()).filter(Boolean);\n  const unique = [];\n  for (const p of parts) {\n    if (unique[unique.length - 1] !== p) unique.push(p);\n  }\n  return unique.join('\\n');\n}\nfunction escapeTelegramHtml(text) {\n  return String(text || '')\n    .replace(/\\u0000/g, '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .trim();\n}\nreturn [{ json: { output: escapeTelegramHtml(dedupeReply(raw)) } }];"
+      },
+      "id": "soc-dedupe",
+      "name": "Очистка ответа",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2608,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Контекст cron').isExecuted ? $('Контекст cron').item.json.chatId : $('Контекст чата').item.json.chatId }}",
+        "text": "={{ String($json.output || '').slice(0, 4000) }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "soc-tg-reply",
+      "name": "Telegram: ответ",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2800,
+        336
+      ],
+      "webhookId": "soc-tg-reply",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_SOCIAL_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Social Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Контекст чата').item.json.chatId }}",
+        "text": "Этот бот только для оператора avtovozom (соцсети).",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "soc-tg-deny",
+      "name": "Telegram: отказ",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1360,
+        464
+      ],
+      "webhookId": "soc-tg-deny",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_SOCIAL_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Social Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "get_queue",
+        "description": "Свежие лоты каталога без публикации в Telegram. exclude_ids — не брать указанные машины.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst limit = Math.min(80, Math.max(1, Number(input.limit || 40) || 40));\nlet path = '/agent/v1/social/queue?limit=' + limit;\nconst ex = Array.isArray(input.exclude_ids) ? input.exclude_ids : (input.exclude_ids != null ? [input.exclude_ids] : []);\nconst ids = ex.map(Number).filter((n) => n > 0);\nif (ids.length) path += '&exclude_ids=' + ids.join(',');\nconst data = await agentRequest.call(this, 'GET', path);\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"limit\": {\"type\": \"number\", \"description\": \"Сколько лотов (по умолчанию 40)\"}, \"exclude_ids\": {\"type\": \"array\", \"items\": {\"type\": \"number\"}, \"description\": \"Не предлагать эти car_id (после смены авто)\"}}}"
+      },
+      "id": "soc-tool-queue",
+      "name": "get_queue",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1424,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "get_pending",
+        "description": "Черновики pending_review, ждущие апрува. Вызывай перед publish/skip, если оператор не указал car_id.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst limit = Math.min(40, Math.max(1, Number(input.limit || 20) || 20));\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/social/pending?limit=' + limit);\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"limit\": {\"type\": \"number\"}}}"
+      },
+      "id": "soc-tool-pending",
+      "name": "get_pending",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1552,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "get_car",
+        "description": "Каркас лота: факты, skeleton_text, last_draft_text, все фото (id + absolute_url, до 10).",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst carId = Number(input.car_id);\nif (!Number.isFinite(carId) || carId <= 0) return JSON.stringify({ error: 'Нужен car_id' });\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/social/cars/' + carId);\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"car_id\": {\"type\": \"number\"}}, \"required\": [\"car_id\"]}"
+      },
+      "id": "soc-tool-car",
+      "name": "get_car",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "generate_text",
+        "description": "Сгенерировать или ПЕРЕПИСАТЬ текст тем же ИИ, что кнопка в админке. revision — указания оператора (короче, без эмодзи, другой акцент).",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n    timeout: 150000,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst carId = Number(input.car_id);\nif (!Number.isFinite(carId) || carId <= 0) return JSON.stringify({ error: 'Нужен car_id' });\nconst body = { car_id: carId };\nif (input.revision) body.revision = String(input.revision);\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/social/ai-draft', body);\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"car_id\": {\"type\": \"number\"}, \"revision\": {\"type\": \"string\", \"description\": \"Правки оператора, опционально\"}}, \"required\": [\"car_id\"]}"
+      },
+      "id": "soc-tool-ai-draft",
+      "name": "generate_text",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1740,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "name": "send_draft",
+        "description": "Отправить оператору альбом+текст и пометить pending_review. Для смены текста передай новый text. Не публикует в канал.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst carId = Number(input.car_id);\nif (!Number.isFinite(carId) || carId <= 0) return JSON.stringify({ error: 'Нужен car_id' });\nlet text = String(input.text || '').trim();\nconst photoIds = Array.isArray(input.photo_ids) ? input.photo_ids.map(Number).filter((n) => n > 0) : [];\n\nconst car = await agentRequest.call(this, 'GET', '/agent/v1/social/cars/' + carId);\nif (car.error || car.detail === 'car not found') return JSON.stringify(car);\nif (!text) text = String(car.last_draft_text || car.skeleton_text || '').trim();\nif (!text) return JSON.stringify({ error: 'Пустой текст поста' });\n\nconst draft = await agentRequest.call(this, 'POST', '/agent/v1/social/draft', {\n  car_id: carId,\n  text,\n  photo_ids: photoIds.length ? photoIds : undefined,\n});\nif (draft.error || draft.ok === false) return JSON.stringify(draft);\n\nconst chatId = String(settings.operatorChatId || '').trim();\nconst token = String(settings.telegramBotToken || '').trim();\nif (!chatId || chatId.includes('ВАШ')) {\n  return JSON.stringify({ ok: true, status: 'pending_review', warning: 'Черновик записан, но operatorChatId не задан — в Telegram не отправил' });\n}\nif (!token || token.includes('REPLACE')) {\n  return JSON.stringify({ ok: true, status: 'pending_review', warning: 'Черновик записан, но telegramBotToken не задан — в Telegram не отправил' });\n}\n\nconst photos = Array.isArray(car.photos) ? car.photos : [];\nlet urls = photos.map((p) => String(p.absolute_url || '').trim()).filter((u) => u.startsWith('http'));\nif (photoIds.length) {\n  const byId = new Map(photos.map((p) => [Number(p.id), String(p.absolute_url || '').trim()]));\n  urls = photoIds.map((id) => byId.get(id)).filter((u) => u && u.startsWith('http'));\n}\nurls = urls.slice(0, 10);\nconst caption = text.length <= 1024 ? text : (text.slice(0, 1020) + '…');\nconst sent = { photos: 0, textFollowup: false };\n\nasync function tg(method, body) {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.telegram.org/bot' + token + '/' + method,\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify(body),\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  const status = resp.statusCode || resp.status || 0;\n  const rawBody = resp.body ?? resp.data ?? '';\n  const raw = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n  let parsed = {};\n  try { parsed = JSON.parse(raw); } catch { parsed = { ok: false, description: raw.slice(0, 300) }; }\n  if (status >= 300 || parsed.ok === false) {\n    return { error: parsed.description || ('HTTP ' + status) };\n  }\n  return parsed;\n}\n\nif (urls.length >= 2) {\n  const media = urls.map((u, i) => {\n    const item = { type: 'photo', media: u };\n    if (i === 0) item.caption = caption;\n    return item;\n  });\n  const album = await tg.call(this, 'sendMediaGroup', { chat_id: chatId, media });\n  if (album.error) return JSON.stringify({ ok: false, status: 'pending_review', error: 'Telegram album: ' + album.error });\n  sent.photos = urls.length;\n} else if (urls.length === 1) {\n  const one = await tg.call(this, 'sendPhoto', { chat_id: chatId, photo: urls[0], caption });\n  if (one.error) return JSON.stringify({ ok: false, status: 'pending_review', error: 'Telegram photo: ' + one.error });\n  sent.photos = 1;\n} else {\n  const msg = await tg.call(this, 'sendMessage', { chat_id: chatId, text: caption });\n  if (msg.error) return JSON.stringify({ ok: false, status: 'pending_review', error: 'Telegram text: ' + msg.error });\n}\nif (text.length > 1024) {\n  await tg.call(this, 'sendMessage', { chat_id: chatId, text: text.slice(0, 4000) });\n  sent.textFollowup = true;\n}\n\nconst control = [\n  'Черновик car_id=' + carId,\n  (car.brand || '') + ' ' + (car.model || ''),\n  '✅ опубликовать  ·  ❌ отклонить  ·  🔄 другое авто  ·  или напишите правки текста',\n].join('\\n');\nawait tg.call(this, 'sendMessage', {\n  chat_id: chatId,\n  text: control,\n  reply_markup: {\n    inline_keyboard: [[\n      { text: '✅ Опубликовать', callback_data: 'pub:' + carId },\n      { text: '❌ Отклонить', callback_data: 'skip:' + carId },\n    ], [\n      { text: '🔄 Другое авто', callback_data: 'swap:' + carId },\n    ]],\n  },\n});\n\nreturn JSON.stringify({ ok: true, status: 'pending_review', car_id: carId, sent });",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"car_id\": {\"type\": \"number\"}, \"text\": {\"type\": \"string\", \"description\": \"Полный текст поста\"}, \"photo_ids\": {\"type\": \"array\", \"items\": {\"type\": \"number\"}}}, \"required\": [\"car_id\", \"text\"]}"
+      },
+      "id": "soc-tool-draft",
+      "name": "send_draft",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1810,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "publish",
+        "description": "Опубликовать в Telegram-канал через backend. Только после явного согласия оператора.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst carId = Number(input.car_id);\nif (!Number.isFinite(carId) || carId <= 0) return JSON.stringify({ error: 'Нужен car_id' });\nlet text = String(input.text || '').trim();\nif (!text) {\n  const car = await agentRequest.call(this, 'GET', '/agent/v1/social/cars/' + carId);\n  text = String(car.last_draft_text || car.skeleton_text || '').trim();\n}\nif (!text) return JSON.stringify({ error: 'Пустой текст' });\nconst body = { car_id: carId, text };\nif (Array.isArray(input.photo_ids) && input.photo_ids.length) body.photo_ids = input.photo_ids;\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/social/publish', body);\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"car_id\": {\"type\": \"number\"}, \"text\": {\"type\": \"string\", \"description\": \"Текст поста; если пусто — last_draft_text\"}, \"photo_ids\": {\"type\": \"array\", \"items\": {\"type\": \"number\"}}}, \"required\": [\"car_id\"]}"
+      },
+      "id": "soc-tool-publish",
+      "name": "publish",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        1940,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "skip",
+        "description": "Отклонить лот только на сегодня (МСК). Завтра снова может попасть в очередь. Не путать с release.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst carId = Number(input.car_id);\nif (!Number.isFinite(carId) || carId <= 0) return JSON.stringify({ error: 'Нужен car_id' });\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/social/skip', { car_id: carId, reason: String(input.reason || '').slice(0, 500) || null });\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"car_id\": {\"type\": \"number\"}, \"reason\": {\"type\": \"string\"}}, \"required\": [\"car_id\"]}"
+      },
+      "id": "soc-tool-skip",
+      "name": "skip",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2070,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "release",
+        "description": "Снять черновик и вернуть лот в очередь. Для «другое авто». НЕ skip: машину можно предложить позже.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst carId = Number(input.car_id);\nif (!Number.isFinite(carId) || carId <= 0) return JSON.stringify({ error: 'Нужен car_id' });\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/social/release', { car_id: carId, reason: String(input.reason || 'replace_car').slice(0, 500) || null });\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"car_id\": {\"type\": \"number\"}, \"reason\": {\"type\": \"string\"}}, \"required\": [\"car_id\"]}"
+      },
+      "id": "soc-tool-release",
+      "name": "release",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2200,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "get_memory",
+        "description": "Долгосрочная память social-агента (уроки из правок). Читай в начале прогона.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst limit = Math.min(200, Math.max(1, Number(input.limit || 40) || 40));\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/memory?agent_key=social&limit=' + limit);\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"limit\": {\"type\": \"number\"}}}"
+      },
+      "id": "soc-tool-get-memory",
+      "name": "get_memory",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2200,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "name": "save_memory",
+        "description": "Сохранить урок/предпочтение после правок оператора.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst content = String(input.content || '').trim();\nif (!content) return JSON.stringify({ error: 'Нужен content' });\nconst data = await agentRequest.call(this, 'POST', '/agent/v1/memory', { agent_key: 'social', kind: String(input.kind || 'lesson'), content, source: String(input.source || 'tg_revise') });\nreturn JSON.stringify(data);",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"content\": {\"type\": \"string\"}, \"kind\": {\"type\": \"string\", \"description\": \"lesson|preference|ban\"}, \"source\": {\"type\": \"string\"}}, \"required\": [\"content\"]}"
+      },
+      "id": "soc-tool-save-memory",
+      "name": "save_memory",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.1,
+      "position": [
+        2330,
+        1008
+      ]
+    }
+  ],
+  "connections": {
+    "Cron MSK": {
+      "main": [
+        [
+          {
+            "node": "Настройки workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Настройки workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Настройки workflow": {
+      "main": [
+        [
+          {
+            "node": "Источник запуска",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Источник запуска": {
+      "main": [
+        [
+          {
+            "node": "Из Telegram?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Из Telegram?": {
+      "main": [
+        [
+          {
+            "node": "Контекст чата",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Контекст cron",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Контекст чата": {
+      "main": [
+        [
+          {
+            "node": "Только оператор",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Контекст cron": {
+      "main": [
+        [
+          {
+            "node": "Воркер: очередь",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Только оператор": {
+      "main": [
+        [
+          {
+            "node": "Это /run?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: отказ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Это /run?": {
+      "main": [
+        [
+          {
+            "node": "Воркер: очередь",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Воркер: очередь": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Память диалога": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Очистка ответа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Очистка ответа": {
+      "main": [
+        [
+          {
+            "node": "Telegram: ответ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_queue": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_pending": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_car": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send_draft": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "publish": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "skip": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_memory": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "save_memory": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "generate_text": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "release": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Europe/Moscow",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "executionOrder": "v1",
+    "executionTimeout": 300
+  },
+  "staticData": null
+}

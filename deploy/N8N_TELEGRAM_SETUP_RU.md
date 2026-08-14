@@ -5,6 +5,8 @@
 - [n8n-telegram-ai-draft.workflow.json](n8n-telegram-ai-draft.workflow.json)
 - [n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)
 
+Автовыбор лотов и апрув в личке: [N8N_SOCIAL_AGENT_RU.md](N8N_SOCIAL_AGENT_RU.md) — тот же AI-draft и publish webhook, отдельный бот для оператора.
+
 Под ваш бэкенд уже заведены **два webhook** (`ai-draft` и `publish`). Этот документ описывает:
 
 1. что положить в **`.env` на сервере API** и откуда взять значения;
