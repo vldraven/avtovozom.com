@@ -110,6 +110,21 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(entries[0]["brand_id"], self.brand_id)
         self.assertEqual(entries[0]["model_id"], self.model_id)
 
+        with self.assertRaises(ValueError):
+            series_url_entries_from_payload(["[object Object]"])
+        with self.assertRaises(ValueError):
+            series_url_entries_from_payload(
+                ["https://www.che168.com/[object Object]/"]
+            )
+        mixed = series_url_entries_from_payload(
+            [
+                "[object Object]",
+                "https://www.che168.com/china/aodi/aodiq3/",
+            ]
+        )
+        self.assertEqual(len(mixed), 1)
+        self.assertIn("aodiq3", mixed[0]["url"])
+
     def test_quota_and_memory(self) -> None:
         r = self.client.get(
             f"/agent/v1/quota?profile_id={self.profile_id}",

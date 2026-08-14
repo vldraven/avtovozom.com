@@ -11,7 +11,7 @@ on:
 
 concurrency:
   group: deploy-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -48,10 +48,11 @@ jobs:
             exit 255
           fi
           RSYNC_RSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
-          echo "Снимок search_profiles до пересборки…"
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "Снимок search_profiles → backups/search_profiles-${STAMP}.sql"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "mkdir -p '${DEPLOY_PATH}/backups' && docker exec avtovozom_postgres sh -c 'pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -t search_profiles --data-only --column-inserts' > '${DEPLOY_PATH}/backups/search_profiles-\$(date -u +%Y%m%dT%H%M%SZ).sql' || echo '::warning::Не удалось снять search_profiles'"
+            "mkdir -p '${DEPLOY_PATH}/backups' && docker exec avtovozom_postgres sh -c 'pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -t search_profiles --data-only --column-inserts' > '${DEPLOY_PATH}/backups/search_profiles-${STAMP}.sql' || echo '::warning::Не удалось снять search_profiles'"
           rsync -avz -e "$RSYNC_RSH" \
             --delete \
             --exclude '.git/' \
