@@ -208,12 +208,12 @@ class MarketResearchIn(BaseModel):
 
 class CollectIn(BaseModel):
     profile_id: int
-    parse_limit: int = Field(default=100, ge=1, le=300)
+    parse_limit: int = Field(default=100, ge=1, le=500)
     """Сколько ссылок максимум собрать (сумма по series)."""
     limit_per_series: int = Field(default=20, ge=1, le=100)
-    filter_limit: int = Field(default=50, ge=1, le=200)
+    filter_limit: int = Field(default=50, ge=1, le=500)
     """Сколько прошедших hard-filter вернуть в shortlist_pool."""
-    llm_shortlist_limit: int = Field(default=40, ge=1, le=100)
+    llm_shortlist_limit: int = Field(default=40, ge=1, le=400)
     discover_retries: int = Field(default=3, ge=1, le=5)
     discover_retry_pause_sec: float = Field(default=45.0, ge=0, le=300)
     market_research_max_age_days: int = Field(default=7, ge=1, le=90)
@@ -1200,7 +1200,8 @@ def collect_listings(
             market_research=market,
         )
 
-    enrich_limit = min(payload.parse_limit, max(last_discover.created * 2, 30))
+    # EnrichIn.limit le=80: не раздувать enrich вместе с parse_limit из n8n.
+    enrich_limit = min(80, payload.parse_limit, max(last_discover.created * 2, 30))
     enrich_out = enrich_candidates(
         EnrichIn(
             profile_id=profile.id,
