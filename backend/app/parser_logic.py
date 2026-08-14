@@ -22,11 +22,12 @@ from .listing_copy_ru import basic_neutral_description_ru, pick_listing_title
 from .indexnow import submit_car as _indexnow_submit_car
 from .body_colors import label_for_slug
 from .media_storage import delete_car_photo_files, download_car_photos
-from .models import Car, CarGeneration, CarPhoto, CarModel, ModelWhitelist, ParseJob
+from .models import Car, CarGeneration, CarPhoto, CarModel, CarTrim, ModelWhitelist, ParseJob
 from .model_resolver import resolve_model_id_for_listing
 from .parser_cancellation import clear_cancel, is_cancel_requested
 from .parser_timeout import ParserJobCancelled, call_with_cancel_poll, call_with_timeout
 from .translator_ru import translate_to_ru
+from .fuel_types import fuel_from_car_trim, normalize_fuel_type_ru
 from .trim_catalog import pick_generation_id_for_car, resolve_trim_for_listing
 
 
@@ -129,6 +130,8 @@ def _apply_trim_from_parsed(
     )
     if trim_id:
         car.trim_id = trim_id
+        if not car.fuel_type:
+            car.fuel_type = fuel_from_car_trim(db.get(CarTrim, trim_id))
 
 
 def _ensure_autohome_spec_id(parsed: ParsedCar, detail_url: str, marketplace: str) -> None:
@@ -161,7 +164,7 @@ def _insert_car_from_parsed(
     resolved_row = db.get(CarModel, resolved_model_id)
     display_model_name = resolved_row.name if resolved_row else model.name
 
-    fuel_ru = translate_to_ru(parsed.fuel_type) if parsed.fuel_type else None
+    fuel_ru = normalize_fuel_type_ru(parsed.fuel_type)
     trans_ru = translate_to_ru(parsed.transmission) if parsed.transmission else None
     city_ru = translate_to_ru(parsed.location_city) if parsed.location_city else None
 
@@ -274,7 +277,7 @@ def _revive_inactive_car_from_parsed(
     resolved_row = db.get(CarModel, resolved_model_id)
     display_model_name = resolved_row.name if resolved_row else model.name
 
-    fuel_ru = translate_to_ru(parsed.fuel_type) if parsed.fuel_type else None
+    fuel_ru = normalize_fuel_type_ru(parsed.fuel_type)
     trans_ru = translate_to_ru(parsed.transmission) if parsed.transmission else None
     city_ru = translate_to_ru(parsed.location_city) if parsed.location_city else None
 

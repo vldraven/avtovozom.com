@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.che168_parser import (
     ParsedCar,
@@ -6,12 +7,15 @@ from app.che168_parser import (
     _dealer_url_from_global_carinfo,
     _dealer_url_from_mobile_che168,
     _detail_fetch_urls,
+    _listing_cards_from_html,
     _mobile_che168_infoid_from_url,
     _parse_detail_from_html,
     _parse_is_complete,
     _parse_quality_score,
     _playwright_fetch_urls,
     filter_vehicle_photo_urls,
+    horsepower_from_carinfo_url,
+    infoid_from_listing_url,
     normalize_import_detail_url,
     source_listing_id_from_url,
     upgrade_vehicle_photo_url,
@@ -266,6 +270,53 @@ class VehiclePhotoUrlNormalizeTests(unittest.TestCase):
         out = filter_vehicle_photo_urls(big + thumbs)
         self.assertEqual(len(out), 9)
         self.assertTrue(all("1024x0" in u for u in out))
+
+
+class Che168ListCardTests(unittest.TestCase):
+    SAMPLE = """
+    <li class="cards-li">
+      <a href="//www.che168.com/dealer/647430/58695776.html">宝马X1 2023款 sDrive25Li 领先型</a>
+      <p>2023年07月上牌 / 2万公里 / 北京</p>
+      <span class="card-price">21.28</span>万
+    </li>
+    <li class="cards-li">
+      <a href="/dealer/647430/58718125.html">宝马X1 2023款 2.0T 184马力</a>
+      <p>2023年11月上牌 / 1.7万公里</p>
+      <span>21.58万</span>
+    </li>
+    """
+
+    def test_list_cards_year_price_mileage(self):
+        cards = _listing_cards_from_html(self.SAMPLE, 10)
+        self.assertGreaterEqual(len(cards), 2)
+        first = next(c for c in cards if "58695776" in c.url)
+        self.assertEqual(first.year, 2023)
+        self.assertEqual(first.mileage_km, 20000)
+        self.assertAlmostEqual(first.price_cny or 0, 212800, delta=1)
+        self.assertEqual(first.registration_date, "2023-07-01")
+
+    def test_list_card_horsepower_from_title(self):
+        cards = _listing_cards_from_html(self.SAMPLE, 10)
+        hp_card = next(c for c in cards if "58718125" in c.url)
+        self.assertEqual(hp_card.horsepower, 184)
+
+    def test_infoid_from_dealer_url(self):
+        self.assertEqual(
+            infoid_from_listing_url(
+                "https://www.che168.com/dealer/647430/58695776.html"
+            ),
+            "58695776",
+        )
+
+    def test_horsepower_from_carinfo_uses_engine_field(self):
+        with patch(
+            "app.che168_parser._fetch_global_che168_carinfo",
+            return_value={"engine": "2.0T 184马力 L4", "specname": "xDrive25Li"},
+        ):
+            hp = horsepower_from_carinfo_url(
+                "https://www.che168.com/dealer/1/99.html", timeout=1.0
+            )
+        self.assertEqual(hp, 184)
 
 
 if __name__ == "__main__":

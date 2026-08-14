@@ -15,6 +15,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import Base, get_db
 from app import models  # noqa: F401
 from app.main import app
+from app.che168_parser import ListingCard
 from app.models import Car, CarBrand, CarModel, ImportCandidate, SearchProfile
 
 
@@ -80,6 +81,34 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertTrue(any(p["id"] == self.profile_id for p in data))
+
+    def test_series_url_entries_keep_brand_model(self) -> None:
+        from app.agent_api import parse_series_url_item, series_url_entries_from_payload
+
+        url, brand_id, model_id = parse_series_url_item(
+            {
+                "url": "https://www.che168.com/china/aodi/aodiq3/",
+                "brand_id": self.brand_id,
+                "model_id": self.model_id,
+            }
+        )
+        self.assertTrue(url.endswith("/"))
+        self.assertEqual(brand_id, self.brand_id)
+        self.assertEqual(model_id, self.model_id)
+
+        entries = series_url_entries_from_payload(
+            [
+                "https://www.che168.com/china/aodi/aodiq3/",
+                {
+                    "url": "https://www.che168.com/china/aodi/aodiq3/?x=1",
+                    "brand_id": self.brand_id,
+                    "model_id": self.model_id,
+                },
+            ]
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["brand_id"], self.brand_id)
+        self.assertEqual(entries[0]["model_id"], self.model_id)
 
     def test_quota_and_memory(self) -> None:
         r = self.client.get(
@@ -152,11 +181,26 @@ class AgentApiTests(unittest.TestCase):
         side_effect=lambda u: u,
     )
     @patch("app.agent_api.source_listing_id_from_url", return_value="list-99")
-    @patch(
-        "app.agent_api.parse_che168_listing_links",
-        return_value=["https://www.che168.com/dealer/1/99.html"],
-    )
-    def test_discover_and_apply(self, *_mocks) -> None:
+    @patch("app.agent_api.parse_che168_listing_cards_many")
+    def test_discover_and_apply(self, mock_cards, *_mocks) -> None:
+        series = (
+            "https://www.che168.com/china/aodi/aodiq3/a3_5msdgscncgpi1ltocspexx0"
+        )
+        mock_cards.return_value = [
+            (
+                series,
+                [
+                    ListingCard(
+                        url="https://www.che168.com/dealer/1/99.html",
+                        title="奥迪Q3 2022款",
+                        year=2022,
+                        price_cny=188000,
+                        mileage_km=20000,
+                    )
+                ],
+                None,
+            )
+        ]
         r = self.client.post(
             "/agent/v1/discover",
             headers=self.headers,
@@ -175,6 +219,9 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(cand["brand_name"], "Audi")
         self.assertEqual(cand["model_name"], "Q3")
         self.assertIsNotNone(cand["model_id"])
+        self.assertEqual(cand["year"], 2022)
+        self.assertEqual(cand["mileage_km"], 20000)
+        self.assertEqual(cand["price_cny"], 188000)
 
         cand_id = cand["id"]
 
@@ -215,6 +262,57 @@ class AgentApiTests(unittest.TestCase):
         rows = plan.json()["rows"]
         self.assertGreaterEqual(len(rows), 1)
         self.assertTrue(any(r.get("model_id") for r in rows))
+
+    @patch("app.agent_api.parse_che168_detail", side_effect=AssertionError("detail must not be opened"))
+    @patch("app.agent_api.horsepower_from_carinfo_url", return_value=156)
+    @patch("app.agent_api.marketplace_from_detail_url", return_value="che168")
+    @patch("app.agent_api.normalize_import_detail_url", side_effect=lambda u: u)
+    @patch("app.agent_api.source_listing_id_from_url", return_value="list-200")
+    @patch("app.agent_api.parse_che168_listing_cards_many")
+    def test_collect_uses_list_fields_not_detail(
+        self, mock_cards, *_mocks
+    ) -> None:
+        series = "https://www.che168.com/china/aodi/aodiq3/s1"
+        profile = self.db.get(SearchProfile, self.profile_id)
+        profile.criteria = {
+            **(profile.criteria or {}),
+            "series_urls": [{"url": series, "brand_id": self.brand_id, "model_id": self.model_id}],
+        }
+        self.db.commit()
+        mock_cards.return_value = [
+            (
+                series,
+                [
+                    ListingCard(
+                        url="https://www.che168.com/dealer/1/200.html",
+                        year=2022,
+                        price_cny=180000,
+                        mileage_km=25000,
+                        registration_date="2022-06-01",
+                    )
+                ],
+                None,
+            )
+        ]
+        r = self.client.post(
+            "/agent/v1/collect",
+            headers=self.headers,
+            json={
+                "profile_id": self.profile_id,
+                "parse_limit": 40,
+                "limit_per_series": 20,
+            },
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["status"], "ok")
+        self.assertGreaterEqual(body["passed"], 1)
+        self.assertTrue(body["listings"])
+        row = body["listings"][0]
+        self.assertEqual(row["year"], 2022)
+        self.assertEqual(row["mileage_km"], 25000)
+        self.assertEqual(row["horsepower"], 156)
+        self.assertIn("карточки не открывали", body["message"].lower())
 
 
 if __name__ == "__main__":

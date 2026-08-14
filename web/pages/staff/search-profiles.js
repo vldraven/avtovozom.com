@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
+import SiteSelectDropdown from "../../components/SiteSelectDropdown";
 import { clearToken, getStoredToken } from "../../lib/auth";
 import { isStaffRole } from "../../lib/roles";
 import SiteHeader from "../../components/SiteHeader";
@@ -31,20 +32,15 @@ function formatApiErrorDetail(body) {
   return String(d);
 }
 
-/** Короткая подпись из path: /china/aodi/aodiq3/... → aodi / aodiq3 */
-function seriesUrlLabel(url) {
-  const raw = String(url || "").trim();
-  if (!raw) return "";
-  try {
-    const path = new URL(raw).pathname;
-    const parts = path.split("/").filter(Boolean);
-    if (parts[0] === "china" && parts.length >= 2) {
-      return parts.slice(1, 3).join(" / ");
-    }
-    return parts.slice(-2).join(" / ") || raw;
-  } catch {
-    return raw.length > 48 ? `${raw.slice(0, 48)}…` : raw;
+function parseSeriesRow(item) {
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    return {
+      url: String(item.url || item.series_url || "").trim(),
+      brandId: item.brand_id != null && item.brand_id !== "" ? String(item.brand_id) : "",
+      modelId: item.model_id != null && item.model_id !== "" ? String(item.model_id) : "",
+    };
   }
+  return { url: String(item || "").trim(), brandId: "", modelId: "" };
 }
 
 export default function StaffSearchProfilesPage() {
@@ -57,8 +53,9 @@ export default function StaffSearchProfilesPage() {
   const [enabled, setEnabled] = useState(true);
   const [brief, setBrief] = useState("");
   const [maxSelect, setMaxSelect] = useState(20);
-  const [seriesUrls, setSeriesUrls] = useState([]);
-  const [newUrl, setNewUrl] = useState("");
+  const [seriesRows, setSeriesRows] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [modelsByBrand, setModelsByBrand] = useState({});
   const [mileageMax, setMileageMax] = useState(50000);
   const [regAgeMin, setRegAgeMin] = useState(3);
   const [regAgeMax, setRegAgeMax] = useState(5);
@@ -75,11 +72,8 @@ export default function StaffSearchProfilesPage() {
     setBrief(p.brief || "");
     setMaxSelect(Number(p.max_select) || 20);
     const c = p.criteria || {};
-    const urls = Array.isArray(c.series_urls)
-      ? c.series_urls.map((u) => String(u).trim()).filter(Boolean)
-      : [];
-    setSeriesUrls(urls);
-    setNewUrl("");
+    const urls = Array.isArray(c.series_urls) ? c.series_urls : [];
+    setSeriesRows(urls.map(parseSeriesRow).filter((row) => row.url));
     setMileageMax(c.mileage_max != null ? Number(c.mileage_max) : 50000);
     setRegAgeMin(c.reg_age_years_min != null ? Number(c.reg_age_years_min) : 3);
     setRegAgeMax(c.reg_age_years_max != null ? Number(c.reg_age_years_max) : 5);
@@ -135,6 +129,10 @@ export default function StaffSearchProfilesPage() {
         return;
       }
       setMe(meJson);
+      const brandsRes = await fetch(`${API_URL}/staff/catalog/brands`, {
+        headers: authHeaders(t),
+      });
+      if (brandsRes.ok) setBrands(await brandsRes.json());
       await load(t);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,25 +143,56 @@ export default function StaffSearchProfilesPage() {
     router.push("/");
   }
 
-  function updateUrlAt(index, value) {
-    setSeriesUrls((prev) => prev.map((u, i) => (i === index ? value : u)));
+  const brandOptions = useMemo(
+    () => [
+      { value: "", label: "— марка —" },
+      ...brands.map((b) => ({ value: String(b.id), label: b.name })),
+    ],
+    [brands]
+  );
+
+  const profileOptions = useMemo(
+    () =>
+      profiles.map((p) => ({
+        value: String(p.id),
+        label: `${p.name} (#${p.id})`,
+      })),
+    [profiles]
+  );
+
+  const ensureModels = useCallback(
+    async (brandId) => {
+      if (!token || !brandId || modelsByBrand[brandId]) return;
+      const r = await fetch(`${API_URL}/staff/catalog/models?brand_id=${brandId}`, {
+        headers: authHeaders(token),
+      });
+      if (r.ok) {
+        const list = await r.json();
+        setModelsByBrand((prev) => ({ ...prev, [brandId]: list }));
+      }
+    },
+    [token, modelsByBrand]
+  );
+
+  useEffect(() => {
+    const ids = new Set(seriesRows.map((row) => row.brandId).filter(Boolean));
+    ids.forEach((id) => {
+      ensureModels(id);
+    });
+  }, [seriesRows, ensureModels]);
+
+  function patchRow(index, patch) {
+    setSeriesRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
   function removeUrlAt(index) {
-    setSeriesUrls((prev) => prev.filter((_, i) => i !== index));
+    setSeriesRows((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function addUrl() {
-    const u = newUrl.trim();
-    if (!u) return;
-    if (seriesUrls.some((x) => x.trim() === u)) {
-      setError("Такой URL уже есть в списке");
-      setOk("");
-      return;
-    }
+  function addRow() {
     setError("");
-    setSeriesUrls((prev) => [...prev, u]);
-    setNewUrl("");
+    setOk("");
+    setSeriesRows((prev) => [...prev, { url: "", brandId: "", modelId: "" }]);
   }
 
   async function save() {
@@ -172,7 +201,13 @@ export default function StaffSearchProfilesPage() {
     setError("");
     setOk("");
     try {
-      const cleaned = seriesUrls.map((u) => u.trim()).filter(Boolean);
+      const cleaned = seriesRows
+        .map((row) => ({
+          url: row.url.trim(),
+          brand_id: row.brandId ? Number(row.brandId) : null,
+          model_id: row.modelId ? Number(row.modelId) : null,
+        }))
+        .filter((row) => row.url);
       const res = await fetch(`${API_URL}/admin/search-profiles/${profileId}`, {
         method: "PATCH",
         headers: authHeaders(token),
@@ -216,7 +251,7 @@ export default function StaffSearchProfilesPage() {
 
   return (
     <div className="layout">
-      <SiteHeader authBarStyle={{display: "flex", gap: 12, alignItems: "center"}}>
+      <SiteHeader authBarStyle={{ display: "flex", gap: 12, alignItems: "center" }}>
           <HeaderProfileLink token={token} userRole={me?.role} variant="ghost" />
           <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>
             Выйти
@@ -229,77 +264,55 @@ export default function StaffSearchProfilesPage() {
             <Link href="/">← Главная</Link>
             {" · "}
             <Link href="/profile">Профиль</Link>
-            {" · "}
-            <Link href="/staff/import-plan">План импорта</Link>
-            {" · "}
-            <Link href="/staff/import-candidates">Кандидаты</Link>
           </p>
-
-          <h1 className="section-title">Профили отбора (che168)</h1>
+          <h1 className="section-title">Профили отбора</h1>
           <p className="muted" style={{ marginTop: "-0.35rem", marginBottom: "1rem" }}>
-            Series URL для sourcing-агента: редактируйте список, квоту и фильтры. Объявления собираются только
-            по этим ссылкам.
+            Страницы серий che168 с маркой и моделью. Отдельные объявления — в{" "}
+            <Link href="/staff/import-plan">плане импорта</Link>
+            {" · "}
+            <Link href="/staff/import-candidates">кандидаты</Link>.
           </p>
 
           {error ? <div className="alert alert--danger">{error}</div> : null}
           {ok ? <div className="alert alert--success">{ok}</div> : null}
 
-          <div className="import-plan-toolbar">
-            <label className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              Профиль
-              <select
-                className="input"
-                style={{ minWidth: 220 }}
+          <div className="import-plan-toolbar search-profiles-toolbar">
+            <label className="search-profiles-field search-profiles-toolbar-profile">
+              <span className="search-profiles-field__label">Профиль</span>
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                portal
+                searchable
                 value={profileId}
-                onChange={(e) => {
-                  const p = profiles.find((x) => String(x.id) === e.target.value);
+                placeholder="Выберите профиль"
+                onChange={(v) => {
+                  const p = profiles.find((x) => String(x.id) === String(v));
                   applyProfile(p);
                 }}
-              >
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (#{p.id})
-                  </option>
-                ))}
-              </select>
+                options={profileOptions}
+              />
             </label>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={busy}
-              onClick={() => load(token)}
-            >
-              Обновить
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy || !profileId}
-              onClick={save}
-            >
-              {busy ? "Сохранение…" : "Сохранить"}
-            </button>
-          </div>
-
-          <div className="panel" style={{ marginBottom: "1rem" }}>
-            <h2 className="panel-heading-sm">Параметры профиля</h2>
-            <div className="search-profiles-grid">
-              <label className="muted">
-                Название
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
-              </label>
-              <label className="muted">
-                Квота в день
-                <input
-                  className="input"
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={maxSelect}
-                  onChange={(e) => setMaxSelect(e.target.value)}
-                />
-              </label>
-              <label className="muted search-profiles-check">
+            <div className="search-profiles-toolbar-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy || !profileId}
+                onClick={save}
+              >
+                {busy ? "Сохранение…" : "Сохранить"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={busy}
+                onClick={() => load(token)}
+              >
+                Обновить
+              </button>
+              <button type="button" className="btn btn-ghost" disabled={busy} onClick={addRow}>
+                + Строка
+              </button>
+              <label className="search-profiles-check">
                 <input
                   type="checkbox"
                   checked={enabled}
@@ -308,156 +321,172 @@ export default function StaffSearchProfilesPage() {
                 Профиль включён
               </label>
             </div>
-            <label className="muted" style={{ display: "block", marginTop: "0.85rem" }}>
-              Brief для агента
-              <textarea
-                className="input"
-                rows={4}
-                value={brief}
-                onChange={(e) => setBrief(e.target.value)}
-              />
-            </label>
-            <div className="search-profiles-filters">
-              <label className="muted">
-                Пробег max, км
-                <input
-                  className="input"
-                  type="number"
-                  value={mileageMax}
-                  onChange={(e) => setMileageMax(e.target.value)}
-                />
-              </label>
-              <label className="muted">
-                Возраст рег. min
-                <input
-                  className="input"
-                  type="number"
-                  step="0.5"
-                  value={regAgeMin}
-                  onChange={(e) => setRegAgeMin(e.target.value)}
-                />
-              </label>
-              <label className="muted">
-                Возраст рег. max
-                <input
-                  className="input"
-                  type="number"
-                  step="0.5"
-                  value={regAgeMax}
-                  onChange={(e) => setRegAgeMax(e.target.value)}
-                />
-              </label>
-              <label className="muted">
-                Ценовой сегмент
-                <select
-                  className="input"
-                  value={priceBand}
-                  onChange={(e) => setPriceBand(e.target.value)}
-                >
-                  <option value="mid_upper">mid_upper (без дешёвого терциля)</option>
-                  <option value="">без фильтра</option>
-                </select>
-              </label>
-            </div>
           </div>
 
-          <div className="panel" style={{ marginBottom: "2rem" }}>
-            <h2 className="panel-heading-sm">
-              Series URL che168{" "}
-              <span className="muted" style={{ fontWeight: 500 }}>
-                ({seriesUrls.length})
-              </span>
-            </h2>
-            <p className="muted" style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "0.85rem" }}>
-              Одна ссылка на серию/фильтр. Агент ходит только по этому списку.
-            </p>
+          <div className="search-profiles-meta">
+            <label className="search-profiles-field">
+              <span className="search-profiles-field__label">Название</span>
+              <input
+                className="input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Ежедневный отбор"
+              />
+            </label>
+            <label className="search-profiles-field">
+              <span className="search-profiles-field__label">Квота в день</span>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={100}
+                value={maxSelect}
+                onChange={(e) => setMaxSelect(e.target.value)}
+              />
+            </label>
+            <label className="search-profiles-field">
+              <span className="search-profiles-field__label">Пробег max, км</span>
+              <input
+                className="input"
+                type="number"
+                value={mileageMax}
+                onChange={(e) => setMileageMax(e.target.value)}
+              />
+            </label>
+            <label className="search-profiles-field">
+              <span className="search-profiles-field__label">Возраст рег. min</span>
+              <input
+                className="input"
+                type="number"
+                step="0.5"
+                value={regAgeMin}
+                onChange={(e) => setRegAgeMin(e.target.value)}
+              />
+            </label>
+            <label className="search-profiles-field">
+              <span className="search-profiles-field__label">Возраст рег. max</span>
+              <input
+                className="input"
+                type="number"
+                step="0.5"
+                value={regAgeMax}
+                onChange={(e) => setRegAgeMax(e.target.value)}
+              />
+            </label>
+            <label className="search-profiles-field">
+              <span className="search-profiles-field__label">Ценовой сегмент</span>
+              <SiteSelectDropdown
+                className="site-dropdown--block"
+                portal
+                value={priceBand}
+                placeholder="Выберите сегмент"
+                onChange={(v) => setPriceBand(v || "")}
+                options={[
+                  { value: "mid_upper", label: "mid_upper (без дешёвого терциля)" },
+                  { value: "", label: "без фильтра" },
+                ]}
+              />
+            </label>
+          </div>
+          <label className="search-profiles-field search-profiles-brief-wrap">
+            <span className="search-profiles-field__label">Brief для агента</span>
+            <textarea
+              className="input search-profiles-brief"
+              rows={3}
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              placeholder="Коротко: что искать и какие приоритеты"
+            />
+          </label>
 
-            <div className="import-plan-table-wrap">
-              <table className="import-plan-table search-profiles-table">
-                <thead>
+          <div className="import-plan-table-wrap">
+            <table className="import-plan-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}> </th>
+                  <th>Марка</th>
+                  <th>Модель</th>
+                  <th>Страница серии</th>
+                  <th style={{ width: 56 }}> </th>
+                </tr>
+              </thead>
+              <tbody>
+                {seriesRows.length === 0 ? (
                   <tr>
-                    <th style={{ width: 44 }}>#</th>
-                    <th style={{ width: 160 }}>Серия</th>
-                    <th>Ссылка</th>
-                    <th style={{ width: 150 }}> </th>
+                    <td colSpan={5} className="muted">
+                      Список пуст — нажмите «+ Строка».
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {seriesUrls.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="muted">
-                        Список пуст — добавьте URL ниже.
-                      </td>
-                    </tr>
-                  ) : (
-                    seriesUrls.map((url, index) => (
+                ) : (
+                  seriesRows.map((row, index) => {
+                    const models = row.brandId ? modelsByBrand[row.brandId] || [] : [];
+                    return (
                       <tr key={`url-${index}`}>
                         <td className="import-plan-table__mono">{index + 1}</td>
                         <td>
-                          <span className="search-profiles-series" title={url}>
-                            {seriesUrlLabel(url) || "—"}
-                          </span>
+                          <SiteSelectDropdown
+                            className="site-dropdown--block"
+                            portal
+                            searchable
+                            value={row.brandId}
+                            placeholder="— марка —"
+                            onChange={(v) => {
+                              patchRow(index, {
+                                brandId: v || "",
+                                modelId: "",
+                              });
+                              if (v) ensureModels(v);
+                            }}
+                            options={brandOptions}
+                          />
+                        </td>
+                        <td>
+                          <SiteSelectDropdown
+                            className="site-dropdown--block"
+                            portal
+                            searchable
+                            value={row.modelId}
+                            disabled={!row.brandId}
+                            placeholder={row.brandId ? "— модель —" : "Сначала марка"}
+                            onChange={(v) => patchRow(index, { modelId: v || "" })}
+                            options={[
+                              {
+                                value: "",
+                                label: row.brandId ? "— модель —" : "Сначала марка",
+                              },
+                              ...models.map((m) => ({
+                                value: String(m.id),
+                                label: m.name,
+                              })),
+                            ]}
+                          />
                         </td>
                         <td>
                           <input
                             className="input import-plan-url"
-                            value={url}
-                            onChange={(e) => updateUrlAt(index, e.target.value)}
+                            type="url"
+                            value={row.url}
+                            onChange={(e) => patchRow(index, { url: e.target.value })}
+                            placeholder="https://www.che168.com/china/…"
                             spellCheck={false}
                           />
                         </td>
                         <td>
-                          <div className="search-profiles-row-actions">
-                            {url.trim() ? (
-                              <a
-                                className="btn btn-ghost btn-sm"
-                                href={url.trim()}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Открыть
-                              </a>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => removeUrlAt(index)}
-                            >
-                              Удалить
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            title="Удалить строку"
+                            onClick={() => removeUrlAt(index)}
+                          >
+                            ×
+                          </button>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="import-plan-toolbar" style={{ marginTop: "0.85rem", marginBottom: 0 }}>
-              <input
-                className="input"
-                style={{ flex: "1 1 280px", minWidth: 0 }}
-                value={newUrl}
-                onChange={(e) => setNewUrl(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addUrl();
-                  }
-                }}
-                placeholder="https://www.che168.com/china/…"
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={!newUrl.trim()}
-                onClick={addUrl}
-              >
-                + URL
-              </button>
-            </div>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </main>

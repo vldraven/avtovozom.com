@@ -881,16 +881,28 @@ a:hover {
 .alert--warn {
   background: var(--color-warn-bg);
   border: 1px solid var(--color-warn-border);
+  color: #92400e;
 }
 
 .alert--success {
   background: var(--color-success-bg);
   border: 1px solid var(--color-success-border);
+  color: #166534;
 }
 
 .alert--danger {
   background: var(--color-danger-bg);
   border: 1px solid #fecaca;
+  /* Явный цвет: иначе внутри .app-lock (color: light) текст на светлом фоне пропадает */
+  color: #991b1b;
+}
+
+.app-lock .alert--danger,
+.pin-panel--dark .alert--danger {
+  width: 100%;
+  max-width: 22rem;
+  text-align: left;
+  color: #991b1b;
 }
 
 /* Кнопки */
@@ -1084,15 +1096,19 @@ a:hover {
 /* Кастомные выпадающие списки (как сортировка / auto.ru): тень, галочка, hover — инверсия */
 .site-dropdown {
   position: relative;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .site-dropdown--block {
   width: 100%;
+  min-width: 0;
 }
 
 .site-dropdown--floating {
   width: 100%;
+  min-width: 0;
 }
 
 .site-dropdown__trigger {
@@ -1110,6 +1126,8 @@ a:hover {
   align-items: stretch;
   gap: 0.2rem;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 0.5rem 0.75rem;
   border: 1px solid #cbd5e1;
   border-radius: 12px;
@@ -1148,6 +1166,8 @@ a:hover {
 }
 
 .site-dropdown__value {
+  flex: 1;
+  min-width: 0;
   font-size: 0.9375rem;
   font-weight: 600;
   color: #0a0a0a;
@@ -1227,7 +1247,10 @@ a:hover {
 .site-dropdown--floating .site-dropdown__menu {
   left: 0;
   right: 0;
-  min-width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .site-dropdown__menu:not(.site-dropdown__menu--align-right) {
@@ -1351,6 +1374,8 @@ a:hover {
 .site-dropdown__option-text {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 @media (max-width: 560px) {
@@ -6199,6 +6224,33 @@ html.is-standalone .site-header {
   padding-top: max(52px, env(safe-area-inset-top, 0px));
 }
 
+/* Карточка авто: «назад» на фото — ниже status bar в PWA fullscreen */
+html.is-standalone .photo-gallery__back {
+  top: max(52px, calc(14px + env(safe-area-inset-top, 0px)));
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .photo-gallery__back {
+    top: max(52px, calc(14px + env(safe-area-inset-top, 0px)));
+  }
+
+  /* Тапбар: фон до низа экрана (home indicator), без белой полосы под dock */
+  .mobile-bottom-nav {
+    bottom: var(--mobile-viewport-offset, 0px);
+    padding-bottom: max(
+      env(safe-area-inset-bottom, 0px),
+      var(--mobile-vv-bottom-gap, 0px)
+    );
+  }
+}
+
+/* Список чатов в PWA: shell на всю высоту — dock не «висит» над home indicator */
+html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.layout--messages {
+  padding-bottom: calc(
+    3.55rem + max(env(safe-area-inset-bottom, 0px), var(--mobile-vv-bottom-gap, 0px))
+  );
+}
+
 .messenger__thread-sub {
   margin: 4px 0 0;
   font-size: 0.85rem;
@@ -8313,50 +8365,85 @@ html.is-standalone .site-header {
   margin-bottom: 0.85rem;
 }
 
-.search-profiles-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+.search-profiles-toolbar {
+  align-items: flex-end;
   gap: 0.75rem;
-  align-items: end;
 }
 
-.search-profiles-check {
-  display: inline-flex;
+.search-profiles-toolbar-profile {
+  min-width: 220px;
+  flex: 0 1 280px;
+}
+
+.search-profiles-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   min-height: 2.5rem;
 }
 
-.search-profiles-filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.85rem;
-}
-
-.search-profiles-table {
-  min-width: 720px;
-}
-
-.search-profiles-table .input {
-  width: 100%;
-}
-
-.search-profiles-series {
-  display: inline-block;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-  font-size: 0.8125rem;
-}
-
-.search-profiles-row-actions {
+.search-profiles-field {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.search-profiles-field__label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  line-height: 1.2;
+}
+
+.search-profiles-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+.search-profiles-meta {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(4, minmax(110px, 0.75fr)) minmax(180px, 1.1fr);
+  gap: 0.65rem 0.75rem;
+  align-items: end;
+  margin-bottom: 0.75rem;
+}
+
+.search-profiles-brief-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.85rem;
+}
+
+.search-profiles-brief {
+  width: 100%;
+  margin: 0;
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+@media (max-width: 900px) {
+  .search-profiles-meta {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .search-profiles-toolbar {
+    align-items: stretch;
+  }
+
+  .search-profiles-toolbar-profile {
+    flex: 1 1 100%;
+  }
 }
 
 .import-plan-table-wrap {
@@ -9274,7 +9361,11 @@ html.is-standalone .site-header {
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -6px 28px rgba(15, 23, 42, 0.1);
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+    /* safe-area + VV-gap: в PWA env() иногда 0, а под dock остаётся home indicator */
+    padding-bottom: max(
+      env(safe-area-inset-bottom, 0px),
+      var(--mobile-vv-bottom-gap, 0px)
+    );
     overflow-x: hidden;
     box-sizing: border-box;
     /* Создаём слой без transform, чтобы не ломать fixed */
