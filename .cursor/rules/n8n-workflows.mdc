@@ -8,8 +8,8 @@ alwaysApply: false
 
 ## Источник правды
 
-- Workflow JSON: `deploy/n8n-telegram-consultant.workflow.json`, `deploy/n8n-telegram-*.workflow.json`
-- Настройка: `deploy/N8N_CURSOR_SETUP_RU.md`, `deploy/N8N_TELEGRAM_BOT_SETUP_RU.md`
+- Workflow JSON: `deploy/n8n-telegram-consultant.workflow.json`, `deploy/n8n-telegram-*.workflow.json`, `deploy/n8n-sourcing-agent.workflow.json`, `deploy/n8n-social-agent.workflow.json`
+- Настройка: `deploy/N8N_CURSOR_SETUP_RU.md`, `deploy/N8N_TELEGRAM_BOT_SETUP_RU.md`, `deploy/N8N_SOCIAL_AGENT_RU.md`
 
 ## Как вносить изменения на живой n8n
 

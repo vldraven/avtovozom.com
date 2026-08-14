@@ -31,7 +31,15 @@ X-Agent-Secret: <тот же, что AGENT_API_SECRET в backend .env>
 | GET | `/import-plan` | Сводка для TG `/status` и апрува |
 | POST | `/import-plan/start` | После ✅ в TG |
 | POST | `/import-plan/stop` | Остановка |
-| GET/POST | `/memory?agent_key=sourcing` | Долгосрочная память |
+| GET/POST | `/memory?agent_key=` | Долгосрочная память (`sourcing` / `social`) |
+| GET | `/social/queue` | Свежие лоты без публикации в Telegram |
+| GET | `/social/pending` | Черновики на апруве |
+| GET | `/social/cars/{id}` | Каркас поста + фото |
+| POST | `/social/ai-draft` | Тот же ИИ-текст, что кнопка «Сгенерировать» |
+| POST | `/social/draft` | Пометить `pending_review` |
+| POST | `/social/publish` | В канал (через существующий n8n publish-webhook) |
+| POST | `/social/skip` | Не предлагать лот до конца сегодняшнего дня (МСК) |
+| POST | `/social/release` | Снять черновик, лот снова в очереди |
 | POST/GET/PATCH | `/approval-sessions` | Сессия апрува (переживает рестарт n8n) |
 
 Staff UI (JWT): `/staff/search-profiles` (series URL), `/staff/import-candidates`, `/staff/import-plan`.  
@@ -51,6 +59,8 @@ Admin: `GET/PATCH /admin/search-profiles`, `GET /admin/import-candidates`.
 Устаревший ручной путь: `discover` → `enrich` → `filter` по отдельности (для отладки).
 
 Импорт / актуальный workflow: [n8n-sourcing-agent.workflow.json](n8n-sourcing-agent.workflow.json)
+
+Соцсети (очередь лотов + апрув, текст/канал — существующие webhook): [N8N_SOCIAL_AGENT_RU.md](N8N_SOCIAL_AGENT_RU.md), [n8n-social-agent.workflow.json](n8n-social-agent.workflow.json).
 
 Схема как у **Telegram консультант**: `Telegram Trigger` → `Настройки` → `AI Agent` + `toolCode` к `/agent/v1/*` + ответ в TG.  
 Дополнительно: cron **16:00/17:00 Europe/Moscow** → тот же агент с промптом `/run`.
