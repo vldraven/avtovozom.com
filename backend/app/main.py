@@ -95,6 +95,7 @@ from .import_plan_logic import (
 from .parser_cancellation import request_cancel
 from .parser_logic import run_parser_job
 from .indexnow import submit_urls as _indexnow_submit_urls
+from .fuel_types import fuel_from_car_trim, normalize_fuel_type_ru
 from .translator_ru import translate_to_ru
 from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_source, resolve_trim_for_listing
 from .trim_spec_storage import TrimSpecDocument, load_trim_spec_from_row, save_trim_spec_to_row
@@ -1208,6 +1209,14 @@ def startup() -> None:
                 """
                 ALTER TABLE import_candidates
                   ADD COLUMN IF NOT EXISTS registration_date VARCHAR(32) NULL
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                ALTER TABLE import_candidates
+                  ADD COLUMN IF NOT EXISTS horsepower INTEGER NULL
                 """
             )
         )
@@ -3890,8 +3899,9 @@ def admin_batch_refresh_from_che168(
             car.horsepower = parsed.horsepower
         if parsed.mileage_km is not None:
             car.mileage_km = parsed.mileage_km
-        if parsed.fuel_type:
-            car.fuel_type = translate_to_ru(parsed.fuel_type) or parsed.fuel_type
+        fuel = normalize_fuel_type_ru(parsed.fuel_type)
+        if fuel:
+            car.fuel_type = fuel
         if parsed.transmission:
             car.transmission = translate_to_ru(parsed.transmission) or parsed.transmission
         if parsed.location_city:
@@ -3934,6 +3944,8 @@ def admin_batch_refresh_from_che168(
             )
             if trim_id:
                 car.trim_id = trim_id
+                if not car.fuel_type:
+                    car.fuel_type = fuel_from_car_trim(db.get(CarTrim, trim_id))
         ok += 1
         db.commit()
 
@@ -6585,7 +6597,6 @@ def admin_patch_search_profile(
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin", "moderator")),
 ):
-    from .agent_api import normalize_series_url
     from .models import SearchProfile
 
     profile = db.get(SearchProfile, profile_id)
@@ -6608,21 +6619,12 @@ def admin_patch_search_profile(
     if "criteria" in payload and isinstance(payload["criteria"], dict):
         criteria.update(payload["criteria"])
     if "series_urls" in payload:
-        raw_urls = payload["series_urls"]
-        if isinstance(raw_urls, str):
-            raw_list = [ln.strip() for ln in raw_urls.splitlines() if ln.strip()]
-        elif isinstance(raw_urls, list):
-            raw_list = [str(u).strip() for u in raw_urls if str(u).strip()]
-        else:
-            raise HTTPException(status_code=400, detail="series_urls must be list or text")
-        seen: set[str] = set()
-        urls: list[str] = []
-        for u in raw_list:
-            nu = normalize_series_url(u)
-            if nu and nu not in seen:
-                seen.add(nu)
-                urls.append(nu)
-        criteria["series_urls"] = urls
+        from .agent_api import series_url_entries_from_payload
+
+        try:
+            criteria["series_urls"] = series_url_entries_from_payload(payload["series_urls"])
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
     for key in (
         "mileage_max",
         "reg_age_years_min",
@@ -6688,6 +6690,7 @@ def admin_list_import_candidates(
             "year": c.year,
             "price_cny": c.price_cny,
             "mileage_km": c.mileage_km,
+            "horsepower": getattr(c, "horsepower", None),
             "registration_date": getattr(c, "registration_date", None),
             "title": c.title,
             "score": c.score,

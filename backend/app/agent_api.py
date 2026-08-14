@@ -22,13 +22,17 @@ from sqlalchemy.orm import Session, joinedload
 
 from .catalog_resolve import (
     ensure_candidate_catalog,
+    lookup_model_with_brand,
     resolve_catalog,
 )
 from .che168_parser import (
+    ListingCard,
+    che168_proxy_url,
+    horsepower_from_carinfo_url,
     marketplace_from_detail_url,
     normalize_import_detail_url,
     parse_che168_detail,
-    parse_che168_listing_links,
+    parse_che168_listing_cards_many,
     source_listing_id_from_url,
 )
 from .db import get_db
@@ -40,6 +44,7 @@ from .import_plan_logic import (
 from .models import (
     AgentMemory,
     Car,
+    CarBrand,
     CarModel,
     ImportCandidate,
     ImportPlanItem,
@@ -124,6 +129,7 @@ class ImportCandidateOut(BaseModel):
     year: int | None = None
     price_cny: float | None = None
     mileage_km: int | None = None
+    horsepower: int | None = None
     registration_date: str | None = None
     title: str = ""
     score: float | None = None
@@ -142,6 +148,8 @@ class DiscoverIn(BaseModel):
     series_urls: list[str] = Field(default_factory=list)
     model_ids: list[int] = Field(default_factory=list)
     limit_per_series: int = Field(default=40, ge=1, le=100)
+    max_created: int | None = Field(default=None, ge=1, le=500)
+    """Остановиться, когда набрано столько новых URL. None = все витрины (лимит только per series)."""
     use_whitelist: bool = False
     """Whitelist сайта — НЕ источник discover. Только criteria.series_urls / явный список."""
 
@@ -161,6 +169,7 @@ class EnrichIn(BaseModel):
     limit: int = Field(default=30, ge=1, le=80)
     only_missing: bool = True
     """Если true — обогащать только карточки без year/price/mileage."""
+    budget_sec: float | None = Field(default=None, ge=5, le=300)
 
 
 class EnrichOut(BaseModel):
@@ -181,7 +190,7 @@ class FilterOut(BaseModel):
 
 
 class CompactListingOut(BaseModel):
-    """Компактная строка для LLM-shortlist (минимум токенов)."""
+    """Компактная строка для LLM-shortlist."""
 
     id: int
     brand: str = ""
@@ -189,6 +198,7 @@ class CompactListingOut(BaseModel):
     year: int | None = None
     mileage_km: int | None = None
     price_cny: float | None = None
+    horsepower: int | None = None
     url: str = ""
 
 
@@ -208,14 +218,14 @@ class MarketResearchIn(BaseModel):
 
 class CollectIn(BaseModel):
     profile_id: int
-    parse_limit: int = Field(default=100, ge=1, le=500)
+    parse_limit: int = Field(default=300, ge=1, le=500)
     """Сколько ссылок максимум собрать (сумма по series)."""
-    limit_per_series: int = Field(default=20, ge=1, le=100)
-    filter_limit: int = Field(default=50, ge=1, le=500)
+    limit_per_series: int = Field(default=30, ge=1, le=100)
+    filter_limit: int = Field(default=200, ge=1, le=500)
     """Сколько прошедших hard-filter вернуть в shortlist_pool."""
-    llm_shortlist_limit: int = Field(default=40, ge=1, le=400)
-    discover_retries: int = Field(default=3, ge=1, le=5)
-    discover_retry_pause_sec: float = Field(default=45.0, ge=0, le=300)
+    llm_shortlist_limit: int = Field(default=200, ge=1, le=400)
+    discover_retries: int = Field(default=1, ge=1, le=5)
+    discover_retry_pause_sec: float = Field(default=15.0, ge=0, le=300)
     market_research_max_age_days: int = Field(default=7, ge=1, le=90)
 
 
@@ -450,6 +460,7 @@ def _compact_listing(c: ImportCandidate) -> CompactListingOut:
         year=c.year,
         mileage_km=c.mileage_km,
         price_cny=float(c.price_cny) if c.price_cny is not None else None,
+        horsepower=int(c.horsepower) if getattr(c, "horsepower", None) else None,
         url=(c.url or "")[:512],
     )
 
@@ -480,6 +491,48 @@ def normalize_series_url(url: str) -> str:
     if not path.endswith("/"):
         path = f"{path}/"
     return urlunparse((scheme, netloc, path, "", "", ""))
+
+
+def _coerce_positive_id(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def parse_series_url_item(raw: Any) -> tuple[str, int | None, int | None]:
+    """Элемент criteria.series_urls: строка или {url, brand_id, model_id}."""
+    if isinstance(raw, dict):
+        url = normalize_series_url(str(raw.get("url") or raw.get("series_url") or ""))
+        return url, _coerce_positive_id(raw.get("brand_id")), _coerce_positive_id(raw.get("model_id"))
+    return normalize_series_url(str(raw or "")), None, None
+
+
+def series_url_entries_from_payload(raw_urls: Any) -> list[dict[str, Any]]:
+    """Нормализует список витрин: уникальный url + опциональные brand_id/model_id."""
+    if isinstance(raw_urls, str):
+        raw_list: list[Any] = [ln.strip() for ln in raw_urls.splitlines() if ln.strip()]
+    elif isinstance(raw_urls, list):
+        raw_list = list(raw_urls)
+    else:
+        raise ValueError("series_urls must be list or text")
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in raw_list:
+        url, brand_id, model_id = parse_series_url_item(item)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        entry: dict[str, Any] = {"url": url}
+        if brand_id:
+            entry["brand_id"] = brand_id
+        if model_id:
+            entry["model_id"] = model_id
+        out.append(entry)
+    return out
 
 
 def _registration_age_years(reg: str | None, *, today: date | None = None) -> float | None:
@@ -538,8 +591,11 @@ def hard_filter_candidate(
 
     age_min = criteria.get("reg_age_years_min")
     age_max = criteria.get("reg_age_years_max")
+    age = _registration_age_years(c.registration_date)
+    if age is None and c.year:
+        # С витрины часто есть год, но нет точной даты 上牌 — для фильтра возраста хватает года.
+        age = max(0.0, float(_msk_today().year - int(c.year)) + 0.5)
     if age_min is not None or age_max is not None:
-        age = _registration_age_years(c.registration_date)
         if age is None:
             reasons.append("missing_registration_date")
         else:
@@ -613,6 +669,23 @@ def _catalog_listing_ids(db: Session) -> set[str]:
     return {str(x) for x in rows if x}
 
 
+def _apply_listing_card_fields(c: ImportCandidate, card: ListingCard | None) -> None:
+    if card is None:
+        return
+    if card.title and not (c.title or "").strip():
+        c.title = card.title[:512]
+    if c.year is None and card.year:
+        c.year = int(card.year)
+    if c.price_cny is None and card.price_cny:
+        c.price_cny = float(card.price_cny)
+    if c.mileage_km is None and card.mileage_km:
+        c.mileage_km = int(card.mileage_km)
+    if not (c.registration_date or "").strip() and card.registration_date:
+        c.registration_date = str(card.registration_date)[:32]
+    if not getattr(c, "horsepower", None) and card.horsepower:
+        c.horsepower = int(card.horsepower)
+
+
 def _upsert_candidate(
     db: Session,
     *,
@@ -624,6 +697,7 @@ def _upsert_candidate(
     brand_name: str,
     model_id: int | None,
     model_name: str,
+    card: ListingCard | None = None,
 ) -> tuple[ImportCandidate | None, bool]:
     """Returns (candidate, created)."""
     existing = db.execute(
@@ -633,6 +707,7 @@ def _upsert_candidate(
         )
     ).scalar_one_or_none()
     if existing:
+        _apply_listing_card_fields(existing, card)
         return existing, False
 
     c = ImportCandidate(
@@ -648,6 +723,7 @@ def _upsert_candidate(
         reasons=[],
         filter_reasons=[],
     )
+    _apply_listing_card_fields(c, card)
     db.add(c)
     return c, True
 
@@ -674,12 +750,28 @@ def _series_targets(
         seen_urls.add(u)
         targets.append((u, brand_id, brand_name, model_id, model_name))
 
-    def add_series(raw: str) -> None:
-        u = normalize_series_url(raw)
+    def add_series(raw: Any) -> None:
+        u, brand_id, model_id = parse_series_url_item(raw)
         if not u:
             return
-        ref = resolve_catalog(db, series_url=u)
-        add(u, ref.brand_id, ref.brand_name, ref.model_id, ref.model_name)
+        brand_name = ""
+        model_name = ""
+        if model_id:
+            brand, model = lookup_model_with_brand(db, model_id)
+            if model:
+                model_name = model.name or ""
+                if brand:
+                    brand_id = brand.id
+                    brand_name = brand.name or ""
+        elif brand_id:
+            brand = db.get(CarBrand, brand_id)
+            if brand:
+                brand_name = brand.name or ""
+        if not brand_id and not model_id:
+            ref = resolve_catalog(db, series_url=u)
+            add(u, ref.brand_id, ref.brand_name, ref.model_id, ref.model_name)
+            return
+        add(u, brand_id, brand_name, model_id, model_name)
 
     # Если агент явно передал series_urls — только они (не дублируем весь профиль).
     criteria = profile.criteria or {}
@@ -691,7 +783,7 @@ def _series_targets(
         crit_urls = criteria.get("series_urls")
         if isinstance(crit_urls, list):
             for raw in crit_urls:
-                add_series(str(raw))
+                add_series(raw)
 
     model_ids = list(payload.model_ids or [])
     crit_ids = criteria.get("model_ids")
@@ -896,38 +988,55 @@ def discover(
 
     created = 0
     skipped = 0
-    created_ids: list[int] = []
+    touched_ids: list[int] = []
     series_ok = 0
     series_errors: list[str] = []
 
-    # Быстрый режим: без Playwright (на VPS он часто висит 60–120с на антиботе).
-    budget_sec = float(os.getenv("AGENT_DISCOVER_BUDGET_SEC", "90"))
+    # Без CN-прокси Playwright на VPS часто висит 60–120с на антиботе.
+    # С CHE168_PROXY витрина открывается браузером; HTTP почти всегда stub.
+    # Карточки объявлений не открываем: год/пробег/цена — с плитки списка.
+    use_playwright = bool(che168_proxy_url())
+    budget_sec = float(os.getenv("AGENT_DISCOVER_BUDGET_SEC", "200"))
     deadline = time.monotonic() + budget_sec
     http_timeout = float(os.getenv("AGENT_DISCOVER_HTTP_TIMEOUT_SEC", "12"))
-    http_retries = int(os.getenv("AGENT_DISCOVER_HTTP_RETRIES", "2"))
+    max_created = payload.max_created
 
-    for series_url, brand_id, brand_name, model_id, model_name in targets:
-        if time.monotonic() >= deadline:
+    by_url = {t[0]: t for t in targets}
+    remaining = deadline - time.monotonic()
+    nav_timeout_ms = int(min(25_000, max(5_000, remaining * 1000))) if use_playwright else None
+    scraped = parse_che168_listing_cards_many(
+        [t[0] for t in targets],
+        payload.limit_per_series,
+        allow_playwright=use_playwright,
+        http_timeout=http_timeout,
+        nav_timeout_ms=nav_timeout_ms,
+        deadline=deadline,
+    )
+
+    for series_url, cards, err in scraped:
+        meta = by_url.get(series_url)
+        brand_id = meta[1] if meta else None
+        brand_name = meta[2] if meta else ""
+        model_id = meta[3] if meta else None
+        model_name = meta[4] if meta else ""
+        if err and not cards:
             series_errors.append(
-                f"budget_exceeded ({int(budget_sec)}s): остановились до {series_url}"
+                err if err.startswith("budget_exceeded") else f"{series_url}: {err}"
             )
-            break
-        try:
-            links = parse_che168_listing_links(
-                series_url,
-                max_items=payload.limit_per_series,
-                allow_playwright=False,
-                http_timeout=http_timeout,
-                http_retries=http_retries,
-            )
-            series_ok += 1
-        except Exception as e:
-            logger.warning("discover failed for %s: %s", series_url, e)
-            # Не валим весь прогон из‑за одной витрины (che168 502/timeout/антибот).
-            series_errors.append(f"{series_url}: {e}")
             continue
-
-        for link in links:
+        series_ok += 1
+        logger.info(
+            "discover ok %s cards=%s year_price=%s",
+            series_url,
+            len(cards),
+            sum(1 for c in cards if c.year and c.price_cny),
+        )
+        if max_created is not None and created >= max_created:
+            break
+        for card in cards:
+            if max_created is not None and created >= max_created:
+                break
+            link = card.url
             norm = normalize_import_detail_url(link) or link
             try:
                 listing_id = source_listing_id_from_url(norm)
@@ -945,13 +1054,17 @@ def discover(
                 brand_name=brand_name,
                 model_id=model_id,
                 model_name=model_name,
+                card=card,
             )
-            if was_created and cand:
-                created += 1
-                db.flush()
-                created_ids.append(cand.id)
-            else:
-                skipped += 1
+            if cand:
+                if was_created:
+                    created += 1
+                    db.flush()
+                else:
+                    skipped += 1
+                if cand.id and cand.id not in touched_ids:
+                    touched_ids.append(cand.id)
+        db.commit()
 
     if series_ok == 0 and series_errors:
         raise HTTPException(
@@ -964,10 +1077,10 @@ def discover(
 
     db.commit()
     candidates = []
-    if created_ids:
+    if touched_ids:
         candidates = list(
             db.execute(
-                select(ImportCandidate).where(ImportCandidate.id.in_(created_ids))
+                select(ImportCandidate).where(ImportCandidate.id.in_(touched_ids))
             )
             .scalars()
             .all()
@@ -1015,9 +1128,14 @@ def enrich_candidates(
 
     enriched = 0
     failed = 0
-    budget_sec = float(os.getenv("AGENT_ENRICH_BUDGET_SEC", "90"))
+    use_playwright = bool(che168_proxy_url())
+    budget_sec = float(
+        payload.budget_sec
+        if payload.budget_sec is not None
+        else os.getenv("AGENT_ENRICH_BUDGET_SEC", "60" if use_playwright else "90")
+    )
     deadline = time.monotonic() + budget_sec
-    http_timeout = float(os.getenv("AGENT_ENRICH_HTTP_TIMEOUT_SEC", "15"))
+    http_timeout = float(os.getenv("AGENT_ENRICH_HTTP_TIMEOUT_SEC", "12"))
     for c in to_enrich:
         if time.monotonic() >= deadline:
             logger.warning(
@@ -1030,7 +1148,7 @@ def enrich_candidates(
         try:
             parsed = parse_che168_detail(
                 c.url,
-                allow_playwright=False,
+                allow_playwright=use_playwright,
                 http_timeout=http_timeout,
             )
         except Exception as e:
@@ -1056,6 +1174,7 @@ def enrich_candidates(
         )
         c.updated_at = datetime.utcnow()
         enriched += 1
+        db.commit()
 
     db.commit()
     return EnrichOut(
@@ -1142,10 +1261,24 @@ def collect_listings(
             market_research=market,
         )
 
-    per_series = max(1, min(payload.limit_per_series, payload.parse_limit))
+    per_series = max(20, min(payload.limit_per_series, 40))
+    # n8n toolCode (N8N_RUNNERS_TASK_TIMEOUT) рвёт запрос на 300с — /collect должен уложиться раньше.
+    collect_budget = float(os.getenv("AGENT_COLLECT_BUDGET_SEC", "240"))
+    collect_started = time.monotonic()
+    collect_deadline = collect_started + collect_budget
+    logger.info(
+        "collect start profile=%s budget=%ss parse_limit=%s needed=%s",
+        profile.id,
+        int(collect_budget),
+        payload.parse_limit,
+        quota.needed,
+    )
+    retries = max(1, payload.discover_retries)
+    if che168_proxy_url():
+        retries = min(retries, 1)
     last_discover: DiscoverOut | None = None
     attempts = 0
-    for attempt in range(max(1, payload.discover_retries)):
+    for attempt in range(retries):
         attempts = attempt + 1
         try:
             last_discover = discover(
@@ -1153,6 +1286,7 @@ def collect_listings(
                     profile_id=profile.id,
                     use_whitelist=False,
                     limit_per_series=per_series,
+                    max_created=payload.parse_limit,
                 ),
                 db=db,
                 _=None,
@@ -1178,7 +1312,7 @@ def collect_listings(
             )
         if last_discover and (last_discover.created > 0 or last_discover.series_ok > 0):
             break
-        if attempt < payload.discover_retries - 1 and payload.discover_retry_pause_sec > 0:
+        if attempt < retries - 1 and payload.discover_retry_pause_sec > 0:
             time.sleep(float(payload.discover_retry_pause_sec))
 
     assert last_discover is not None
@@ -1200,22 +1334,66 @@ def collect_listings(
             market_research=market,
         )
 
-    # EnrichIn.limit le=80: не раздувать enrich вместе с parse_limit из n8n.
-    enrich_limit = min(80, payload.parse_limit, max(last_discover.created * 2, 30))
-    enrich_out = enrich_candidates(
-        EnrichIn(
-            profile_id=profile.id,
-            limit=enrich_limit,
-            only_missing=True,
-        ),
-        db=db,
-        _=None,
+    # Поля года/цены/пробега уже с витрины. Карточки Playwright не открываем.
+    remaining = collect_deadline - time.monotonic()
+    hp_budget = max(0.0, min(20.0, remaining - 15.0))
+    hp_deadline = time.monotonic() + hp_budget
+    hp_filled = 0
+    for c_out in last_discover.candidates:
+        if time.monotonic() >= hp_deadline:
+            break
+        row = db.get(ImportCandidate, c_out.id)
+        if not row or getattr(row, "horsepower", None):
+            continue
+        hp = horsepower_from_carinfo_url(row.url, timeout=4.0)
+        if hp:
+            row.horsepower = hp
+            hp_filled += 1
+    if hp_filled:
+        db.commit()
+    if last_discover.candidates:
+        ids = [c.id for c in last_discover.candidates if c.id]
+        refreshed = list(
+            db.execute(select(ImportCandidate).where(ImportCandidate.id.in_(ids)))
+            .scalars()
+            .all()
+        )
+        last_discover.candidates = [_candidate_out(c) for c in refreshed]
+    with_year_price = sum(
+        1
+        for c in last_discover.candidates
+        if c.year is not None and c.price_cny is not None
     )
-    filter_out = filter_candidates(
-        FilterIn(profile_id=profile.id),
-        db=db,
-        _=None,
+    enrich_out = EnrichOut(
+        enriched=with_year_price,
+        failed=max(0, len(last_discover.candidates) - with_year_price),
+        candidates=last_discover.candidates,
     )
+    logger.info(
+        "collect after discover created=%s series_ok=%s series_failed=%s remaining=%.0fs list_fields=%s hp=%s",
+        last_discover.created,
+        last_discover.series_ok,
+        last_discover.series_failed,
+        remaining,
+        with_year_price,
+        hp_filled,
+    )
+    # Не фильтровать все 700+ старых filtered — только карточки этого прогона.
+    filter_ids: list[int] = []
+    for c in last_discover.candidates:
+        if c.id:
+            filter_ids.append(c.id)
+    for c in enrich_out.candidates:
+        if c.id and c.id not in filter_ids:
+            filter_ids.append(c.id)
+    if filter_ids:
+        filter_out = filter_candidates(
+            FilterIn(profile_id=profile.id, candidate_ids=filter_ids),
+            db=db,
+            _=None,
+        )
+    else:
+        filter_out = FilterOut(passed=[], rejected=[])
     # Берём свежие passed с полями, ограничиваем для LLM
     passed_sorted = sorted(
         filter_out.passed,
@@ -1232,13 +1410,25 @@ def collect_listings(
         "ok" if listings else "empty"
     )
     message = (
-        f"Собрано: created={last_discover.created}, enriched={enrich_out.enriched}, "
-        f"passed={len(filter_out.passed)}, shortlist_pool={len(listings)}."
+        f"С витрины (карточки не открывали): created={last_discover.created}, "
+        f"with_year_price={enrich_out.enriched}, passed={len(filter_out.passed)}, "
+        f"shortlist_pool={len(listings)}."
         if listings
         else (
             f"После filter пусто (created={last_discover.created}, "
-            f"enriched={enrich_out.enriched}, rejected={len(filter_out.rejected)})."
+            f"with_year_price={enrich_out.enriched}, rejected={len(filter_out.rejected)})."
         )
+    )
+    elapsed = time.monotonic() - collect_started
+    logger.info(
+        "collect done status=%s created=%s enriched=%s passed=%s listings=%s elapsed=%.1fs errors=%s",
+        status,
+        last_discover.created,
+        enrich_out.enriched,
+        len(filter_out.passed),
+        len(listings),
+        elapsed,
+        last_discover.series_errors[:5],
     )
     return CollectOut(
         status=status,

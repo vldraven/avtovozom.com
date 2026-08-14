@@ -528,6 +528,7 @@ class ImportCandidate(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     price_cny: Mapped[float | None] = mapped_column(Float, nullable=True)
     mileage_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    horsepower: Mapped[int | None] = mapped_column(Integer, nullable=True)
     registration_date: Mapped[str | None] = mapped_column(String(32), nullable=True)
     """YYYY-MM-DD первой регистрации, если удалось распарсить."""
     title: Mapped[str] = mapped_column(String(512), default="")

@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import os
 import re
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from playwright.sync_api import sync_playwright
@@ -101,7 +103,11 @@ def _dealer_url_from_mobile_che168(url: str) -> str | None:
     return None
 
 
-def _fetch_global_che168_carinfo(infoid: str) -> dict[str, Any] | None:
+def _fetch_global_che168_carinfo(
+    infoid: str,
+    *,
+    timeout: float | None = None,
+) -> dict[str, Any] | None:
     """JSON API global.che168 — dealer id, spec, фото; цена в API — USD (не CNY)."""
     sid = (infoid or "").strip()
     if not sid.isdigit():
@@ -114,7 +120,8 @@ def _fetch_global_che168_carinfo(infoid: str) -> dict[str, Any] | None:
         "Referer": "https://global.che168.com/",
     }
     try:
-        with httpx.Client(timeout=25.0, follow_redirects=True, headers=headers) as client:
+        wait = float(timeout) if timeout is not None else 25.0
+        with httpx.Client(timeout=wait, follow_redirects=True, headers=headers) as client:
             r = client.get(url, params=params)
             r.raise_for_status()
             data = r.json()
@@ -368,6 +375,19 @@ class ParsedCar:
     autohome_spec_id: int | None = None
 
 
+@dataclass
+class ListingCard:
+    """Строка витрины серии: URL + поля с плитки, без открытия карточки."""
+
+    url: str
+    title: str = ""
+    year: int | None = None
+    price_cny: float | None = None
+    mileage_km: int | None = None
+    registration_date: str | None = None
+    horsepower: int | None = None
+
+
 def _extract_first_int(text: str | None) -> int | None:
     if not text:
         return None
@@ -507,6 +527,9 @@ def _parse_registration_date(s: str) -> str | None:
     m = re.search(r"上牌[^\d]{0,12}(\d{4})[年\-](\d{1,2})", s)
     if m:
         return f"{m.group(1)}-{int(m.group(2)):02d}-01"
+    m = re.search(r"(\d{4})年(\d{1,2})月上牌", s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-01"
     return None
 
 
@@ -518,18 +541,25 @@ def _parse_production_date(s: str) -> str | None:
     return None
 
 
+_FUEL_LABEL_RE = re.compile(
+    r"(?:燃料类型|燃油类型|能源类型|能源形式|动力类型)"
+    r"[：:\s]*([\u4e00-\u9fffA-Za-z0-9·\-/（）()+]{2,32})"
+)
+_FUEL_TOKEN_RE = re.compile(
+    r"(插电式混合动力|插电混动|油电混合|混合动力|纯电动|增程式|轻混|"
+    r"柴油|汽油|纯电|插电|混动|增程)"
+)
+
+
 def _parse_fuel_transmission_city(body: str) -> tuple[str | None, str | None, str | None]:
     fuel: str | None = None
     trans: str | None = None
     city: str | None = None
-    m = re.search(
-        r"(?:燃料类型|燃油类型|能源类型|燃料)[：:\s]*([\u4e00-\u9fffA-Za-z0-9·\-/（）()]{2,24})",
-        body,
-    )
+    m = _FUEL_LABEL_RE.search(body)
     if m:
         fuel = re.split(r"[|\s]{2,}", m.group(1).strip(), maxsplit=1)[0].strip()
     if not fuel:
-        m = re.search(r"(汽油|柴油|混动|插电混动|纯电|增程)", body)
+        m = _FUEL_TOKEN_RE.search(body)
         if m:
             fuel = m.group(1)
     m = re.search(
@@ -868,6 +898,30 @@ def _http_timeout(timeout: float) -> httpx.Timeout:
     return httpx.Timeout(t, connect=connect)
 
 
+def che168_proxy_url() -> str | None:
+    """Только CHE168_PROXY — не трогаем системный HTTPS_PROXY (весь сайт не должен идти в CN)."""
+    raw = (os.getenv("CHE168_PROXY") or "").strip()
+    return raw or None
+
+
+def playwright_proxy_config() -> dict[str, str] | None:
+    raw = che168_proxy_url()
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    host = (parsed.hostname or "").strip()
+    if not host:
+        return None
+    scheme = parsed.scheme or "http"
+    port = parsed.port or (443 if scheme == "https" else 80)
+    cfg: dict[str, str] = {"server": f"{scheme}://{host}:{port}"}
+    if parsed.username:
+        cfg["username"] = unquote(parsed.username)
+    if parsed.password:
+        cfg["password"] = unquote(parsed.password)
+    return cfg
+
+
 def _http_get_text(url: str, timeout: float = 45.0) -> str:
     headers = {
         "User-Agent": UA,
@@ -875,7 +929,15 @@ def _http_get_text(url: str, timeout: float = 45.0) -> str:
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Referer": http_referer_for_request_url(url),
     }
-    with httpx.Client(timeout=_http_timeout(timeout), follow_redirects=True, headers=headers) as client:
+    kwargs: dict[str, Any] = {
+        "timeout": _http_timeout(timeout),
+        "follow_redirects": True,
+        "headers": headers,
+    }
+    proxy = che168_proxy_url()
+    if proxy:
+        kwargs["proxy"] = proxy
+    with httpx.Client(**kwargs) as client:
         r = client.get(url)
         r.raise_for_status()
         text = _decode_http_response_text(r)
@@ -884,21 +946,21 @@ def _http_get_text(url: str, timeout: float = 45.0) -> str:
 
 
 def _pw_launch_timeout_ms() -> int:
-    return int(os.getenv("CHE168_PLAYWRIGHT_LAUNCH_TIMEOUT_MS", "90000"))
+    return int(os.getenv("CHE168_PLAYWRIGHT_LAUNCH_TIMEOUT_MS", "25000"))
 
 
 def _listing_pw_timeout_ms() -> int:
-    """Таймаут goto для витрины series (раньше было жёстко 35s)."""
-    return int(os.getenv("CHE168_LIST_PW_GOTO_TIMEOUT_MS", "60000"))
+    """Таймаут goto витрины series. Короткий: n8n toolCode рвёт /collect на 300с."""
+    return int(os.getenv("CHE168_LIST_PW_GOTO_TIMEOUT_MS", "25000"))
 
 
 def _pw_page_navigation_timeout_ms(detail_url: str) -> int:
     """懂车帝 в Docker часто грузится дольше che168 — отдельный лимит goto/DOM."""
     if _is_mobile_che168_detail_url(detail_url):
-        return int(os.getenv("CHE168_MOBILE_PW_GOTO_TIMEOUT_MS", "35000"))
+        return int(os.getenv("CHE168_MOBILE_PW_GOTO_TIMEOUT_MS", "20000"))
     if marketplace_from_detail_url(detail_url) == "dongchedi":
         return int(os.getenv("DONGCHEDI_PW_GOTO_TIMEOUT_MS", "90000"))
-    return int(os.getenv("CHE168_PW_GOTO_TIMEOUT_MS", "60000"))
+    return int(os.getenv("CHE168_PW_GOTO_TIMEOUT_MS", "20000"))
 
 
 def _title_from_che168_document_title(raw: str | None) -> str | None:
@@ -1329,6 +1391,8 @@ def _car_urls_from_html(html: str, max_items: int) -> list[str]:
     """Со страницы серии: сначала дилерские карточки, затем i.che168.com/car/."""
     seen: set[str] = set()
     out: list[str] = []
+    # Относительные /dealer/... на витрине (без домена в HTML).
+    relative_dealer_re = re.compile(r"(?<![\w.])/dealer/(\d+)/(\d+)\.html", re.IGNORECASE)
 
     def push(u: str) -> None:
         if u in seen:
@@ -1337,6 +1401,10 @@ def _car_urls_from_html(html: str, max_items: int) -> list[str]:
         out.append(u)
 
     for m in DEALER_LISTING_RE.finditer(html):
+        push(f"https://www.che168.com/dealer/{m.group(1)}/{m.group(2)}.html")
+        if len(out) >= max_items:
+            return out
+    for m in relative_dealer_re.finditer(html):
         push(f"https://www.che168.com/dealer/{m.group(1)}/{m.group(2)}.html")
         if len(out) >= max_items:
             return out
@@ -1349,6 +1417,102 @@ def _car_urls_from_html(html: str, max_items: int) -> list[str]:
         if len(out) >= max_items:
             return out
     return out
+
+
+def infoid_from_listing_url(url: str) -> str | None:
+    """infoId объявления (для carinfo API) без открытия карточки."""
+    u = (url or "").strip()
+    if not u:
+        return None
+    m = DEALER_LISTING_RE.search(u)
+    if m:
+        return m.group(2)
+    m = CAR_DETAIL_ID_RE.search(u)
+    if m:
+        return m.group(1)
+    m = GLOBAL_CHE168_DETAIL_RE.search(u)
+    if m:
+        return m.group(1)
+    return _mobile_che168_infoid_from_url(u)
+
+
+def horsepower_from_carinfo_url(url: str, *, timeout: float = 4.0) -> int | None:
+    """Мощность из JSON carinfo, без Playwright-карточки. Нет данных — None."""
+    infoid = infoid_from_listing_url(url)
+    if not infoid:
+        return None
+    info = _fetch_global_che168_carinfo(infoid, timeout=timeout)
+    if not info:
+        return None
+    blob = " ".join(
+        str(info.get(k) or "")
+        for k in ("engine", "specname", "carname", "yearname")
+    )
+    return _parse_horsepower(blob)
+
+
+def _listing_card_from_chunk(url: str, html_chunk: str) -> ListingCard:
+    plain = _strip_html_to_text(html_chunk)
+    title = ""
+    for m in re.finditer(r"<a[^>]*href=[^>]*>\s*([^<]{6,120})\s*</a>", html_chunk, re.I):
+        cand = re.sub(r"\s+", " ", m.group(1)).strip()
+        if cand and "万" not in cand and "查看" not in cand:
+            title = cand[:512]
+            break
+    if not title and plain:
+        title = plain[:80]
+    return ListingCard(
+        url=url,
+        title=title,
+        year=_parse_year(plain) or _parse_year(title),
+        price_cny=_parse_price_cny(plain) or _parse_price_from_html_json(html_chunk),
+        mileage_km=_parse_mileage_km(plain),
+        registration_date=_parse_registration_date(plain),
+        horsepower=_parse_horsepower(plain) or _parse_horsepower(title),
+    )
+
+
+def _listing_cards_from_html(html: str, max_items: int) -> list[ListingCard]:
+    """Плитки витрины: URL + год/пробег/цена/мощность, если они есть в HTML списка."""
+    if not html or max_items < 1:
+        return []
+    found: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    relative_dealer_re = re.compile(r"(?<![\w.])/dealer/(\d+)/(\d+)\.html", re.IGNORECASE)
+
+    def push(pos: int, url: str) -> None:
+        if not url or url in seen:
+            return
+        seen.add(url)
+        found.append((pos, url))
+
+    for m in DEALER_LISTING_RE.finditer(html):
+        push(m.start(), f"https://www.che168.com/dealer/{m.group(1)}/{m.group(2)}.html")
+    for m in relative_dealer_re.finditer(html):
+        push(m.start(), f"https://www.che168.com/dealer/{m.group(1)}/{m.group(2)}.html")
+    for m in CAR_DETAIL_ID_RE.finditer(html):
+        push(m.start(), f"https://i.che168.com/car/{m.group(1)}")
+    for m in MOBILE_CHE168_INFOID_RE.finditer(html):
+        push(m.start(), _i_che168_url_from_infoid(m.group(1)))
+
+    found.sort(key=lambda item: item[0])
+    cards: list[ListingCard] = []
+    seen_ids: set[str] = set()
+    for i, (pos, url) in enumerate(found):
+        try:
+            lid = source_listing_id_from_url(url)
+        except ValueError:
+            lid = url
+        if lid in seen_ids:
+            continue
+        seen_ids.add(lid)
+        end = found[i + 1][0] if i + 1 < len(found) else min(len(html), pos + 1600)
+        start = max(0, pos - 220)
+        chunk = html[start:end]
+        cards.append(_listing_card_from_chunk(url, chunk))
+        if len(cards) >= max_items:
+            break
+    return cards
 
 
 def _strip_html_to_text(html: str) -> str:
@@ -1380,7 +1544,9 @@ def _parse_detail_from_html(html: str, source_listing_id: str) -> ParsedCar | No
     engine_volume_cc = _parse_engine_volume_cc(body_text or title)
     horsepower = _parse_horsepower(body_text or title)
     mileage_km = _parse_mileage_km(body_text)
-    fuel_type, transmission, location_city = _parse_fuel_transmission_city(body_text)
+    fuel_type, transmission, location_city = _parse_fuel_transmission_city(
+        " ".join(part for part in (body_text, title) if part)
+    )
     registration_date = _parse_registration_date(body_text)
     production_date = _parse_production_date(body_text)
     series_raw = _extract_series_raw(body_text, title)
@@ -1437,10 +1603,45 @@ def fetch_autohome_spec_id_from_detail_url(detail_url: str) -> int | None:
     return extract_autohome_spec_id(html)
 
 
-def _listing_links_playwright(series_url: str, max_items: int, *, nav_timeout_ms: int | None = None) -> list[str]:
+def _scrape_listing_cards_on_page(
+    page: Any,
+    series_url: str,
+    max_items: int,
+    nav_ms: int,
+) -> list[ListingCard]:
+    pw_proxy = playwright_proxy_config()
+    page.goto(series_url, wait_until="commit", timeout=nav_ms)
+    page.wait_for_timeout(800 if pw_proxy else 2500)
+    if "captcha" in page.url.lower():
+        raise RuntimeError(
+            "Браузер попал на captcha che168. Используйте CHE168_FORCE_DETAIL_URLS "
+            "или запуск с сети без антибота."
+        )
+    try:
+        if page.title() and "安全验证" in page.title():
+            raise RuntimeError("Страница проверки che168 (captcha).")
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+
+    scroll_rounds = 2 if pw_proxy else 6
+    scroll_wait = 400 if pw_proxy else 1000
+    for _ in range(scroll_rounds):
+        page.mouse.wheel(0, 2000)
+        page.wait_for_timeout(scroll_wait)
+
+    html = ""
+    try:
+        html = page.content() or ""
+    except Exception:
+        html = ""
+    cards = _listing_cards_from_html(html, max_items)
+    if cards:
+        return cards[:max_items]
+
     links: list[str] = []
     seen: set[str] = set()
-    nav_ms = int(nav_timeout_ms) if nav_timeout_ms is not None else _listing_pw_timeout_ms()
 
     def push_from_href(href: str) -> None:
         abs_url = _normalize_listing_href(href)
@@ -1449,71 +1650,87 @@ def _listing_links_playwright(series_url: str, max_items: int, *, nav_timeout_ms
         seen.add(abs_url)
         links.append(abs_url)
 
+    for a in page.query_selector_all("a[href]"):
+        href = a.get_attribute("href") or ""
+        push_from_href(href)
+        if len(links) >= max_items:
+            break
+    return [ListingCard(url=u) for u in links[:max_items]]
+
+
+def _listing_browser_context(p: Any, nav_ms: int):
+    browser = p.chromium.launch(
+        headless=True,
+        timeout=_pw_launch_timeout_ms(),
+        args=["--disable-blink-features=AutomationControlled"],
+    )
+    pw_proxy = playwright_proxy_config()
+    context_kwargs: dict[str, Any] = {
+        "user_agent": UA,
+        "locale": "zh-CN",
+        "extra_http_headers": {"Accept-Language": "zh-CN,zh;q=0.9"},
+    }
+    if pw_proxy:
+        context_kwargs["proxy"] = pw_proxy
+        context_kwargs["ignore_https_errors"] = True
+    context = browser.new_context(**context_kwargs)
+    context.set_default_timeout(nav_ms)
+    page = context.new_page()
+    page.set_default_timeout(nav_ms)
+    return browser, context, page
+
+
+def _listing_cards_playwright(
+    series_url: str,
+    max_items: int,
+    *,
+    nav_timeout_ms: int | None = None,
+) -> list[ListingCard]:
+    nav_ms = int(nav_timeout_ms) if nav_timeout_ms is not None else _listing_pw_timeout_ms()
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            timeout=_pw_launch_timeout_ms(),
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        context = browser.new_context(
-            user_agent=UA,
-            locale="zh-CN",
-            extra_http_headers={"Accept-Language": "zh-CN,zh;q=0.9"},
-        )
-        context.set_default_timeout(nav_ms)
-        page = context.new_page()
-        page.set_default_timeout(nav_ms)
-        page.goto(series_url, wait_until="commit", timeout=nav_ms)
-        page.wait_for_timeout(2500)
-        if "captcha" in page.url.lower():
-            raise RuntimeError(
-                "Браузер попал на captcha che168. Используйте CHE168_FORCE_DETAIL_URLS "
-                "или запуск с сети без антибота."
-            )
+        browser = None
+        context = None
         try:
-            if page.title() and "安全验证" in page.title():
-                raise RuntimeError("Страница проверки che168 (captcha).")
-        except RuntimeError:
-            raise
-        except Exception:
-            pass
-
-        for _ in range(6):
-            page.mouse.wheel(0, 2000)
-            page.wait_for_timeout(1000)
-
-        for a in page.query_selector_all("a[href]"):
-            href = a.get_attribute("href") or ""
-            push_from_href(href)
-            if len(links) >= max_items:
-                break
-
-        if len(links) < max_items:
+            browser, context, page = _listing_browser_context(p, nav_ms)
+            return _scrape_listing_cards_on_page(page, series_url, max_items, nav_ms)
+        finally:
             try:
-                html = page.content() or ""
-                for m in DEALER_LISTING_RE.finditer(html):
-                    push_from_href(f"https://www.che168.com/dealer/{m.group(1)}/{m.group(2)}.html")
-                    if len(links) >= max_items:
-                        break
-                for m in CAR_DETAIL_ID_RE.finditer(html):
-                    push_from_href(f"https://i.che168.com/car/{m.group(1)}")
-                    if len(links) >= max_items:
-                        break
+                if context is not None:
+                    context.close()
+            except Exception:
+                pass
+            try:
+                if browser is not None:
+                    browser.close()
             except Exception:
                 pass
 
-        context.close()
-        browser.close()
 
-    return links[:max_items]
+def _listing_links_playwright(
+    series_url: str, max_items: int, *, nav_timeout_ms: int | None = None
+) -> list[str]:
+    return [
+        c.url
+        for c in _listing_cards_playwright(
+            series_url, max_items, nav_timeout_ms=nav_timeout_ms
+        )
+        if c.url
+    ]
 
 
-def _listing_links_playwright_with_retry(series_url: str, max_items: int) -> list[str]:
-    attempts = max(1, int(os.getenv("CHE168_LIST_PW_RETRIES", "2")))
+def _listing_links_playwright_with_retry(
+    series_url: str,
+    max_items: int,
+    *,
+    nav_timeout_ms: int | None = None,
+) -> list[str]:
+    attempts = max(1, int(os.getenv("CHE168_LIST_PW_RETRIES", "1")))
     last_err: Exception | None = None
     for i in range(attempts):
         try:
-            return _listing_links_playwright(series_url, max_items)
+            return _listing_links_playwright(
+                series_url, max_items, nav_timeout_ms=nav_timeout_ms
+            )
         except Exception as e:
             last_err = e
             msg = str(e).lower()
@@ -1599,32 +1816,64 @@ def _allow_playwright_default() -> bool:
     return os.getenv("CHE168_SKIP_PLAYWRIGHT", "").lower() not in ("1", "true", "yes")
 
 
-def parse_che168_listing_links(
+def _listing_cards_playwright_with_retry(
+    series_url: str,
+    max_items: int,
+    *,
+    nav_timeout_ms: int | None = None,
+) -> list[ListingCard]:
+    attempts = max(1, int(os.getenv("CHE168_LIST_PW_RETRIES", "1")))
+    last_err: Exception | None = None
+    for i in range(attempts):
+        try:
+            return _listing_cards_playwright(
+                series_url, max_items, nav_timeout_ms=nav_timeout_ms
+            )
+        except Exception as e:
+            last_err = e
+            msg = str(e).lower()
+            retriable = (
+                "timeout" in msg
+                or "timed out" in msg
+                or "502" in msg
+                or "503" in msg
+                or "net::" in msg
+            )
+            if (not retriable) or i >= attempts - 1:
+                raise
+            time.sleep(1.5 * (i + 1))
+    if last_err:
+        raise last_err
+    return []
+
+
+def parse_che168_listing_cards(
     series_url: str,
     max_items: int = 20,
     *,
     allow_playwright: bool | None = None,
     http_timeout: float | None = None,
     http_retries: int | None = None,
-) -> list[str]:
-    """
-    Сначала HTTP (ссылки часто есть в HTML/скриптах без JS).
-    Если ссылок нет и allow_playwright — один проход браузером.
-    Для Agent API лучше allow_playwright=False: с VPS вне Китая Playwright
-    обычно тоже таймаутится на 60–120с и убивает весь прогон (n8n ~300с).
-    """
+    nav_timeout_ms: int | None = None,
+) -> list[ListingCard]:
+    """Витрина серии → плитки с URL/годом/пробегом/ценой. Карточку объявления не открывает."""
     if allow_playwright is None:
         allow_playwright = _allow_playwright_default()
 
     forced = _forced_detail_urls()
     if forced:
-        return forced[:max_items]
+        return [ListingCard(url=u) for u in forced[:max_items]]
 
     single = _single_listing_url_from_input(series_url)
     if single:
-        return [single][:max_items]
+        return [ListingCard(url=single)][:max_items]
 
-    links: list[str] = []
+    if che168_proxy_url() and allow_playwright:
+        return _listing_cards_playwright_with_retry(
+            series_url, max_items, nav_timeout_ms=nav_timeout_ms
+        )
+
+    cards: list[ListingCard] = []
     http_attempts = max(
         1,
         int(http_retries)
@@ -1640,16 +1889,15 @@ def parse_che168_listing_links(
     for i in range(http_attempts):
         try:
             html = _http_get_text(series_url, timeout=http_timeout_sec)
-            links = _car_urls_from_html(html, max_items)
-            if links:
-                return links[:max_items]
+            cards = _listing_cards_from_html(html, max_items)
+            if cards:
+                return cards[:max_items]
             break
         except RuntimeError as e:
-            # captcha / antibot — сразу в Playwright (если разрешён), без HTTP-ретраев
             last_http_err = e
             msg = str(e).lower()
             if "антибот" in msg or "captcha" in msg or "проверк" in msg:
-                links = []
+                cards = []
                 break
             if i >= http_attempts - 1:
                 break
@@ -1666,12 +1914,12 @@ def parse_che168_listing_links(
                 or "connect" in msg
             )
             if (not retriable) or i >= http_attempts - 1:
-                links = []
+                cards = []
                 break
             time.sleep(0.6 * (i + 1))
 
-    if len(links) >= 1:
-        return links[:max_items]
+    if cards:
+        return cards[:max_items]
 
     if not allow_playwright:
         if last_http_err:
@@ -1683,7 +1931,108 @@ def parse_che168_listing_links(
             "(витрина JS/антибот; Playwright отключён для быстрого режима)"
         )
 
-    return _listing_links_playwright_with_retry(series_url, max_items)
+    return _listing_cards_playwright_with_retry(
+        series_url, max_items, nav_timeout_ms=nav_timeout_ms
+    )
+
+
+def parse_che168_listing_cards_many(
+    series_urls: list[str],
+    max_per_series: int,
+    *,
+    allow_playwright: bool | None = None,
+    http_timeout: float | None = None,
+    nav_timeout_ms: int | None = None,
+    deadline: float | None = None,
+) -> list[tuple[str, list[ListingCard], str | None]]:
+    """Один браузер на все витрины (с прокси). [(url, cards, error), ...]."""
+    if allow_playwright is None:
+        allow_playwright = _allow_playwright_default()
+    urls = [str(u).strip() for u in series_urls if str(u).strip()]
+    out: list[tuple[str, list[ListingCard], str | None]] = []
+    use_batch_pw = bool(allow_playwright and che168_proxy_url() and urls)
+    if not use_batch_pw:
+        for series_url in urls:
+            if deadline is not None and time.monotonic() >= deadline:
+                out.append((series_url, [], f"budget_exceeded: остановились до {series_url}"))
+                continue
+            try:
+                cards = parse_che168_listing_cards(
+                    series_url,
+                    max_per_series,
+                    allow_playwright=allow_playwright,
+                    http_timeout=http_timeout,
+                    nav_timeout_ms=nav_timeout_ms,
+                )
+                out.append((series_url, cards, None))
+            except Exception as e:
+                out.append((series_url, [], str(e)))
+        return out
+
+    nav_ms = int(nav_timeout_ms) if nav_timeout_ms is not None else _listing_pw_timeout_ms()
+    with sync_playwright() as p:
+        browser = None
+        context = None
+        try:
+            browser, context, page = _listing_browser_context(p, nav_ms)
+            for series_url in urls:
+                if deadline is not None and (deadline - time.monotonic()) < 8:
+                    out.append(
+                        (series_url, [], f"budget_exceeded: остановились до {series_url}")
+                    )
+                    continue
+                remaining_ms = None
+                if deadline is not None:
+                    remaining_ms = int(max(5_000, min(nav_ms, (deadline - time.monotonic()) * 1000)))
+                try:
+                    cards = _scrape_listing_cards_on_page(
+                        page,
+                        series_url,
+                        max_per_series,
+                        remaining_ms or nav_ms,
+                    )
+                    out.append((series_url, cards[:max_per_series], None))
+                except Exception as e:
+                    out.append((series_url, [], str(e)))
+        finally:
+            try:
+                if context is not None:
+                    context.close()
+            except Exception:
+                pass
+            try:
+                if browser is not None:
+                    browser.close()
+            except Exception:
+                pass
+    return out
+
+
+def parse_che168_listing_links(
+    series_url: str,
+    max_items: int = 20,
+    *,
+    allow_playwright: bool | None = None,
+    http_timeout: float | None = None,
+    http_retries: int | None = None,
+    nav_timeout_ms: int | None = None,
+) -> list[str]:
+    """
+    Сначала HTTP (ссылки часто есть в HTML/скриптах без JS).
+    Если ссылок нет и allow_playwright — один проход браузером.
+    Для Agent API без CHE168_PROXY лучше allow_playwright=False: с VPS вне Китая
+    Playwright обычно тоже таймаутится на 60–120с и убивает весь прогон (n8n ~300с).
+    С CN-прокси витрина почти всегда JS-stub по HTTP — сразу Playwright.
+    """
+    cards = parse_che168_listing_cards(
+        series_url,
+        max_items,
+        allow_playwright=allow_playwright,
+        http_timeout=http_timeout,
+        http_retries=http_retries,
+        nav_timeout_ms=nav_timeout_ms,
+    )
+    return [c.url for c in cards if c.url]
 
 
 def _parse_che168_detail_playwright(
@@ -1703,14 +2052,19 @@ def _parse_che168_detail_playwright(
             args=["--disable-blink-features=AutomationControlled"],
         )
         ref = http_referer_for_request_url(detail_url)
-        context = browser.new_context(
-            user_agent=MOBILE_UA if use_mobile else UA,
-            locale="zh-CN",
-            extra_http_headers={
+        pw_proxy = playwright_proxy_config()
+        context_kwargs: dict[str, Any] = {
+            "user_agent": MOBILE_UA if use_mobile else UA,
+            "locale": "zh-CN",
+            "extra_http_headers": {
                 "Accept-Language": "zh-CN,zh;q=0.9",
                 "Referer": ref,
             },
-        )
+        }
+        if pw_proxy:
+            context_kwargs["proxy"] = pw_proxy
+            context_kwargs["ignore_https_errors"] = True
+        context = browser.new_context(**context_kwargs)
         nav_ms = _pw_page_navigation_timeout_ms(detail_url)
         context.set_default_timeout(nav_ms)
         page = context.new_page()
@@ -1765,7 +2119,9 @@ def _parse_che168_detail_playwright(
         engine_volume_cc = _parse_engine_volume_cc(body_text or title)
         horsepower = _parse_horsepower(body_text or title)
         mileage_km = _parse_mileage_km(body_text)
-        fuel_type, transmission, location_city = _parse_fuel_transmission_city(body_text)
+        fuel_type, transmission, location_city = _parse_fuel_transmission_city(
+            " ".join(part for part in (body_text, title) if part)
+        )
         registration_date = _parse_registration_date(body_text)
         production_date = _parse_production_date(body_text)
         price_cny = _parse_price_cny(body_text)
