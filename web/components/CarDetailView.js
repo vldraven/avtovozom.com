@@ -18,7 +18,7 @@ import {
   handleListingDetailRouteChangeStart,
   peekListingReturnPath,
 } from "../lib/listingNavigation";
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 import MediaImage from "./MediaImage";
 import { absoluteUrl } from "../lib/siteUrl";
 import { seoDescription } from "../lib/seoText";
@@ -785,7 +785,7 @@ export default function CarDetailView({
                   >
                     <MediaImage
                       className="photo-gallery__stage"
-                      src={mediaSrc(hero.storage_url)}
+                      src={mediaSrc(hero.storage_url, MEDIA_WIDTH.detail)}
                       alt={`${car.title} — фото ${safeIndex + 1}`}
                       fill
                       sizes="(max-width: 767px) 100vw, 900px"
@@ -879,7 +879,7 @@ export default function CarDetailView({
                         aria-label={`Миниатюра ${idx + 1}`}
                       >
                         <MediaImage
-                          src={mediaSrc(photo.storage_url)}
+                          src={mediaSrc(photo.storage_url, MEDIA_WIDTH.thumb)}
                           alt=""
                           width={96}
                           height={72}

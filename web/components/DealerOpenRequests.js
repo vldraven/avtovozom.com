@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 import SiteSelectDropdown from "./SiteSelectDropdown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -148,7 +148,7 @@ export default function DealerOpenRequests({ token, onOpenChat, onChatsUpdated }
                 <div className="dealer-request-card__main">
                   <Link href={`/cars/${r.car_id}`} className="dealer-request-card__thumb">
                     {r.car_thumb_url ? (
-                      <img src={mediaSrc(r.car_thumb_url)} alt="" width={120} height={90} />
+                      <img src={mediaSrc(r.car_thumb_url, MEDIA_WIDTH.thumb)} alt="" width={120} height={90} />
                     ) : (
                       <span className="dealer-request-card__thumb-placeholder">Нет фото</span>
                     )}

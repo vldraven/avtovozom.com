@@ -645,7 +645,54 @@ def media_proxy(url: str = Query(..., max_length=4096)):
     ct = ct_raw.split(";")[0].strip()
     if "text/html" in ct or "text/" in ct:
         raise HTTPException(status_code=400, detail="URL did not return an image")
-    return Response(content=body, media_type=ct)
+    return Response(
+        content=body,
+        media_type=ct,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.get("/media-img")
+def media_img(
+    path: str = Query(..., max_length=1024, description="Локальный путь /media/..."),
+    w: int = Query(..., ge=1, le=2000, description="Целевая ширина (белый список)"),
+):
+    """
+    Уменьшенная копия локального файла из MEDIA_ROOT.
+    Дисковый кэш: MEDIA_ROOT/.cache/w{W}/…
+    Для карточек каталога и thumbs — вместо отдачи 1024px оригинала.
+    """
+    from .media_resize import ALLOWED_WIDTHS, resize_local_image, resolve_local_media_path
+
+    if w not in ALLOWED_WIDTHS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported width; allowed: {sorted(ALLOWED_WIDTHS)}",
+        )
+    raw = unquote(path).strip()
+    src = resolve_local_media_path(raw)
+    if src is None:
+        raise HTTPException(status_code=404, detail="Media not found")
+    try:
+        body, media_type = resize_local_image(src, w)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Resize failed: {e!s}") from e
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=2592000"},
+    )
+
+
+@app.middleware("http")
+async def media_cache_control(request, call_next):
+    """Долгий кэш для статичных /media/* (оригиналы на диске)."""
+    response = await call_next(request)
+    path = request.url.path or ""
+    if path.startswith("/media/") and not path.startswith("/media-img"):
+        # Без immutable: staff может заменить файл по тому же URL.
+        response.headers.setdefault("Cache-Control", "public, max-age=604800")
+    return response
 
 
 app.mount("/media", StaticFiles(directory=str(MEDIA_ROOT)), name="media")

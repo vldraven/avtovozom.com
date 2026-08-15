@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { listingCarHref } from "../../lib/carRoutes";
 import { saveListingReturnPath } from "../../lib/listingNavigation";
-import { mediaSrc } from "../../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../../lib/media";
 import { absoluteUrl } from "../../lib/siteUrl";
 import SiteHeader from "../../components/SiteHeader";
 
@@ -134,7 +134,7 @@ export default function DealerPublicPage() {
                           {ph ? (
                             <img
                               className="dealer-public-card__img"
-                              src={mediaSrc(ph.storage_url)}
+                              src={mediaSrc(ph.storage_url, MEDIA_WIDTH.card)}
                               alt=""
                             />
                           ) : (

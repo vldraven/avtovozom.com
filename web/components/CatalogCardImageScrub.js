@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 import MediaImage from "./MediaImage";
 
 function indexFromRatio(ratio, n) {
@@ -29,7 +29,10 @@ export default function CatalogCardImageScrub({ photos }) {
     return sorted.map((p) => p.storage_url).filter(Boolean);
   }, [photos]);
 
-  const allSrcs = useMemo(() => urls.map((u) => mediaSrc(u)), [urls]);
+  const allSrcs = useMemo(
+    () => urls.map((u) => mediaSrc(u, MEDIA_WIDTH.card)),
+    [urls]
+  );
   const n = urls.length;
   const wrapRef = useRef(null);
   const allSrcsRef = useRef(allSrcs);
@@ -117,7 +120,7 @@ export default function CatalogCardImageScrub({ photos }) {
       {show ? (
         <MediaImage
           className="catalog-card__image"
-          src={mediaSrc(show)}
+          src={mediaSrc(show, MEDIA_WIDTH.card)}
           alt=""
           fill
           sizes="(max-width: 767px) 100vw, (max-width: 1200px) 50vw, 33vw"

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const PREVIEW_LIMIT = 3;
@@ -79,7 +79,7 @@ export default function AdminRequestsWidget({ token }) {
                 {r.car_thumb_url ? (
                   <img
                     className="profile-request-card__thumb-img"
-                    src={mediaSrc(r.car_thumb_url)}
+                    src={mediaSrc(r.car_thumb_url, MEDIA_WIDTH.thumb)}
                     alt=""
                     width={72}
                     height={54}

@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../../components/HeaderProfileLink";
 import { clearToken, getStoredToken } from "../../../lib/auth";
-import { mediaSrc } from "../../../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../../../lib/media";
 import { isStaffRole } from "../../../lib/roles";
 import SiteHeader from "../../../components/SiteHeader";
 
@@ -112,7 +112,7 @@ export default function AdminRequestDetailPage() {
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
                 {req.car_thumb_url ? (
                   <img
-                    src={mediaSrc(req.car_thumb_url)}
+                    src={mediaSrc(req.car_thumb_url, MEDIA_WIDTH.thumb)}
                     alt=""
                     width={160}
                     style={{ borderRadius: 8, objectFit: "cover" }}
