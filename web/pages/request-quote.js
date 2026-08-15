@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import SiteHeader from "../components/SiteHeader";
 import { saveToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 import { formatRuPhoneMask, normalizeRuPhoneDigits, phoneDigitsToApi } from "../lib/ruPhoneMask";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -221,7 +221,7 @@ export default function RequestQuotePage() {
                       return ph?.storage_url ? (
                         <img
                           className="request-quote-car-panel__img"
-                          src={mediaSrc(ph.storage_url)}
+                          src={mediaSrc(ph.storage_url, MEDIA_WIDTH.card)}
                           alt=""
                           width={112}
                           height={84}
@@ -361,7 +361,7 @@ export default function RequestQuotePage() {
                 return ph?.storage_url ? (
                   <img
                     className="request-quote-car-panel__img"
-                    src={mediaSrc(ph.storage_url)}
+                    src={mediaSrc(ph.storage_url, MEDIA_WIDTH.thumb)}
                     alt=""
                     width={112}
                     height={84}

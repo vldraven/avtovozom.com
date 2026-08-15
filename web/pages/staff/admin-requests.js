@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
 import { clearToken, getStoredToken } from "../../lib/auth";
-import { mediaSrc } from "../../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../../lib/media";
 import { isStaffRole } from "../../lib/roles";
 import SiteHeader from "../../components/SiteHeader";
 
@@ -115,7 +115,7 @@ export default function AdminRequestsPage() {
                     {r.car_thumb_url ? (
                       <img
                         className="profile-request-card__thumb-img"
-                        src={mediaSrc(r.car_thumb_url)}
+                        src={mediaSrc(r.car_thumb_url, MEDIA_WIDTH.thumb)}
                         alt=""
                         width={88}
                         height={66}

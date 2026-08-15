@@ -19,7 +19,7 @@ import {
   tryRefreshAccessToken,
 } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { humanizeWebAuthnError } from "../lib/webauthnErrors";
 import SiteHeader from "../components/SiteHeader";
@@ -487,7 +487,7 @@ export default function ProfilePage() {
                               {r.car_thumb_url ? (
                                 <img
                                   className="profile-request-card__thumb-img"
-                                  src={mediaSrc(r.car_thumb_url)}
+                                  src={mediaSrc(r.car_thumb_url, MEDIA_WIDTH.thumb)}
                                   alt=""
                                   width={88}
                                   height={66}
@@ -820,7 +820,7 @@ export default function ProfilePage() {
                             {ph && (
                               <img
                                 className="profile-staff-list__thumb"
-                                src={mediaSrc(ph.storage_url)}
+                                src={mediaSrc(ph.storage_url, MEDIA_WIDTH.thumb)}
                                 alt=""
                                 width={72}
                                 height={54}

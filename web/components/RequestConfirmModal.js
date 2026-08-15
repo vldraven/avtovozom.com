@@ -1,4 +1,4 @@
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 
 /**
  * Подтверждение заявки на расчёт для авторизованного пользователя: авто + комментарий.
@@ -39,7 +39,7 @@ export default function RequestConfirmModal({
         <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "flex-start" }}>
           {thumb ? (
             <img
-              src={mediaSrc(thumb)}
+              src={mediaSrc(thumb, MEDIA_WIDTH.thumb)}
               alt=""
               width={96}
               height={72}
