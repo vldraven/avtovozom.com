@@ -129,7 +129,7 @@ export default function App({ Component, pageProps }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta
           name="description"
-          content="Каталог автомобилей из Китая: подбор, доставка и сопровождение сделки."
+          content="Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены на сайте с учётом доставки до Москвы и таможенного оформления."
         />
         <link rel="manifest" href="/manifest.webmanifest" />
         {noindex ? <meta name="robots" content="noindex, nofollow" /> : null}
