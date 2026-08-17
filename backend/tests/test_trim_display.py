@@ -176,6 +176,48 @@ class TrimDisplayTests(unittest.TestCase):
         self.assertIn("Безопасность", groups)
         safety = next(s for s in sections if s["group"] == "Безопасность")
         self.assertGreaterEqual(len(safety["items"]), 2)
+        overview = {it["name"]: it["value"] for s in sections if s["group"] == "Основное" for it in s["items"]}
+        self.assertEqual(overview["Коробка передач"], "8-ступенчатый автомат")
+        self.assertNotRegex(overview["Коробка передач"], r"[\u4e00-\u9fff]")
+
+    def test_gearbox_wet_dct_from_zh(self) -> None:
+        from app.trim_config_ui import prepare_config_sections_from_zh
+        from app.trim_display import format_gearbox_value_ru, sanitize_config_sections_for_display
+
+        self.assertEqual(format_gearbox_value_ru("7挡湿式双离合"), "7-ступенчатый робот DCT")
+        self.assertEqual(format_gearbox_value_ru("6挡手动"), "6-ступенчатая механика")
+        self.assertEqual(format_gearbox_value_ru("无级变速"), "Вариатор")
+
+        sections = prepare_config_sections_from_zh(
+            [
+                {
+                    "group": "变速箱",
+                    "kind": "param",
+                    "items": [
+                        {"name": "简称", "value": "7挡湿式双离合"},
+                        {"name": "变速箱类型", "value": "湿式双离合变速箱"},
+                    ],
+                },
+            ]
+        )
+        overview = {it["name"]: it["value"] for s in sections if s["group"] == "Основное" for it in s["items"]}
+        self.assertEqual(overview["Коробка передач"], "7-ступенчатый робот DCT")
+        self.assertEqual(overview["Тип КПП"], "Робот DCT")
+        self.assertNotRegex(overview["Коробка передач"], r"[\u4e00-\u9fff]")
+
+        stored = [
+            {
+                "group": "Основное",
+                "items": [
+                    {"name": "Коробка передач", "value": "7挡湿式双离合"},
+                    {"name": "Топливо", "value": "Бензин"},
+                ],
+            }
+        ]
+        out = sanitize_config_sections_for_display(stored)
+        flat = {it["name"]: it["value"] for s in out for it in s["items"]}
+        self.assertEqual(flat["Коробка передач"], "7-ступенчатый робот DCT")
+        self.assertEqual(flat["Топливо"], "Бензин")
 
 
 if __name__ == "__main__":
