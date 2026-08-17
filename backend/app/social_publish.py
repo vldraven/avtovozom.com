@@ -216,6 +216,43 @@ def release_telegram_draft(
     return row
 
 
+def _social_shortlist_rank(car: Car) -> tuple:
+    """Детерминированный ранг шортлиста без LLM: popular → фото → свежесть."""
+    created = car.created_at
+    created_ts = created.timestamp() if created is not None else 0.0
+    return (
+        0 if bool(getattr(car, "is_popular", False)) else 1,
+        -len(getattr(car, "photos", None) or []),
+        -created_ts,
+        -int(car.id or 0),
+    )
+
+
+def rank_social_shortlist(cars: list[Car], *, limit: int) -> list[Car]:
+    """Сначала по одной лучшей машине каждой модели, затем добор до limit."""
+    if limit <= 0 or not cars:
+        return []
+    ordered = sorted(cars, key=_social_shortlist_rank)
+    picked: list[Car] = []
+    seen_models: set[int | str] = set()
+    for car in ordered:
+        if len(picked) >= limit:
+            return picked
+        model_key: int | str = car.model_id if car.model_id else f"car:{car.id}"
+        if model_key in seen_models:
+            continue
+        seen_models.add(model_key)
+        picked.append(car)
+    picked_ids = {car.id for car in picked}
+    for car in ordered:
+        if len(picked) >= limit:
+            break
+        if car.id in picked_ids:
+            continue
+        picked.append(car)
+    return picked
+
+
 def unpublished_catalog_cars(
     db: Session, *, limit: int = 40, exclude_ids: list[int] | None = None
 ) -> list[Car]:
@@ -241,6 +278,7 @@ def unpublished_catalog_cars(
         extra = [int(x) for x in exclude_ids if str(x).isdigit() and int(x) > 0]
         if extra:
             conditions.append(Car.id.not_in(extra))
+    pool_limit = min(max(int(limit) * 5, int(limit)), 80)
     stmt = (
         select(Car)
         .options(
@@ -250,10 +288,11 @@ def unpublished_catalog_cars(
             joinedload(Car.photos),
         )
         .where(*conditions)
-        .order_by(Car.created_at.desc(), Car.id.desc())
-        .limit(limit)
+        .order_by(Car.is_popular.desc(), Car.created_at.desc(), Car.id.desc())
+        .limit(pool_limit)
     )
-    return list(db.execute(stmt).unique().scalars().all())
+    pool = list(db.execute(stmt).unique().scalars().all())
+    return rank_social_shortlist(pool, limit=limit)
 
 
 def pending_review_cars(db: Session, *, limit: int = 20) -> list[Car]:
@@ -276,32 +315,41 @@ def pending_review_cars(db: Session, *, limit: int = 20) -> list[Car]:
     return list(db.execute(stmt).unique().scalars().all())
 
 
-def queue_item_from_car(db: Session, car: Car) -> dict[str, Any]:
+def queue_item_from_car(
+    db: Session, car: Car, *, compact: bool = False
+) -> dict[str, Any]:
     compose = build_social_compose(db, car)
     pub = get_telegram_publication(db, car.id)
-    return {
+    item: dict[str, Any] = {
         "id": car.id,
         "brand_id": car.brand_id,
         "model_id": car.model_id,
         "brand": compose.brand,
         "model": compose.model,
-        "generation": compose.generation,
-        "title": compose.title,
         "year": compose.year,
         "mileage_km": compose.mileage_km,
         "horsepower": compose.horsepower,
-        "fuel_type": compose.fuel_type,
-        "transmission": compose.transmission,
-        "price_cny": compose.price_cny,
         "estimated_total_rub": compose.estimated_total_rub,
         "is_popular": bool(getattr(car, "is_popular", False)),
         "photo_count": len(compose.photos),
         "created_at": car.created_at.isoformat() if car.created_at else None,
         "canonical_web_url": compose.canonical_web_url,
-        "skeleton_text": build_telegram_skeleton(compose),
         "telegram_status": pub.status if pub else None,
-        "last_draft_text": snapshot_text(pub),
     }
+    if compact:
+        return item
+    item.update(
+        {
+            "generation": compose.generation,
+            "title": compose.title,
+            "fuel_type": compose.fuel_type,
+            "transmission": compose.transmission,
+            "price_cny": compose.price_cny,
+            "skeleton_text": build_telegram_skeleton(compose),
+            "last_draft_text": snapshot_text(pub),
+        }
+    )
+    return item
 
 
 def compose_payload(db: Session, car: Car) -> dict[str, Any]:

@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Social: очередь → 1 лот → апрув\n\nCron 08/09/10/13/17/18/19 MSK: generate_text (как кнопка в админке) + все фото.\n\nОператор: ✅ publish, ❌ skip это объявление на сегодня, 🔄 другое авто (release + новый лот), текст = generate_text(revision) или готовый текст в send_draft.\n\nОтдельный Telegram-бот. Ручная кнопка в админке не меняется.",
+        "content": "## Social: воркер-шортлист → ИИ выбирает 1 → апрув\n\nКак sourcing: воркер БЕЗ ИИ собирает короткий TSV (разные модели, popular, фото, свежесть). ИИ только выбирает 1 id, generate_text (кнопка в админке) и send_draft.\n\nCron 08/09/10/13/17/18/19 MSK. Пустая очередь — без LLM.\n\nОператор: ✅ publish, ❌ skip на сегодня, 🔄 другое авто (release + новый лот), текст = generate_text(revision) или готовый текст в send_draft.",
         "height": 320,
         "width": 460
       },
@@ -113,9 +113,15 @@
               "type": "string"
             },
             {
+              "id": "c8b",
+              "name": "shortlistLimit",
+              "value": "12",
+              "type": "string"
+            },
+            {
               "id": "c9",
               "name": "systemPrompt",
-              "value": "Ты social-сотрудник avtovozom.com. Готовишь ОДИН черновик поста в Telegram-канал. Отвечай по-русски, кратко.\n\nРоль LLM:\n• из ГОТОВОЙ очереди выбрать 1 самый интересный лот без публикации в Telegram\n• текст поста НЕ пиши сам — tool generate_text (тот же ИИ, что кнопка «Сгенерировать» в админке), если оператор не прислал готовый новый текст\n• send_draft: все фото лота (до 10) + текст\n• после ответа оператора умеешь: опубликовать, отклонить, ПОМЕНЯТЬ АВТО, ПОМЕНЯТЬ/ПОПРАВИТЬ ТЕКСТ\n\nОчередь уже собрал воркер (cron / /run) или tool get_queue. Не выдумывай автомобили.\n\nДоступные инструменты:\n• get_queue — свежие лоты (можно exclude_ids). published/pending_review исключены; skipped только за сегодня (МСК)\n• get_pending — черновики на апруве\n• get_car — факты и фото\n• generate_text — ИИ-черновик; revision — указания, как переписать текст\n• send_draft — альбом оператору, pending_review. Можно передать готовый text от оператора\n• publish — в КАНАЛ только после явного ✅ / «опубликовать» / pub:ID\n• skip — отклонить ЭТО объявление только на сегодня (МСК); завтра можно предложить снова\n• release — снять черновик и ВЕРНУТЬ лот в очередь (не skip). Для «другое авто»\n• get_memory / save_memory — уроки (agent_key=social)\n\nCron или /run (таблица уже в user message):\n1) get_memory\n2) Если очередь пуста — «нет свежих лотов без публикации», СТОП\n3) Выбери 1 лот. Интересность: свежесть, is_popular, цена под ключ, мощность, число фото.\n4) generate_text(car_id) → send_draft(car_id, text). НЕ вызывай publish.\n5) Краткий отчёт: какой лот ушёл на апрув.\n\nЧат оператора (исполняй сразу, не спрашивай лишнего):\n• ✅ / опубликовать / pub:ID → publish с last_draft_text\n• ❌ / отклонить / skip:ID → skip этот car_id только на сегодня (завтра снова можно)\n• Поменять авто / другое авто / swap:ID / «возьми другую машину» / «возьми BMW X5»:\n  1) release(текущий car_id) — НЕ skip\n  2) get_queue(exclude_ids=текущий)\n  3) выбери другой лот (если оператор назвал марку/модель/id — из очереди под это; иначе следующий интересный)\n  4) generate_text → send_draft\n• Поменять/поправить текст («короче», «без эмодзи», «добавь про расход», «перепиши»):\n  generate_text(car_id, revision=указания оператора) → send_draft с новым текстом. Тот же car_id.\n• Если оператор прислал ГОТОВЫЙ новый текст поста (несколько абзацев) — send_draft(car_id, text) без generate_text.\n• /status → get_pending\n• /run → как cron\n",
+              "value": "Ты social-сотрудник avtovozom.com. Готовишь ОДИН черновик поста в Telegram-канал. Отвечай по-русски, кратко.\n\nРоль LLM (только это):\n• из ГОТОВОГО шортлиста (TSV в сообщении) выбрать 1 лот\n• текст НЕ пиши сам — generate_text (тот же ИИ, что кнопка «Сгенерировать» в админке), если оператор не прислал готовый текст\n• send_draft отправит альбом (фото подтянет сам tool)\n• после ответа оператора: publish / skip / другое авто / правка текста\n\nШортлист собрал воркер БЕЗ ИИ (разные модели, is_popular, число фото, свежесть). Не выдумывай авто. Если таблица уже в user message — НЕ вызывай get_queue, get_car, get_memory.\n\nДоступные инструменты:\n• get_queue — свежий шортлист TSV, только если таблицы нет или «другое авто» (exclude_ids). published/pending_review исключены; skipped только за сегодня (МСК)\n• get_pending — черновики на апруве\n• get_car — факты лота без URL фото\n• generate_text — ИИ-черновик; revision — как переписать\n• send_draft — альбом оператору, pending_review\n• publish — в КАНАЛ только после явного ✅ / «опубликовать» / pub:ID\n• skip — это объявление только на сегодня (МСК)\n• release — вернуть лот в очередь (не skip). Для «другое авто»\n• get_memory / save_memory — уроки (agent_key=social). На cron НЕ вызывай\n\nCron или /run (таблица уже в user message):\n1) Если таблица пуста / ошибка воркера — «нет свежих лотов», СТОП, без tools\n2) Выбери 1 id из TSV (popular, фото, цена под ключ, свежесть). Не бери вторую машину той же модели, если в таблице есть другая модель\n3) generate_text(car_id) → send_draft(car_id, text). НЕ get_queue/get_car/get_memory/publish\n4) Краткий отчёт: какой лот на апруве\n\nЧат оператора (сразу, без лишних вопросов):\n• ✅ / опубликовать / pub:ID → publish\n• ❌ / отклонить / skip:ID → skip этот car_id на сегодня\n• Поменять авто / другое авто / swap:ID / «возьми другую» / «возьми BMW X5»:\n  1) release(текущий) — НЕ skip\n  2) get_queue(exclude_ids=текущий)\n  3) другой id из TSV (если назвали марку/модель — из таблицы под это)\n  4) generate_text → send_draft\n• Поправить текст («короче», «без эмодзи») → generate_text(car_id, revision) → send_draft, тот же car_id\n• Готовый новый текст поста (несколько абзацев) → send_draft(car_id, text) без generate_text\n• /status → get_pending\n• /run → как cron\n",
               "type": "string"
             }
           ]
@@ -180,7 +186,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst webOrigin = String(settings.webOrigin || 'https://avtovozom.com').replace(/\\/$/, '');\nconst allowId = String(settings.operatorTelegramUserId || '').trim();\nconst token = String(settings.telegramBotToken || '').trim();\n\nconst raw = $('Telegram Trigger').first().json;\nconst cb = raw.callback_query || null;\nconst msg = (cb && cb.message) || raw.message || {};\nconst from = (cb && cb.from) || msg.from || {};\nconst chat = msg.chat || {};\nconst chatId = String(chat.id || '');\nconst userId = String(from.id || '');\nconst isPrivate = chat.type === 'private';\nconst allowed = isPrivate && (!allowId || allowId.includes('ВАШ') || userId === allowId);\n\nlet userText = String(msg.text || msg.caption || '').trim();\nif (cb && cb.data) {\n  const data = String(cb.data || '');\n  if (data.startsWith('pub:')) userText = 'Опубликовать car_id=' + data.slice(4);\n  else if (data.startsWith('skip:')) userText = 'Отклонить car_id=' + data.slice(5);\n  else if (data.startsWith('swap:')) userText = 'Поменять авто. Текущий черновик car_id=' + data.slice(5) + '. Сделай release этого id (вернуть в очередь, НЕ skip). Выбери ДРУГОЙ лот: get_queue(exclude_ids=' + data.slice(5) + '), generate_text, send_draft.';\n  else userText = data;\n  if (token && !token.includes('REPLACE')) {\n    try {\n      await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://api.telegram.org/bot' + token + '/answerCallbackQuery',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ callback_query_id: cb.id }),\n        json: false,\n        ignoreHttpStatusErrors: true,\n      });\n    } catch (e) {}\n  }\n}\nconst reply = msg.reply_to_message;\nif (reply) {\n  const rt = String(reply.text || reply.caption || '').trim();\n  if (rt) userText = 'Ответ на черновик:\\n' + rt.slice(0, 800) + '\\n\\nСообщение оператора:\\n' + userText;\n}\n\nreturn [{\n  json: {\n    chatId,\n    userId,\n    username: from.username || '',\n    firstName: from.first_name || '',\n    userText,\n    llmModel: settings.llmModel || 'gpt-5.5',\n    systemPrompt: String(settings.systemPrompt || '') + '\\n\\nСайт: ' + webOrigin,\n    allowed,\n    fromCron: false,\n  }\n}];"
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst webOrigin = String(settings.webOrigin || 'https://avtovozom.com').replace(/\\/$/, '');\nconst allowId = String(settings.operatorTelegramUserId || '').trim();\nconst token = String(settings.telegramBotToken || '').trim();\n\nconst raw = $('Telegram Trigger').first().json;\nconst cb = raw.callback_query || null;\nconst msg = (cb && cb.message) || raw.message || {};\nconst from = (cb && cb.from) || msg.from || {};\nconst chat = msg.chat || {};\nconst chatId = String(chat.id || '');\nconst userId = String(from.id || '');\nconst isPrivate = chat.type === 'private';\nconst allowed = isPrivate && (!allowId || allowId.includes('ВАШ') || userId === allowId);\n\nlet userText = String(msg.text || msg.caption || '').trim();\nif (cb && cb.data) {\n  const data = String(cb.data || '');\n  if (data.startsWith('pub:')) userText = 'Опубликовать car_id=' + data.slice(4);\n  else if (data.startsWith('skip:')) userText = 'Отклонить car_id=' + data.slice(5);\n  else if (data.startsWith('swap:')) userText = 'Поменять авто. Текущий черновик car_id=' + data.slice(5) + '. Сделай release этого id (вернуть в очередь, НЕ skip). Выбери ДРУГОЙ лот: get_queue(exclude_ids=' + data.slice(5) + '), generate_text, send_draft.';\n  else userText = data;\n  if (token && !token.includes('REPLACE')) {\n    try {\n      await this.helpers.httpRequest({\n        method: 'POST',\n        url: 'https://api.telegram.org/bot' + token + '/answerCallbackQuery',\n        headers: { 'Content-Type': 'application/json' },\n        body: JSON.stringify({ callback_query_id: cb.id }),\n        json: false,\n        ignoreHttpStatusErrors: true,\n      });\n    } catch (e) {}\n  }\n}\nconst reply = msg.reply_to_message;\nif (reply) {\n  const rt = String(reply.text || reply.caption || '').trim();\n  if (rt) userText = 'Ответ на черновик:\\n' + rt.slice(0, 800) + '\\n\\nСообщение оператора:\\n' + userText;\n}\nconst voice = (!cb && (msg.voice || msg.audio)) || null;\nconst doc = !cb ? msg.document : null;\nconst isAudioDoc = !!(doc && String(doc.mime_type || '').startsWith('audio/'));\nconst voiceFileId = String((voice && voice.file_id) || (isAudioDoc && doc.file_id) || '');\nconst hasVoice = Boolean(voiceFileId);\n\nreturn [{\n  json: {\n    chatId,\n    userId,\n    username: from.username || '',\n    firstName: from.first_name || '',\n    userText,\n    hasVoice,\n    voiceFileId,\n    llmModel: settings.llmModel || 'gpt-5.5',\n    systemPrompt: String(settings.systemPrompt || '') + '\\n\\nСайт: ' + webOrigin,\n    allowed,\n    fromCron: false,\n  }\n}];"
       },
       "id": "soc-ctx-code",
       "name": "Контекст чата",
@@ -210,7 +216,7 @@
             {
               "id": "cc3",
               "name": "userText",
-              "value": "/run Автозапуск соцпостов. Очередь уже загрузил воркер. Выбери 1 лот, generate_text, send_draft, не публикуй без апрува.",
+              "value": "/run Автозапуск соцпостов. Шортлист уже собрал воркер без ИИ. Выбери 1 id из TSV, generate_text, send_draft. Не вызывай get_queue/get_car/get_memory/publish.",
               "type": "string"
             },
             {
@@ -317,7 +323,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst ctx = items[0].json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst picks = Math.min(5, Math.max(1, Number(settings.picksPerRun || 1) || 1));\n\nasync function agentRequest(method, path) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', message: 'agentApiSecret не настроен', count: 0, items: [] };\n  }\n  if (!base) return { error: 'config', message: 'apiBaseUrl пуст', count: 0, items: [] };\n  try {\n    const resp = await this.helpers.httpRequest({\n      method,\n      url: base + path,\n      headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n      json: false,\n      returnFullResponse: true,\n      ignoreHttpStatusErrors: true,\n      timeout: 30000,\n    });\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, message: text.slice(0, 400), count: 0, items: [] };\n    }\n    try { return JSON.parse(text); } catch { return { error: 'parse', message: text.slice(0, 400), count: 0, items: [] }; }\n  } catch (error) {\n    return { error: 'http', message: String(error.message || error).slice(0, 400), count: 0, items: [] };\n  }\n}\n\nfunction toTsv(items) {\n  const header = 'id\\tbrand\\tmodel\\tmodel_id\\tyear\\tmileage_km\\thorsepower\\testimated_total_rub\\tis_popular\\tphoto_count\\turl';\n  const lines = (items || []).map((r) => [\n    r.id ?? '',\n    r.brand ?? '',\n    r.model ?? '',\n    r.model_id ?? '',\n    r.year ?? '',\n    r.mileage_km ?? '',\n    r.horsepower ?? '',\n    r.estimated_total_rub ?? '',\n    r.is_popular ? '1' : '0',\n    r.photo_count ?? '',\n    r.canonical_web_url ?? '',\n  ].join('\\t'));\n  return [header, ...lines].join('\\n');\n}\n\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/social/queue?limit=40');\nconst itemsQueue = Array.isArray(data.items) ? data.items : [];\nconst models = [];\nconst seen = new Set();\nfor (const row of itemsQueue) {\n  const key = String(row.model_id || row.brand + '|' + row.model);\n  if (seen.has(key)) continue;\n  seen.add(key);\n  models.push(`${row.brand} ${row.model} (model_id=${row.model_id}, свежий лот id=${row.id})`);\n}\n\nconst userText = [\n  String(ctx.userText || '').trim(),\n  '',\n  'Воркер уже загрузил очередь каталога. НЕ выдумывай авто. Выбери ' + picks + ' лот, вызови generate_text, затем send_draft со всеми фото. Не вызывай publish.',\n  '',\n  data.error ? ('Ошибка очереди: ' + (data.message || data.error)) : ('В очереди лотов: ' + (data.count ?? itemsQueue.length)),\n  models.length ? ('Уникальные модели:\\n- ' + models.join('\\n- ')) : 'Уникальных моделей нет.',\n  '',\n  'Таблица:',\n  toTsv(itemsQueue) || '(пусто)',\n].join('\\n');\n\nreturn [{ json: { ...ctx, userText, queueCount: data.count ?? itemsQueue.length } }];"
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst ctx = items[0].json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst picks = Math.min(5, Math.max(1, Number(settings.picksPerRun || 1) || 1));\nconst shortlistLimit = Math.min(20, Math.max(5, Number(settings.shortlistLimit || 12) || 12));\n\nasync function agentRequest(method, path) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', message: 'agentApiSecret не настроен', count: 0, items: [] };\n  }\n  if (!base) return { error: 'config', message: 'apiBaseUrl пуст', count: 0, items: [] };\n  try {\n    const resp = await this.helpers.httpRequest({\n      method,\n      url: base + path,\n      headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n      json: false,\n      returnFullResponse: true,\n      ignoreHttpStatusErrors: true,\n      timeout: 30000,\n    });\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, message: text.slice(0, 400), count: 0, items: [] };\n    }\n    try { return JSON.parse(text); } catch { return { error: 'parse', message: text.slice(0, 400), count: 0, items: [] }; }\n  } catch (error) {\n    return { error: 'http', message: String(error.message || error).slice(0, 400), count: 0, items: [] };\n  }\n}\n\nfunction toTsv(items) {\n  const header = 'id\\tbrand\\tmodel\\tmodel_id\\tyear\\tmileage_km\\thorsepower\\testimated_total_rub\\tis_popular\\tphoto_count\\turl';\n  const lines = (items || []).map((r) => [\n    r.id ?? '',\n    r.brand ?? '',\n    r.model ?? '',\n    r.model_id ?? '',\n    r.year ?? '',\n    r.mileage_km ?? '',\n    r.horsepower ?? '',\n    r.estimated_total_rub ?? '',\n    r.is_popular ? '1' : '0',\n    r.photo_count ?? '',\n    r.canonical_web_url ?? '',\n  ].join('\\t'));\n  return [header, ...lines].join('\\n');\n}\n\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/social/queue?limit=' + shortlistLimit + '&compact=1');\nconst itemsQueue = Array.isArray(data.items) ? data.items : [];\nconst models = [];\nconst seen = new Set();\nfor (const row of itemsQueue) {\n  const key = String(row.model_id || row.brand + '|' + row.model);\n  if (seen.has(key)) continue;\n  seen.add(key);\n  models.push(`${row.brand} ${row.model} (model_id=${row.model_id}, свежий лот id=${row.id})`);\n}\n\nconst userText = [\n  String(ctx.userText || '').trim(),\n  '',\n  'Шортлист собрал воркер БЕЗ ИИ (разные модели, popular, фото, свежесть). НЕ вызывай get_queue, get_car, get_memory. Выбери ' + picks + ' id из TSV → generate_text → send_draft. Не вызывай publish.',\n  '',\n  data.error ? ('Ошибка очереди: ' + (data.message || data.error)) : ('В очереди лотов: ' + (data.count ?? itemsQueue.length)),\n  models.length ? ('Уникальные модели:\\n- ' + models.join('\\n- ')) : 'Уникальных моделей нет.',\n  '',\n  'Таблица:',\n  toTsv(itemsQueue) || '(пусто)',\n].join('\\n');\n\nreturn [{ json: { ...ctx, userText, queueCount: data.count ?? itemsQueue.length } }];"
       },
       "id": "soc-worker-queue",
       "name": "Воркер: очередь",
@@ -328,7 +334,52 @@
         480
       ],
       "notesInFlow": true,
-      "notes": "GET /agent/v1/social/queue. ИИ выбирает 1 лот, generate_text, send_draft."
+      "notes": "GET /agent/v1/social/queue compact. ИИ только выбирает 1 id, generate_text, send_draft."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "soc-queue-ok",
+              "leftValue": "={{ Number($json.queueCount || 0) }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "soc-if-queue",
+      "name": "Есть лоты?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { output: 'Нет свежих лотов без публикации.' } }];"
+      },
+      "id": "soc-empty-queue",
+      "name": "Нет лотов",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        560
+      ]
     },
     {
       "parameters": {
@@ -355,7 +406,8 @@
     {
       "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "={{ $('Контекст cron').isExecuted ? $('Контекст cron').item.json.chatId : $('Контекст чата').item.json.chatId }}"
+        "sessionKey": "={{ $('Контекст cron').isExecuted ? 'social-cron' : $('Контекст чата').item.json.chatId }}",
+        "contextWindowLength": 2
       },
       "id": "soc-memory",
       "name": "Память диалога",
@@ -449,11 +501,11 @@
     {
       "parameters": {
         "name": "get_queue",
-        "description": "Свежие лоты каталога без публикации в Telegram. exclude_ids — не брать указанные машины.",
-        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst limit = Math.min(80, Math.max(1, Number(input.limit || 40) || 40));\nlet path = '/agent/v1/social/queue?limit=' + limit;\nconst ex = Array.isArray(input.exclude_ids) ? input.exclude_ids : (input.exclude_ids != null ? [input.exclude_ids] : []);\nconst ids = ex.map(Number).filter((n) => n > 0);\nif (ids.length) path += '&exclude_ids=' + ids.join(',');\nconst data = await agentRequest.call(this, 'GET', path);\nreturn JSON.stringify(data);",
+        "description": "Шортлист TSV без ИИ. Только если таблицы нет в сообщении или оператор просит другое авто. exclude_ids — не брать эти машины.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nfunction toTsv(items) {\n  const header = 'id\\tbrand\\tmodel\\tmodel_id\\tyear\\tmileage_km\\thorsepower\\testimated_total_rub\\tis_popular\\tphoto_count\\turl';\n  const lines = (items || []).map((r) => [\n    r.id ?? '',\n    r.brand ?? '',\n    r.model ?? '',\n    r.model_id ?? '',\n    r.year ?? '',\n    r.mileage_km ?? '',\n    r.horsepower ?? '',\n    r.estimated_total_rub ?? '',\n    r.is_popular ? '1' : '0',\n    r.photo_count ?? '',\n    r.canonical_web_url ?? '',\n  ].join('\\t'));\n  return [header, ...lines].join('\\n');\n}\nconst fallbackLimit = Math.min(20, Math.max(5, Number(settings.shortlistLimit || 12) || 12));\nconst limit = Math.min(20, Math.max(1, Number(input.limit || fallbackLimit) || fallbackLimit));\nlet path = '/agent/v1/social/queue?compact=1&limit=' + limit;\nconst ex = Array.isArray(input.exclude_ids) ? input.exclude_ids : (input.exclude_ids != null ? [input.exclude_ids] : []);\nconst ids = ex.map(Number).filter((n) => n > 0);\nif (ids.length) path += '&exclude_ids=' + ids.join(',');\nconst data = await agentRequest.call(this, 'GET', path);\nif (data.error) return JSON.stringify(data);\nconst itemsQueue = Array.isArray(data.items) ? data.items : [];\nreturn JSON.stringify({ count: data.count ?? itemsQueue.length, tsv: toTsv(itemsQueue) });",
         "specifyInputSchema": true,
         "schemaType": "manual",
-        "inputSchema": "{\"type\": \"object\", \"properties\": {\"limit\": {\"type\": \"number\", \"description\": \"Сколько лотов (по умолчанию 40)\"}, \"exclude_ids\": {\"type\": \"array\", \"items\": {\"type\": \"number\"}, \"description\": \"Не предлагать эти car_id (после смены авто)\"}}}"
+        "inputSchema": "{\"type\": \"object\", \"properties\": {\"limit\": {\"type\": \"number\", \"description\": \"Сколько лотов (по умолчанию shortlistLimit=12)\"}, \"exclude_ids\": {\"type\": \"array\", \"items\": {\"type\": \"number\"}, \"description\": \"Не предлагать эти car_id (после смены авто)\"}}}"
       },
       "id": "soc-tool-queue",
       "name": "get_queue",
@@ -485,8 +537,8 @@
     {
       "parameters": {
         "name": "get_car",
-        "description": "Каркас лота: факты, skeleton_text, last_draft_text, все фото (id + absolute_url, до 10).",
-        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst carId = Number(input.car_id);\nif (!Number.isFinite(carId) || carId <= 0) return JSON.stringify({ error: 'Нужен car_id' });\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/social/cars/' + carId);\nreturn JSON.stringify(data);",
+        "description": "Факты лота без URL фото: id, марка, модель, год, цена, skeleton_text, last_draft_text, photo_ids. Для выбора из TSV не нужен.",
+        "jsCode": "const settings = $('Настройки workflow').first().json;\nconst secret = String(settings.agentApiSecret || '').trim();\nconst base = String(settings.apiBaseUrl || '').replace(/\\/$/, '');\nconst input = typeof query === 'string' ? JSON.parse(query) : { ...query };\nasync function agentRequest(method, path, body) {\n  if (!secret || secret.includes('ЗАМЕНИТЕ')) {\n    return { error: 'config', body: 'agentApiSecret не настроен в «Настройки workflow» (= AGENT_API_SECRET на backend)' };\n  }\n  if (!base) return { error: 'config', body: 'apiBaseUrl пуст' };\n  const opts = {\n    method,\n    url: base + path,\n    headers: { 'Content-Type': 'application/json', 'X-Agent-Secret': secret },\n    json: false,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  };\n  if (body !== undefined) opts.body = JSON.stringify(body);\n  try {\n    const resp = await this.helpers.httpRequest(opts);\n    const status = resp.statusCode || resp.status || 0;\n    const rawBody = resp.body ?? resp.data ?? '';\n    const text = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody);\n    if (status < 200 || status >= 300) {\n      return { error: 'HTTP ' + status, body: text.slice(0, 800) };\n    }\n    try { return JSON.parse(text); } catch { return { ok: true, raw: text.slice(0, 2000) }; }\n  } catch (error) {\n    const status = error.statusCode ?? error.httpCode ?? error.response?.statusCode ?? '?';\n    const bodyText = String(error.response?.body || error.description || error.message || '').slice(0, 800);\n    return { error: 'HTTP ' + status, body: bodyText };\n  }\n}\nconst carId = Number(input.car_id);\nif (!Number.isFinite(carId) || carId <= 0) return JSON.stringify({ error: 'Нужен car_id' });\nconst data = await agentRequest.call(this, 'GET', '/agent/v1/social/cars/' + carId);\nif (data.error) return JSON.stringify(data);\nreturn JSON.stringify({\n  id: data.id,\n  brand: data.brand,\n  model: data.model,\n  year: data.year,\n  mileage_km: data.mileage_km,\n  horsepower: data.horsepower,\n  estimated_total_rub: data.estimated_total_rub,\n  is_popular: data.is_popular,\n  photo_count: data.photo_count,\n  photo_ids: data.photo_ids,\n  skeleton_text: data.skeleton_text,\n  last_draft_text: data.last_draft_text,\n  telegram_status: data.telegram_status,\n  canonical_web_url: data.canonical_web_url,\n});",
         "specifyInputSchema": true,
         "schemaType": "manual",
         "inputSchema": "{\"type\": \"object\", \"properties\": {\"car_id\": {\"type\": \"number\"}}, \"required\": [\"car_id\"]}"
@@ -625,6 +677,99 @@
         2330,
         1008
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "soc-has-voice",
+              "leftValue": "={{ Boolean($json.hasVoice) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "soc-if-voice",
+      "name": "Есть голос?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.voiceFileId }}",
+        "download": true,
+        "additionalFields": {}
+      },
+      "id": "soc-tg-voice-file",
+      "name": "Telegram: файл голоса",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1020,
+        48
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_SOCIAL_TELEGRAM_CREDENTIAL",
+          "name": "Avtovozom Social Bot"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "getFile + download. Credential тот же, что Telegram Trigger."
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "id": "soc-openai-transcribe",
+      "name": "OpenAI: транскрипт голоса",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        1240,
+        48
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "Whisper, как в Ignat v2.3. Credential тот же, что OpenAI Chat Model."
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Контекст чата').first().json;\nlet transcript = '';\ntry {\n  transcript = String($json.text || $json.transcript || '').trim();\n} catch (e) {\n  transcript = '';\n}\nconst caption = String(ctx.userText || '').trim();\nlet userText = transcript;\nif (caption && transcript && caption !== transcript) userText = transcript + '\\n\\n' + caption;\nif (!userText) userText = 'Голосовое сообщение не удалось распознать. Напишите текстом.';\nreturn [{ json: { ...ctx, userText, voiceTranscript: transcript, hasVoice: true } }];\n"
+      },
+      "id": "soc-voice-text",
+      "name": "Текст из голоса",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        48
+      ]
     }
   ],
   "connections": {
@@ -694,7 +839,7 @@
       "main": [
         [
           {
-            "node": "Только оператор",
+            "node": "Есть голос?",
             "type": "main",
             "index": 0
           }
@@ -752,7 +897,36 @@
       "main": [
         [
           {
+            "node": "Есть лоты?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть лоты?": {
+      "main": [
+        [
+          {
             "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Нет лотов",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Нет лотов": {
+      "main": [
+        [
+          {
+            "node": "Очистка ответа",
             "type": "main",
             "index": 0
           }
@@ -908,6 +1082,57 @@
           {
             "node": "AI Agent",
             "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть голос?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: файл голоса",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Только оператор",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: файл голоса": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: транскрипт голоса",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI: транскрипт голоса": {
+      "main": [
+        [
+          {
+            "node": "Текст из голоса",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Текст из голоса": {
+      "main": [
+        [
+          {
+            "node": "Только оператор",
+            "type": "main",
             "index": 0
           }
         ]
