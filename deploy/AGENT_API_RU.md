@@ -32,7 +32,7 @@ X-Agent-Secret: <тот же, что AGENT_API_SECRET в backend .env>
 | POST | `/import-plan/start` | После ✅ в TG |
 | POST | `/import-plan/stop` | Остановка |
 | GET/POST | `/memory?agent_key=` | Долгосрочная память (`sourcing` / `social`) |
-| GET | `/social/queue` | Свежие лоты без публикации в Telegram |
+| GET | `/social/queue` | Шортлист лотов без публикации (`compact=1` — без skeleton/draft) |
 | GET | `/social/pending` | Черновики на апруве |
 | GET | `/social/cars/{id}` | Каркас поста + фото |
 | POST | `/social/ai-draft` | Тот же ИИ-текст, что кнопка «Сгенерировать» |

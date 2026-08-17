@@ -65,6 +65,10 @@ class SocialAiDraftOut(BaseModel):
 def social_queue(
     limit: int = 40,
     exclude_ids: str | None = Query(default=None, description="Comma-separated car ids to skip"),
+    compact: bool = Query(
+        default=False,
+        description="Без skeleton_text/last_draft_text — для LLM-шортлиста",
+    ),
     db: Session = Depends(get_db),
     _: None = Depends(verify_agent_secret),
 ):
@@ -78,7 +82,7 @@ def social_queue(
     cars = unpublished_catalog_cars(db, limit=limit, exclude_ids=excluded or None)
     return SocialQueueOut(
         count=len(cars),
-        items=[queue_item_from_car(db, car) for car in cars],
+        items=[queue_item_from_car(db, car, compact=compact) for car in cars],
     )
 
 

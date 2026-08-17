@@ -190,6 +190,54 @@ class SocialAgentApiTests(unittest.TestCase):
         self.assertIn("skeleton_text", body["items"][0])
         self.assertIn("BMW X5", body["items"][0]["skeleton_text"])
 
+    def test_queue_shortlist_prefers_unique_models(self) -> None:
+        older_x5 = self._add_car(
+            listing_id="x5-old",
+            model_id=self.x5_id,
+            title="BMW X5 older",
+            created_at=datetime.utcnow() - timedelta(days=2),
+            photos=2,
+        )
+        extra_series = []
+        for i in range(4):
+            extra_series.append(
+                self._add_car(
+                    listing_id=f"series-{i}",
+                    model_id=self.series_id,
+                    title=f"BMW 3 Series {i}",
+                    created_at=datetime.utcnow() - timedelta(hours=i + 1),
+                    photos=2,
+                )
+            )
+        popular_series = self._add_car(
+            listing_id="series-hot",
+            model_id=self.series_id,
+            title="BMW 3 Series popular",
+            created_at=datetime.utcnow() - timedelta(hours=8),
+            photos=6,
+            is_popular=True,
+        )
+        r = self.client.get("/agent/v1/social/queue?limit=3", headers=self.headers)
+        self.assertEqual(r.status_code, 200)
+        ids = [item["id"] for item in r.json()["items"]]
+        self.assertEqual(ids[0], popular_series.id)
+        self.assertIn(older_x5.id, ids)
+        self.assertEqual(len(ids), 3)
+
+    def test_queue_compact_omits_draft_text(self) -> None:
+        self._add_car(
+            listing_id="compact-1",
+            model_id=self.x5_id,
+            title="BMW X5 compact",
+        )
+        r = self.client.get("/agent/v1/social/queue?compact=true", headers=self.headers)
+        self.assertEqual(r.status_code, 200)
+        item = r.json()["items"][0]
+        self.assertIn("id", item)
+        self.assertIn("photo_count", item)
+        self.assertNotIn("skeleton_text", item)
+        self.assertNotIn("last_draft_text", item)
+
     def test_draft_moves_to_pending_then_skip(self) -> None:
         car = self._add_car(
             listing_id="draft-1",
