@@ -329,6 +329,94 @@ class AgentApiTests(unittest.TestCase):
         self.assertEqual(row["horsepower"], 156)
         self.assertIn("карточки не открывали", body["message"].lower())
 
+    def test_fair_series_caps_covers_all_urls(self) -> None:
+        from app.agent_api import fair_series_caps, interleave_by_model
+
+        caps = fair_series_caps(31, total_limit=400, per_series_ceiling=30)
+        self.assertEqual(len(caps), 31)
+        self.assertEqual(sum(caps), 400)
+        self.assertTrue(all(12 <= c <= 13 for c in caps))
+
+        tiny = fair_series_caps(5, total_limit=3, per_series_ceiling=30)
+        self.assertEqual(tiny, [1, 1, 1, 1, 1])
+
+        class Row:
+            def __init__(self, model_id, ident):
+                self.model_id = model_id
+                self.id = ident
+
+        mixed = [Row("a", 1), Row("a", 2), Row("b", 3), Row("b", 4)]
+        names = [r.model_id for r in interleave_by_model(mixed, 4)]
+        self.assertEqual(names, ["a", "b", "a", "b"])
+
+    @patch("app.agent_api.marketplace_from_detail_url", return_value="che168")
+    @patch("app.agent_api.normalize_import_detail_url", side_effect=lambda u: u)
+    @patch(
+        "app.agent_api.source_listing_id_from_url",
+        side_effect=lambda u: u.rstrip("/").rsplit("/", 1)[-1].replace(".html", ""),
+    )
+    @patch("app.agent_api.parse_che168_listing_cards_many")
+    def test_discover_equal_quota_per_series(self, mock_cards, *_mocks) -> None:
+        q3 = self.db.query(CarModel).filter(CarModel.name == "Q3").one()
+        extra = CarModel(
+            brand_id=self.brand_id,
+            name="A4",
+            che168_url="https://www.che168.com/series/a4/",
+        )
+        self.db.add(extra)
+        self.db.flush()
+        urls = [
+            "https://www.che168.com/china/aodi/a6/s1",
+            "https://www.che168.com/china/aodi/q3/s1",
+            "https://www.che168.com/china/aodi/a4/s1",
+        ]
+        model_ids = [self.model_id, q3.id, extra.id]
+        profile = self.db.get(SearchProfile, self.profile_id)
+        profile.criteria = {
+            **(profile.criteria or {}),
+            "series_urls": [
+                {"url": urls[i], "brand_id": self.brand_id, "model_id": model_ids[i]}
+                for i in range(3)
+            ],
+        }
+        self.db.commit()
+
+        def fake_scrape(series_urls, max_per_series, **_kwargs):
+            self.assertEqual(max_per_series, 2)
+            out = []
+            for series_url in series_urls:
+                cards = [
+                    ListingCard(
+                        url=f"{series_url.rstrip('/')}/c{i}.html",
+                        year=2022,
+                        price_cny=150000,
+                        mileage_km=20000,
+                    )
+                    for i in range(5)
+                ]
+                out.append((series_url, cards, None))
+            return out
+
+        mock_cards.side_effect = fake_scrape
+        r = self.client.post(
+            "/agent/v1/discover",
+            headers=self.headers,
+            json={
+                "profile_id": self.profile_id,
+                "use_whitelist": False,
+                "limit_per_series": 10,
+                "max_created": 6,
+            },
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["created"], 6)
+        self.assertEqual(body["series_ok"], 3)
+        counts: dict[int, int] = {}
+        for cand in body["candidates"]:
+            counts[cand["model_id"]] = counts.get(cand["model_id"], 0) + 1
+        self.assertEqual(sorted(counts.values()), [2, 2, 2])
+
 
 if __name__ == "__main__":
     unittest.main()

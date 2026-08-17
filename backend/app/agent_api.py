@@ -11,7 +11,8 @@ import os
 import time
 import uuid
 from datetime import date, datetime, time as dt_time, timedelta, timezone
-from typing import Any, Literal
+from collections import OrderedDict
+from typing import Any, Literal, TypeVar
 from urllib.parse import urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
@@ -219,8 +220,9 @@ class MarketResearchIn(BaseModel):
 class CollectIn(BaseModel):
     profile_id: int
     parse_limit: int = Field(default=300, ge=1, le=500)
-    """Сколько ссылок максимум собрать (сумма по series)."""
+    """Сколько ссылок максимум собрать (сумма по series, делится поровну)."""
     limit_per_series: int = Field(default=30, ge=1, le=100)
+    """Потолок карточек с одной витрины. Фактическая квота = parse_limit / число URL."""
     filter_limit: int = Field(default=200, ge=1, le=500)
     """Сколько прошедших hard-filter вернуть в shortlist_pool."""
     llm_shortlist_limit: int = Field(default=200, ge=1, le=400)
@@ -870,6 +872,52 @@ def _series_targets(
     return targets
 
 
+def fair_series_caps(
+    n_targets: int,
+    *,
+    total_limit: int,
+    per_series_ceiling: int,
+) -> list[int]:
+    """Одинаковая квота на каждую витрину: хвост списка не отрезается."""
+    if n_targets <= 0:
+        return []
+    ceiling = max(1, min(int(per_series_ceiling), 100))
+    budget = max(int(total_limit), n_targets)
+    base, extra = divmod(budget, n_targets)
+    return [max(1, min(ceiling, base + (1 if i < extra else 0))) for i in range(n_targets)]
+
+
+T = TypeVar("T")
+
+
+def interleave_by_model(items: list[T], limit: int) -> list[T]:
+    """Round-robin по model_id, чтобы shortlist не схлопывался в первые модели."""
+    if limit <= 0 or not items:
+        return []
+    buckets: OrderedDict[Any, list[T]] = OrderedDict()
+    for item in items:
+        key = getattr(item, "model_id", None)
+        if key is None and isinstance(item, dict):
+            key = item.get("model_id")
+        if key is None:
+            key = getattr(item, "model", None) or getattr(item, "id", id(item))
+        buckets.setdefault(key, []).append(item)
+    out: list[T] = []
+    while len(out) < limit:
+        progressed = False
+        for key in list(buckets):
+            group = buckets[key]
+            if not group:
+                continue
+            out.append(group.pop(0))
+            progressed = True
+            if len(out) >= limit:
+                break
+        if not progressed:
+            break
+    return out
+
+
 def _import_plan_agent_out(db: Session) -> ImportPlanAgentOut:
     plan = ensure_import_plan(db)
     rows = [
@@ -1023,15 +1071,27 @@ def discover(
     by_url = {t[0]: t for t in targets}
     remaining = deadline - time.monotonic()
     nav_timeout_ms = int(min(25_000, max(5_000, remaining * 1000))) if use_playwright else None
+    total_limit = max_created if max_created is not None else (
+        len(targets) * payload.limit_per_series
+    )
+    caps = fair_series_caps(
+        len(targets),
+        total_limit=total_limit,
+        per_series_ceiling=payload.limit_per_series,
+    )
+    scrape_cap = max(caps) if caps else payload.limit_per_series
     scraped = parse_che168_listing_cards_many(
         [t[0] for t in targets],
-        payload.limit_per_series,
+        scrape_cap,
         allow_playwright=use_playwright,
         http_timeout=http_timeout,
         nav_timeout_ms=nav_timeout_ms,
         deadline=deadline,
     )
 
+    cap_by_url = {
+        targets[i][0]: caps[i] for i in range(min(len(targets), len(caps)))
+    }
     for series_url, cards, err in scraped:
         meta = by_url.get(series_url)
         brand_id = meta[1] if meta else None
@@ -1045,16 +1105,13 @@ def discover(
             continue
         series_ok += 1
         logger.info(
-            "discover ok %s cards=%s year_price=%s",
+            "discover ok %s cards=%s year_price=%s cap=%s",
             series_url,
             len(cards),
             sum(1 for c in cards if c.year and c.price_cny),
+            cap_by_url.get(series_url, scrape_cap),
         )
-        if max_created is not None and created >= max_created:
-            break
-        for card in cards:
-            if max_created is not None and created >= max_created:
-                break
+        for card in cards[: cap_by_url.get(series_url, scrape_cap)]:
             link = card.url
             norm = normalize_import_detail_url(link) or link
             try:
@@ -1280,7 +1337,7 @@ def collect_listings(
             market_research=market,
         )
 
-    per_series = max(20, min(payload.limit_per_series, 40))
+    per_series = payload.limit_per_series
     # n8n toolCode (N8N_RUNNERS_TASK_TIMEOUT) рвёт запрос на 300с — /collect должен уложиться раньше.
     collect_budget = float(os.getenv("AGENT_COLLECT_BUDGET_SEC", "240"))
     collect_started = time.monotonic()
@@ -1422,8 +1479,8 @@ def collect_listings(
             -(c.id or 0),
         ),
     )
-    pool = passed_sorted[: payload.filter_limit]
-    listings = [_compact_listing(c) for c in pool[: payload.llm_shortlist_limit]]
+    pool = interleave_by_model(passed_sorted, payload.filter_limit)
+    listings = [_compact_listing(c) for c in interleave_by_model(pool, payload.llm_shortlist_limit)]
 
     status: Literal["ok", "empty", "quota_closed", "error"] = (
         "ok" if listings else "empty"

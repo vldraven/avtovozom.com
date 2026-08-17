@@ -1951,9 +1951,21 @@ def parse_che168_listing_cards_many(
     urls = [str(u).strip() for u in series_urls if str(u).strip()]
     out: list[tuple[str, list[ListingCard], str | None]] = []
     use_batch_pw = bool(allow_playwright and che168_proxy_url() and urls)
+
+    def slot_timeout_ms(index: int, default_ms: int) -> int | None:
+        if deadline is None:
+            return default_ms
+        remaining = deadline - time.monotonic()
+        left = len(urls) - index
+        if remaining <= 0 or left <= 0:
+            return 0
+        share_ms = int(remaining / left * 1000)
+        return int(max(1_500, min(default_ms, share_ms, remaining * 1000)))
+
     if not use_batch_pw:
-        for series_url in urls:
-            if deadline is not None and time.monotonic() >= deadline:
+        for i, series_url in enumerate(urls):
+            slot_ms = slot_timeout_ms(i, int((http_timeout or 12) * 1000))
+            if slot_ms == 0:
                 out.append((series_url, [], f"budget_exceeded: остановились до {series_url}"))
                 continue
             try:
@@ -1961,8 +1973,8 @@ def parse_che168_listing_cards_many(
                     series_url,
                     max_per_series,
                     allow_playwright=allow_playwright,
-                    http_timeout=http_timeout,
-                    nav_timeout_ms=nav_timeout_ms,
+                    http_timeout=min(float(http_timeout or 12), slot_ms / 1000),
+                    nav_timeout_ms=slot_ms if allow_playwright else nav_timeout_ms,
                 )
                 out.append((series_url, cards, None))
             except Exception as e:
@@ -1975,21 +1987,19 @@ def parse_che168_listing_cards_many(
         context = None
         try:
             browser, context, page = _listing_browser_context(p, nav_ms)
-            for series_url in urls:
-                if deadline is not None and (deadline - time.monotonic()) < 8:
+            for i, series_url in enumerate(urls):
+                slot_ms = slot_timeout_ms(i, nav_ms)
+                if slot_ms == 0:
                     out.append(
                         (series_url, [], f"budget_exceeded: остановились до {series_url}")
                     )
                     continue
-                remaining_ms = None
-                if deadline is not None:
-                    remaining_ms = int(max(5_000, min(nav_ms, (deadline - time.monotonic()) * 1000)))
                 try:
                     cards = _scrape_listing_cards_on_page(
                         page,
                         series_url,
                         max_per_series,
-                        remaining_ms or nav_ms,
+                        slot_ms,
                     )
                     out.append((series_url, cards[:max_per_series], None))
                 except Exception as e:
