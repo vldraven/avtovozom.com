@@ -1,7 +1,7 @@
 {
   "name": "avtovozom",
   "short_name": "avtovozom",
-  "description": "Каталог автомобилей из Китая: подбор, доставка и сопровождение сделки.",
+  "description": "Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров.",
   "lang": "ru-RU",
   "dir": "ltr",
   "start_url": "/?source=pwa",

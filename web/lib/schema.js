@@ -42,7 +42,7 @@ export function organizationAndWebSiteJsonLd() {
         sameAs: BRAND_SAME_AS,
         areaServed: { "@type": "Country", name: "Россия" },
         description:
-          "Сервис подбора и доставки автомобилей из Китая и Кореи в Россию под ключ.",
+          "Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены с учётом доставки до Москвы и таможенного оформления.",
       },
       {
         "@type": "WebSite",

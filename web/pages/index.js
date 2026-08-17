@@ -1397,7 +1397,7 @@ export default function Home({ initialData = null }) {
         <title>Автовозом — Платформа подбора и доставки автомобилей из Китая в РФ напрямую от дилеров.</title>
         <meta
           name="description"
-          content="Каталог автомобилей, подбор, выкуп, доставка, таможенное оформление."
+          content="Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены на сайте с учётом доставки до Москвы и таможенного оформления."
         />
         <link rel="canonical" href={absoluteUrl("/")} />
         <meta
@@ -1406,7 +1406,7 @@ export default function Home({ initialData = null }) {
         />
         <meta
           property="og:description"
-          content="Каталог автомобилей, подбор, выкуп, доставка, таможенное оформление."
+          content="Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены на сайте с учётом доставки до Москвы и таможенного оформления."
         />
         <meta property="og:url" content={absoluteUrl("/")} />
         <script {...jsonLdScriptProps(organizationAndWebSiteJsonLd())}></script>
