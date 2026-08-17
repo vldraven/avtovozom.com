@@ -11,6 +11,8 @@ from .trim_display import (
     _HAS_CJK,
     classify_trim_value,
     fix_trim_label_ru,
+    format_gearbox_value_ru,
+    looks_like_gearbox_value,
     normalize_spec_heading,
 )
 from .trim_spec_storage import infer_section_kind
@@ -235,6 +237,10 @@ _VALUE_ZH: dict[str, str] = {
     "纵置": "Продольное",
     "横置": "Поперечное",
     "三厢车": "Седан",
+    "湿式双离合": "робот DCT",
+    "干式双离合": "робот DCT",
+    "双离合": "робот DCT",
+    "无级变速": "вариатор",
 }
 
 _MARK_RE = re.compile(r"^([主副前后]?)\s*([●○]|—|-+|无)$")
@@ -264,6 +270,8 @@ def _translate_value_text(raw: str, *, group_zh: str = "", name_zh: str = "") ->
         return s
     if s in _VALUE_ZH:
         return _VALUE_ZH[s]
+    if name_zh in ("变速箱", "简称", "变速箱类型") or looks_like_gearbox_value(s):
+        return format_gearbox_value_ru(s)
     usb_rows = re.fullmatch(r"排(\d+)个/(\d+)个", s)
     if usb_rows:
         return f"{usb_rows.group(1)} спереди / {usb_rows.group(2)} сзади"
@@ -386,6 +394,11 @@ def _parse_overview_item(name_zh: str, value_zh: str) -> dict[str, str] | None:
     if name == "发动机":
         v = value.replace("马力", " л.с.")
         return {"name": label, "value": v}
+    if name in ("变速箱", "简称", "变速箱类型"):
+        text = format_gearbox_value_ru(value)
+        if not text:
+            return None
+        return {"name": label, "value": text}
     text = _translate_value_text(value, name_zh=name)
     if not text:
         return None

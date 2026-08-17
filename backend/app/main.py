@@ -99,7 +99,11 @@ from .fuel_types import fuel_from_car_trim, normalize_fuel_type_ru
 from .translator_ru import translate_to_ru
 from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_source, resolve_trim_for_listing
 from .trim_spec_storage import TrimSpecDocument, load_trim_spec_from_row, save_trim_spec_to_row
-from .trim_display import filter_param_sections_for_card, normalize_spec_heading
+from .trim_display import (
+    filter_param_sections_for_card,
+    normalize_spec_heading,
+    sanitize_config_sections_for_display,
+)
 from .email_utils import send_email
 from .faq_sections import normalize_faq_section
 from .media_storage import (
@@ -455,7 +459,7 @@ def _trim_to_out(trim: CarTrim | None) -> CarTrimOut | None:
     if trim is None:
         return None
     doc = load_trim_spec_from_row(trim)
-    sections = doc.sections
+    sections = sanitize_config_sections_for_display(doc.sections)
     param_sections = filter_param_sections_for_card(doc.param_sections)
     return CarTrimOut(
         id=trim.id,

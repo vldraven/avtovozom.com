@@ -359,6 +359,104 @@ def _clean_trim_text_value(raw: str) -> str:
     return s
 
 
+# Тип КПП (Autohome 变速箱 / 简称). Длинные фрагменты — первыми.
+_GEARBOX_FRAGMENTS_ZH: list[tuple[str, str]] = sorted(
+    [
+        ("湿式双离合变速箱", "робот DCT"),
+        ("干式双离合变速箱", "робот DCT"),
+        ("湿式双离合", "робот DCT"),
+        ("干式双离合", "робот DCT"),
+        ("双离合变速箱", "робот DCT"),
+        ("双离合", "робот DCT"),
+        ("手自一体变速箱", "автомат"),
+        ("手自一体", "автомат"),
+        ("电子无级变速", "вариатор"),
+        ("无级变速箱", "вариатор"),
+        ("无级变速", "вариатор"),
+        ("自动变速箱", "автомат"),
+        ("手动变速箱", "механика"),
+        ("自动", "автомат"),
+        ("手动", "механика"),
+    ],
+    key=lambda x: len(x[0]),
+    reverse=True,
+)
+
+_GEARS_PREFIX_RE = re.compile(r"^(\d+)\s*挡")
+_GEARBOX_HINT_RE = re.compile(r"\d+\s*挡|双离合|手自一体|无级变速|变速箱")
+_GEARBOX_LABELS_RU = frozenset({"коробка передач", "тип кпп", "кпп"})
+_LATIN_GEARBOX = {
+    "AT": "автомат",
+    "MT": "механика",
+    "CVT": "вариатор",
+    "DCT": "робот DCT",
+    "AMT": "робот",
+    "DSG": "робот DSG",
+}
+
+
+def looks_like_gearbox_value(value: str) -> bool:
+    s = str(value or "").strip()
+    if not s:
+        return False
+    if _GEARBOX_HINT_RE.search(s):
+        return True
+    return s.upper() in _LATIN_GEARBOX
+
+
+def format_gearbox_value_ru(value: str) -> str:
+    """7挡湿式双离合 → 7-ступенчатый робот DCT. Без Google Translate."""
+    raw = _clean_trim_text_value(value)
+    if not raw:
+        return raw
+    if not _HAS_CJK.search(raw) and not _GEARS_PREFIX_RE.match(raw):
+        latin = _LATIN_GEARBOX.get(raw.upper())
+        return _cap_first(latin) if latin else raw
+
+    rest = raw
+    gears: str | None = None
+    m = _GEARS_PREFIX_RE.match(rest)
+    if m:
+        gears = m.group(1)
+        rest = rest[m.end() :].strip()
+
+    kind: str | None = None
+    for zh, ru in _GEARBOX_FRAGMENTS_ZH:
+        if zh in rest:
+            kind = ru
+            rest = rest.replace(zh, "").strip()
+            break
+    if kind is None:
+        kind = _LATIN_GEARBOX.get(rest.upper())
+        if kind:
+            rest = ""
+
+    leftover = re.sub(r"[\u4e00-\u9fff]+", "", rest).strip(" ,/-")
+    if leftover.upper() in _LATIN_GEARBOX:
+        leftover = ""
+
+    parts: list[str] = []
+    if gears and kind == "механика":
+        parts.append(f"{gears}-ступенчатая механика")
+    elif gears and kind:
+        parts.append(f"{gears}-ступенчатый {kind}")
+    elif gears:
+        parts.append(f"{gears}-ступенчатая")
+    elif kind:
+        parts.append(kind)
+    if leftover:
+        parts.append(leftover)
+    out = " ".join(parts).strip()
+    return _cap_first(out) if out else raw
+
+
+def _cap_first(text: str) -> str:
+    s = str(text or "").strip()
+    if not s:
+        return s
+    return s[0].upper() + s[1:] if s[0].islower() else s
+
+
 def _translate_cjk_in_param_value(value: str) -> str:
     """Перевод оставшихся китайских фрагментов в значениях param (двигатель, кузов)."""
     v = _clean_trim_text_value(value)
@@ -551,6 +649,39 @@ def filter_param_sections_for_card(sections: list[dict[str, Any]]) -> list[dict[
         if items:
             out.append({"group": str(sec.get("group") or ""), "items": items})
     return sanitize_param_sections_for_display(out)
+
+
+def sanitize_config_sections_for_display(
+    sections: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Дочистить сохранённые секции попапа: КПП без иероглифов."""
+    out: list[dict[str, Any]] = []
+    for sec in sections:
+        if not isinstance(sec, dict):
+            continue
+        items: list[dict[str, str]] = []
+        for it in sec.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            name = str(it.get("name") or "").strip()
+            value = str(it.get("value") or "").strip()
+            if not name or not value:
+                continue
+            if name.casefold() in _GEARBOX_LABELS_RU or looks_like_gearbox_value(value):
+                value = format_gearbox_value_ru(value)
+            if _HAS_CJK.search(value) and (
+                name.casefold() in _GEARBOX_LABELS_RU or looks_like_gearbox_value(value)
+            ):
+                value = re.sub(r"[\u4e00-\u9fff]+", "", value)
+                value = re.sub(r"\s+", " ", value).strip(" ,/-")
+            if value:
+                items.append({"name": name, "value": value})
+        if items:
+            payload = {k: v for k, v in sec.items() if k != "items"}
+            payload["items"] = items
+            payload["group"] = str(sec.get("group") or "")
+            out.append(payload)
+    return out
 
 
 def sanitize_param_sections_for_display(
