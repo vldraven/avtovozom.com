@@ -146,6 +146,8 @@ export default function MessagesPage() {
   const threadEndRef = useRef(null);
   const draftFromQueryAppliedRef = useRef(false);
   const composerInputRef = useRef(null);
+  const skipAutoOpenChatRef = useRef(false);
+  const landedWithChatQueryRef = useRef(null);
 
   const scrollThreadToEnd = () => {
     requestAnimationFrame(() => {
@@ -375,6 +377,12 @@ export default function MessagesPage() {
 
 
   useEffect(() => {
+    if (!router.isReady || landedWithChatQueryRef.current != null) return;
+    const raw = router.query.chat;
+    landedWithChatQueryRef.current = raw != null && raw !== "";
+  }, [router.isReady, router.query.chat]);
+
+  useEffect(() => {
     if (!router.isReady || guestMode || !token) return;
     const raw = router.query.chat;
     if (raw == null || raw === "") return;
@@ -389,6 +397,7 @@ export default function MessagesPage() {
     if (!router.isReady || guestMode || !token || loadingList || chats.length === 0) return;
     const raw = router.query.chat;
     if (raw != null && raw !== "") return;
+    if (skipAutoOpenChatRef.current) return;
     if (chats.length === 1) {
       const only = chats[0];
       setActiveId(only.id);
@@ -396,7 +405,7 @@ export default function MessagesPage() {
       router.replace({ pathname: "/messages", query: { chat: only.id } }, undefined, { shallow: true });
       loadThread(only.id, token);
     }
-  }, [router.isReady, router.query.chat, token, chats, loadingList, narrow, loadThread, guestMode]);
+  }, [router.isReady, router.query.chat, token, chats, loadingList, narrow, loadThread, guestMode, router]);
 
   useEffect(() => {
     if (guestMode) {
@@ -580,6 +589,7 @@ export default function MessagesPage() {
   }
 
   function pickChat(c) {
+    skipAutoOpenChatRef.current = false;
     setActiveId(c.id);
     setSendErr("");
     if (narrow) setListVisible(false);
@@ -590,6 +600,15 @@ export default function MessagesPage() {
   }
 
   function backToList() {
+    skipAutoOpenChatRef.current = true;
+    if (
+      landedWithChatQueryRef.current &&
+      typeof window !== "undefined" &&
+      window.history.length > 1
+    ) {
+      router.back();
+      return;
+    }
     setListVisible(true);
     if (!guestMode) {
       router.replace("/messages", undefined, { shallow: true });
