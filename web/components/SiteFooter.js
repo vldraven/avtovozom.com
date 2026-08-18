@@ -22,8 +22,6 @@ export default function SiteFooter() {
             <p className="site-footer__col-title">Платформа</p>
             <Link href="/catalog">Каталог</Link>
             <Link href="/customs-calculator">Калькулятор</Link>
-            <Link href="/about">О компании</Link>
-            <Link href="/contacts">Контакты</Link>
           </div>
           <div className="site-footer__col">
             <p className="site-footer__col-title">Помощь</p>
@@ -32,7 +30,9 @@ export default function SiteFooter() {
             <Link href="/dostavka-avtovozom-iz-kitaya">Доставка автовозом</Link>
           </div>
           <div className="site-footer__col">
-            <p className="site-footer__col-title">Контакты</p>
+            <p className="site-footer__col-title">Компания</p>
+            <Link href="/about">О компании</Link>
+            <Link href="/contacts">Контакты</Link>
             <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
             <a href={TELEGRAM_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
               Telegram
