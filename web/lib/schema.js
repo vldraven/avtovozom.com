@@ -1,3 +1,4 @@
+import { COMPANY, hasLegalRequisites, phoneHref } from "./companyInfo";
 import { absoluteUrl } from "./siteUrl";
 
 const SCHEMA_CONTEXT = "https://schema.org";
@@ -21,29 +22,69 @@ function normalizeJsonLd(data) {
  * Кириллическое написание бренда — основное. Латиница остаётся в alternateName:
  * без этого поисковик не связывает сайт с запросами вида «автовозом авто из Китая».
  */
-export const BRAND_NAME = "Автовозом";
+export const BRAND_NAME = COMPANY.brandName;
 export const BRAND_ALT_NAMES = ["avtovozom", "Avtovozom", "avtovozom.com"];
-export const BRAND_EMAIL = "hello@avtovozom.com";
-export const BRAND_SAME_AS = ["https://t.me/avtovozom"];
+export const BRAND_EMAIL = COMPANY.email;
+export const BRAND_SAME_AS = [COMPANY.telegramUrl];
+
+function organizationJsonLdNode() {
+  const url = absoluteUrl("/");
+  const node = {
+    "@type": "Organization",
+    name: BRAND_NAME,
+    alternateName: BRAND_ALT_NAMES,
+    url,
+    logo: absoluteUrl("/logo-avtovozom.png"),
+    image: absoluteUrl("/logo-avtovozom.png"),
+    email: BRAND_EMAIL,
+    sameAs: BRAND_SAME_AS,
+    areaServed: { "@type": "Country", name: "Россия" },
+    description:
+      "Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены с учётом доставки до Москвы и таможенного оформления.",
+  };
+  if (hasLegalRequisites()) {
+    node.legalName = COMPANY.legalName;
+    node.taxID = COMPANY.inn;
+    if (COMPANY.ogrn) node.identifier = COMPANY.ogrn;
+  }
+  if (COMPANY.phone) node.telephone = phoneHref();
+  if (COMPANY.address) {
+    node.address = {
+      "@type": "PostalAddress",
+      streetAddress: COMPANY.address,
+      addressLocality: COMPANY.city || undefined,
+      addressCountry: "RU",
+    };
+  }
+  return node;
+}
+
+/** Organization + ContactPoint для страницы /contacts. */
+export function organizationContactJsonLd() {
+  const node = organizationJsonLdNode();
+  node.contactPoint = [
+    {
+      "@type": "ContactPoint",
+      contactType: "customer service",
+      email: BRAND_EMAIL,
+      ...(COMPANY.phone ? { telephone: phoneHref() } : {}),
+      availableLanguage: ["Russian"],
+      areaServed: "RU",
+    },
+  ];
+  return {
+    "@context": SCHEMA_CONTEXT,
+    ...node,
+  };
+}
 
 export function organizationAndWebSiteJsonLd() {
   const url = absoluteUrl("/");
+  const organization = organizationJsonLdNode();
   return {
     "@context": SCHEMA_CONTEXT,
     "@graph": [
-      {
-        "@type": "Organization",
-        name: BRAND_NAME,
-        alternateName: BRAND_ALT_NAMES,
-        url,
-        logo: absoluteUrl("/logo-avtovozom.png"),
-        image: absoluteUrl("/logo-avtovozom.png"),
-        email: BRAND_EMAIL,
-        sameAs: BRAND_SAME_AS,
-        areaServed: { "@type": "Country", name: "Россия" },
-        description:
-          "Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены с учётом доставки до Москвы и таможенного оформления.",
-      },
+      organization,
       {
         "@type": "WebSite",
         name: BRAND_NAME,

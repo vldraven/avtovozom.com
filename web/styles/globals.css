@@ -8864,6 +8864,27 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   margin-top: 1.25rem;
 }
 
+.company-contacts {
+  margin: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.company-contacts dt {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.company-contacts dd {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
 .import-candidates-crumbs {
   margin-bottom: 0.5rem;
 }

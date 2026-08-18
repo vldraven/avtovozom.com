@@ -20,6 +20,8 @@ Sitemap генерируется динамически и включает гл
 | `https://avtovozom.com/catalog` | Корень каталога |
 | `https://avtovozom.com/catalog/bmw` | Пример марки (замените на популярную) |
 | `https://avtovozom.com/catalog/audi/q5` | Пример модели |
+| `https://avtovozom.com/about` | О компании |
+| `https://avtovozom.com/contacts` | Контакты и реквизиты |
 | 2–3 свежих объявления | Карточки с полным SSR |
 
 Не отправляйте сотни URL вручную — для новых объявлений работает **IndexNow** (ключ в `.env`, файл `https://avtovozom.com/indexnow-key.txt`).
