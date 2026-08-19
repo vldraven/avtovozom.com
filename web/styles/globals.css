@@ -11210,7 +11210,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
 }
 
 .home-m-card .catalog-card__image {
-  object-position: top;
+  object-position: bottom;
 }
 
 .home-m-card .catalog-card__image-wrap--scrub {
