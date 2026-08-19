@@ -5,6 +5,7 @@ import SiteHeader from "../components/SiteHeader";
 import { COMPANY, phoneHref } from "../lib/companyInfo";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { absoluteUrl } from "../lib/siteUrl";
+import { getServerApiBase } from "../lib/serverApiUrl";
 
 const CANONICAL_PATH = "/about";
 const TITLE = "О компании Автовозом — подбор и доставка авто из Китая";
@@ -44,7 +45,22 @@ const HOW_STEPS = [
   },
 ];
 
-export default function AboutPage() {
+export async function getStaticProps() {
+  let listingsCount = 0;
+  try {
+    const api = getServerApiBase();
+    const res = await fetch(`${api}/cars?limit=1`, { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      const d = await res.json();
+      listingsCount = Number(d.total) || 0;
+    }
+  } catch {
+    /* API недоступен при сборке — покажем 0 */
+  }
+  return { props: { listingsCount }, revalidate: 300 };
+}
+
+export default function AboutPage({ listingsCount = 0 }) {
   const jsonLd = breadcrumbListJsonLd([
     { label: "Главная", href: "/" },
     { label: "О компании" },
@@ -120,8 +136,8 @@ export default function AboutPage() {
               <p className="about-stats__label">за подбор и расчёт</p>
             </div>
             <div className="about-stats__item">
-              <p className="about-stats__value">под ключ</p>
-              <p className="about-stats__label">растаможка и доставка включены</p>
+              <p className="about-stats__value">{listingsCount > 0 ? listingsCount.toLocaleString("ru-RU") : "—"}</p>
+              <p className="about-stats__label">Авто доступно в каталоге</p>
             </div>
           </div>
 
