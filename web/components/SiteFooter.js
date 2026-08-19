@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { COMPANY } from "../lib/companyInfo";
 import { TELEGRAM_CHANNEL_URL } from "../lib/telegramChannel";
 
 /** Сквозной футер по макету «35 · Главная · авторизован» (SEO-перелинковка). */
@@ -29,8 +30,10 @@ export default function SiteFooter() {
             <Link href="/dostavka-avtovozom-iz-kitaya">Доставка автовозом</Link>
           </div>
           <div className="site-footer__col">
-            <p className="site-footer__col-title">Контакты</p>
-            <a href="mailto:noreply@avtovozom.com">noreply@avtovozom.com</a>
+            <p className="site-footer__col-title">Компания</p>
+            <Link href="/about">О компании</Link>
+            <Link href="/contacts">Контакты</Link>
+            <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
             <a href={TELEGRAM_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
               Telegram
             </a>
