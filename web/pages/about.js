@@ -122,7 +122,13 @@ export default function AboutPage({ listingsCount = 0 }) {
                 ) : null}
               </div>
             </div>
-            <div className="about-hero__img" aria-hidden="true" />
+            <div className="about-hero__img" aria-hidden="true">
+            <img
+              src="/logo-avtovozom.png"
+              alt=""
+              className="about-hero__logo"
+            />
+          </div>
           </section>
 
           {/* Stats */}
