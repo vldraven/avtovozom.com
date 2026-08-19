@@ -20,8 +20,10 @@ const GUEST_CHAT_PLACEHOLDER_ID = "guest";
 const GUEST_CHAT_TITLE = "Консультант Avtovozom";
 const GUEST_CHAT_SUB = "Отвечает сразу · ИИ-помощник";
 const GUEST_QUICK_PROMPTS = [
-  "Что входит в цену под ключ?",
-  "Сроки доставки из Китая",
+  "Получить расчёт на автомобиль",
+  "Сколько обычно занимает доставка?",
+  "Как происходит оплата?",
+  "Консультация по автомобилю",
 ];
 
 function GuestConsultantIcon() {
@@ -440,7 +442,9 @@ export default function MessagesPage() {
     scrollThreadToEnd();
   }, [messages, activeId]);
 
-  const threadOpenOnMobile = narrow && Boolean(activeId) && !listVisible;
+  // Гость всегда в треде; авторизованный — только когда открыт конкретный чат (не список).
+  const threadOpenOnMobile =
+    narrow && (guestMode || (Boolean(activeId) && !listVisible));
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
@@ -465,6 +469,9 @@ export default function MessagesPage() {
    *
    * Pattern (Chrome docs): top:0; height:vv.height; transform:translateY(vv.offsetTop).
    * Extra chrome pad only when the keyboard is closed. Never scrollIntoView the window.
+   *
+   * Список чатов (dock виден): в PWA берём innerHeight, иначе shell = vv.height
+   * оставляет белую полосу под тапбаром (home indicator вне visualViewport).
    */
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -484,14 +491,30 @@ export default function MessagesPage() {
 
     const sync = () => {
       const vv = window.visualViewport;
+      const listWithDock = !threadOpenOnMobile;
+      const standalone = isStandalone();
+
       if (!vv) {
         root.style.setProperty("--msg-h", `${window.innerHeight}px`);
         root.style.setProperty("--msg-y", "0px");
         root.style.setProperty(
           "--msg-bottom-inset",
-          isStandalone() ? "0px" : "56px"
+          standalone ? "0px" : "56px"
         );
         root.style.setProperty("--msg-composer-pad", "max(8px, env(safe-area-inset-bottom, 0px))");
+        root.classList.remove("messages-kb-open");
+        return;
+      }
+
+      // Список + PWA: полный экран, dock прибит к низу. Тред: visualViewport под клавиатуру.
+      if (listWithDock && standalone) {
+        root.style.setProperty("--msg-h", `${Math.round(window.innerHeight)}px`);
+        root.style.setProperty("--msg-y", "0px");
+        root.style.setProperty("--msg-bottom-inset", "0px");
+        root.style.setProperty(
+          "--msg-composer-pad",
+          "max(8px, env(safe-area-inset-bottom, 0px))"
+        );
         root.classList.remove("messages-kb-open");
         return;
       }
@@ -512,7 +535,7 @@ export default function MessagesPage() {
 
       root.classList.remove("messages-kb-open");
       // Floating Safari/Chrome toolbars overlay the visual viewport.
-      const chromePad = isStandalone() ? 0 : 56;
+      const chromePad = standalone ? 0 : 56;
       root.style.setProperty("--msg-bottom-inset", `${chromePad}px`);
       root.style.setProperty(
         "--msg-composer-pad",
@@ -565,7 +588,7 @@ export default function MessagesPage() {
       root.style.removeProperty("--msg-bottom-inset");
       root.style.removeProperty("--msg-composer-pad");
     };
-  }, []);
+  }, [threadOpenOnMobile]);
 
   useEffect(() => {
     const el = composerInputRef.current;
@@ -623,8 +646,26 @@ export default function MessagesPage() {
     router.push("/catalog");
   }
 
-  function applyGuestQuickPrompt(text) {
+  async function applyGuestQuickPrompt(text) {
     setDraft(text);
+    setSendErr("");
+    if (!text.trim()) return;
+    const res = await fetch(`${API_URL}/public/guest-chats/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ guest_token: guestToken || null, text: text.trim() }),
+    });
+    const errBody = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setSendErr(typeof errBody.detail === "string" ? errBody.detail : "Не удалось отправить");
+      return;
+    }
+    persistGuestToken(errBody.guest_token);
+    setDraft("");
+    setAttachFile(null);
+    setActiveId(errBody.chat_id);
+    setGuestAwaitingAi(true);
+    await loadGuestThread(errBody.guest_token);
   }
 
   async function deleteGuestChat(chat) {
@@ -715,7 +756,9 @@ export default function MessagesPage() {
   const showThread = guestMode ? true : !narrow || !listVisible;
 
   return (
-    <div className="layout layout--messages layout--no-mobile-dock">
+    <div
+      className={`layout layout--messages${threadOpenOnMobile ? " layout--no-mobile-dock" : ""}`}
+    >
       <SiteHeader tagline={guestMode ? "" : "Чаты"}>
           <Link href="/catalog" className="btn btn-ghost btn-sm">
             Каталог
