@@ -57,6 +57,8 @@ export async function getServerSideProps({ req, res }) {
     "/",
     "/catalog",
     "/customs-calculator",
+    "/about",
+    "/contacts",
     "/dostavka-avto-iz-kitaya",
     "/dostavka-avtovozom-iz-kitaya",
     "/faq",
