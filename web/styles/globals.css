@@ -11209,6 +11209,10 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   aspect-ratio: auto;
 }
 
+.home-m-card .catalog-card__image {
+  object-position: top;
+}
+
 .home-m-card .catalog-card__image-wrap--scrub {
   touch-action: none;
   cursor: pointer;
