@@ -13321,11 +13321,28 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
 
 @media (min-width: 768px) {
   .about-hero__img {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex: 0 0 420px;
     height: 300px;
     border-radius: 16px;
-    background: #e2e8f0;
+    background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
+  }
+}
+
+.about-hero__logo {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+  opacity: 0.18;
+  filter: invert(12%) sepia(40%) saturate(600%) hue-rotate(190deg);
+}
+
+@media (min-width: 768px) {
+  .about-hero__logo {
+    width: 200px;
+    height: 200px;
   }
 }
 
