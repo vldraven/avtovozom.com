@@ -122,7 +122,11 @@ export default function AboutPage({ listingsCount = 0 }) {
                 ) : null}
               </div>
             </div>
-            <div className="about-hero__img" aria-hidden="true" />
+            <div className="about-hero__img">
+              <Link href="/" className="about-hero__logo-link" aria-label="На главную">
+                <img src="/logo-hero.png" alt="" className="about-hero__logo" />
+              </Link>
+            </div>
           </section>
 
           {/* Stats */}
