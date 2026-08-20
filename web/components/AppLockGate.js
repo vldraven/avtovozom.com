@@ -100,12 +100,19 @@ export default function AppLockGate({ children }) {
 
   if (!ready || !locked) return children;
 
-  async function unlockWithPinSubmit(e) {
-    e?.preventDefault?.();
+  async function unlockWithPinSubmit(arg) {
+    // PinPad auto-submit passes the completed code as a string; the desktop
+    // form passes a submit event and relies on React state.
+    if (arg && typeof arg === "object" && typeof arg.preventDefault === "function") {
+      arg.preventDefault();
+    }
+    const code = typeof arg === "string" ? arg : pin;
+    if (busy || !/^\d{4}$/.test(code)) return;
     setBusy(true);
     setError("");
+    setPin(code);
     try {
-      await rotatePinnedSession(pin);
+      await rotatePinnedSession(code);
       markAppUnlocked();
       setLocked(false);
       setPin("");
@@ -113,8 +120,13 @@ export default function AppLockGate({ children }) {
         const next = typeof router.query.next === "string" ? router.query.next : "/";
         router.replace(next);
       }
-    } catch {
-      setError("ПИН-код не подошел или серверная сессия истекла. Войдите по паролю заново.");
+    } catch (err) {
+      const msg = String(err?.message || "");
+      if (msg.includes("Сессия устарела")) {
+        setError("Серверная сессия истекла. Войдите по паролю заново.");
+      } else {
+        setError("ПИН-код не подошел или серверная сессия истекла. Войдите по паролю заново.");
+      }
     } finally {
       setBusy(false);
     }

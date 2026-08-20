@@ -29,8 +29,9 @@ export default function PinPad({
     const next = `${value}${digit}`;
     onChange(next);
     if (next.length >= maxLength && !showSubmit) {
-      // Auto-submit after paint so parent state is ready
-      window.setTimeout(() => onSubmit?.(), 0);
+      // Pass completed PIN explicitly — parent React state may still be stale
+      // when this timeout runs (classic setState closure race).
+      window.setTimeout(() => onSubmit?.(next), 0);
     }
   }
 
@@ -77,7 +78,12 @@ export default function PinPad({
         </button>
       </div>
       {showSubmit ? (
-        <button type="button" className="btn btn-primary pin-pad__submit" onClick={onSubmit} disabled={!canSubmit}>
+        <button
+          type="button"
+          className="btn btn-primary pin-pad__submit"
+          onClick={() => onSubmit?.(value)}
+          disabled={!canSubmit}
+        >
           {submitLabel}
         </button>
       ) : null}
