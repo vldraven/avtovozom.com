@@ -27,10 +27,10 @@ export default function PinSetupPanel({ onComplete, onSkip, hideStepLabel = fals
     return true;
   }
 
-  async function completeSetup() {
+  async function completeSetupWithPin(finalPin) {
     setBusy(true);
     try {
-      await setupPin(pin);
+      await setupPin(finalPin);
       if (enableBio && canUseWebAuthn()) {
         try {
           await registerPasskey(getStoredToken());
@@ -52,20 +52,27 @@ export default function PinSetupPanel({ onComplete, onSkip, hideStepLabel = fals
     }
   }
 
-  async function submitMobile() {
+  async function submitMobile(submittedValue) {
     setError("");
     setBioWarning("");
+    const typed =
+      typeof submittedValue === "string" ? submittedValue : step === "confirm" ? pinConfirm : pin;
     if (step === "create") {
-      if (!new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin)) {
+      if (!new RegExp(`^\\d{${PIN_LENGTH}}$`).test(typed)) {
         setError(`Введите PIN из ${PIN_LENGTH} цифр.`);
         return;
       }
+      setPin(typed);
       setPinConfirm("");
       setStep("confirm");
       return;
     }
-    if (!validatePinPair()) return;
-    await completeSetup();
+    setPinConfirm(typed);
+    if (!new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin) || pin !== typed) {
+      setError("PIN-коды не совпадают.");
+      return;
+    }
+    await completeSetupWithPin(pin);
   }
 
   async function submitDesktop(e) {
@@ -73,7 +80,7 @@ export default function PinSetupPanel({ onComplete, onSkip, hideStepLabel = fals
     setError("");
     setBioWarning("");
     if (!validatePinPair()) return;
-    await completeSetup();
+    await completeSetupWithPin(pin);
   }
 
   function goBackToCreate() {
