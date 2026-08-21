@@ -2477,11 +2477,17 @@ def change_profile_password(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not verify_password(payload.old_password, current_user.password_hash):
-        raise HTTPException(status_code=400, detail="Old password is incorrect")
-    if len(payload.new_password) < 8:
-        raise HTTPException(status_code=400, detail="New password must be at least 8 chars")
-    current_user.password_hash = hash_password(payload.new_password)
+    old_password = (payload.old_password or "").strip()
+    new_password = (payload.new_password or "").strip()
+    if not old_password:
+        raise HTTPException(status_code=400, detail="Введите текущий пароль")
+    if not verify_password(old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Новый пароль должен быть не короче 8 символов")
+    if new_password == old_password:
+        raise HTTPException(status_code=400, detail="Новый пароль должен отличаться от текущего")
+    current_user.password_hash = hash_password(new_password)
     current_user.must_change_password = False
     db.commit()
     return {"ok": True}

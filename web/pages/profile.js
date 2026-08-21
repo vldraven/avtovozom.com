@@ -144,6 +144,7 @@ export default function ProfilePage() {
       router.push("/auth?next=/profile");
       return;
     }
+    setToken(access);
     const data = await res.json();
     setMe(data);
     setName(data.full_name || "");
@@ -259,19 +260,61 @@ export default function ProfilePage() {
   async function changePassword() {
     setError("");
     setMessage("");
-    const res = await fetch(`${API_URL}/profile/password`, {
+    const oldPwd = String(oldPassword || "");
+    const newPwd = String(newPassword || "");
+    if (!oldPwd) {
+      setError("Введите текущий пароль");
+      return;
+    }
+    if (newPwd.length < 8) {
+      setError("Новый пароль должен быть не короче 8 символов");
+      return;
+    }
+    if (newPwd === oldPwd) {
+      setError("Новый пароль должен отличаться от текущего");
+      return;
+    }
+
+    await ensureFreshAccessToken().catch(() => null);
+    let access = getStoredToken() || token || "";
+    if (!access) {
+      setError("Сессия истекла — войдите снова");
+      return;
+    }
+    setToken(access);
+
+    let res = await fetch(`${API_URL}/profile/password`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${access}` },
+      body: JSON.stringify({ old_password: oldPwd, new_password: newPwd }),
     });
+    if (res.status === 401 && (await tryRefreshAccessToken())) {
+      access = getStoredToken() || "";
+      setToken(access);
+      res = await fetch(`${API_URL}/profile/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${access}` },
+        body: JSON.stringify({ old_password: oldPwd, new_password: newPwd }),
+      });
+    }
     if (!res.ok) {
-      setError("Не удалось сменить пароль");
+      const body = await res.json().catch(() => ({}));
+      const detail = typeof body.detail === "string" ? body.detail : "";
+      if (detail === "Old password is incorrect" || detail === "Неверный текущий пароль") {
+        setError("Неверный текущий пароль");
+      } else if (detail === "New password must be at least 8 chars" || detail === "Новый пароль должен быть не короче 8 символов") {
+        setError("Новый пароль должен быть не короче 8 символов");
+      } else if (res.status === 401) {
+        setError("Сессия истекла — войдите снова");
+      } else {
+        setError(detail || "Не удалось сменить пароль");
+      }
       return;
     }
     setOldPassword("");
     setNewPassword("");
     setMessage("Пароль изменен");
-    loadMeRef.current(token);
+    loadMeRef.current(access);
   }
 
   async function enablePasskey() {
