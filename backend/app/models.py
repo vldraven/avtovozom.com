@@ -375,6 +375,26 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class ChatEmailNotification(Base):
+    """Отложенное email-уведомление клиенту о непрочитанных сообщениях в чате."""
+
+    __tablename__ = "chat_email_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    chat_id: Mapped[int] = mapped_column(ForeignKey("chats.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    """pending | sent | cancelled"""
+    target_message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    preview: Mapped[str] = mapped_column(String(512), default="")
+    send_after: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class FaqItem(Base):
     __tablename__ = "faq_items"
 

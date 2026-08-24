@@ -856,7 +856,9 @@ export default function MessagesPage() {
                           {c.chat_type === "guest"
                             ? "Гость · без аккаунта"
                             : c.chat_type === "platform"
-                              ? "Avtovozom · сделка"
+                              ? isStaffRole(me?.role)
+                                ? c.peer_display || "Клиент"
+                                : "Avtovozom · сделка"
                               : c.peer_display}
                           {c.request_id != null ? ` · заявка №${c.request_id}` : ""}
                         </div>
@@ -925,7 +927,9 @@ export default function MessagesPage() {
                             {activeChat?.chat_type === "guest"
                               ? "Гость · без аккаунта"
                               : activeChat?.chat_type === "platform"
-                                ? "Avtovozom · сделка"
+                                ? isStaffRole(me?.role)
+                                  ? activeChat?.peer_display || "Клиент"
+                                  : "Avtovozom · сделка"
                                 : activeChat?.peer_display}
                             {activeChat?.request_id != null
                               ? ` · заявка №${activeChat.request_id}`
