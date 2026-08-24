@@ -261,6 +261,10 @@ from .push_notify import (
     notify_chat_message,
     notify_new_offer,
 )
+from .chat_email_notify import (
+    schedule_chat_email_notification,
+    start_chat_email_notify_worker,
+)
 from .telegram_notify import (
     notify_calculation_request,
     notify_guest_chat_message,
@@ -1306,6 +1310,54 @@ def startup() -> None:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS chat_email_notifications (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    chat_id INTEGER NOT NULL REFERENCES chats(id),
+                    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                    target_message_id INTEGER NOT NULL,
+                    preview VARCHAR(512) NOT NULL DEFAULT '',
+                    send_after TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                    sent_at TIMESTAMP WITHOUT TIME ZONE NULL,
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_chat_email_notifications_user_id "
+                "ON chat_email_notifications (user_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_chat_email_notifications_chat_id "
+                "ON chat_email_notifications (chat_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_chat_email_notifications_status "
+                "ON chat_email_notifications (status)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_chat_email_notifications_send_after "
+                "ON chat_email_notifications (send_after)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_chat_email_notifications_pending_due "
+                "ON chat_email_notifications (status, send_after)"
+            )
+        )
     db = next(get_db())
     try:
         seed_initial_data(db)
@@ -1340,6 +1392,8 @@ def startup() -> None:
             db.commit()
     finally:
         db.close()
+
+    start_chat_email_notify_worker()
 
 
 @app.get("/health")
@@ -5736,6 +5790,21 @@ def _format_platform_request_system_message(db: Session, request: CalculationReq
     comment = (request.comment or "").strip()
     if comment and request.car_id is not None:
         lines.append(f"Комментарий: {comment[:500]}")
+
+    user = None
+    if request.user_id is not None:
+        user = db.execute(select(User).where(User.id == request.user_id)).scalar_one_or_none()
+    phone = ((user.phone if user else None) or "").strip()
+    email = ((user.email if user else None) or "").strip()
+    contact = (request.user_contact or "").strip()
+    if not phone and contact and "@" not in contact:
+        phone = contact
+    if not email and contact and "@" in contact:
+        email = contact
+    if phone:
+        lines.append(f"Телефон: {phone}")
+    if email:
+        lines.append(f"Email: {email}")
     return "\n".join(lines)
 
 
@@ -5904,6 +5973,17 @@ def _user_peer_chat_label(user: User | None) -> str:
     return dn or fn or user.email
 
 
+def _client_person_name(user: User | None) -> str:
+    """ФИО клиента для заголовка чата у staff (сначала full_name)."""
+    if not user:
+        return "Клиент"
+    fn = (user.full_name or "").strip()
+    if fn:
+        return fn
+    dn = (user.display_name or "").strip()
+    return dn or (user.email or "").strip() or "Клиент"
+
+
 def _chat_attachment_message_type(original_name: str) -> str:
     lower = (original_name or "").lower()
     for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"):
@@ -6004,13 +6084,17 @@ def _build_chat_list_items(
             else:
                 continue
         elif chat.chat_type == "platform":
-            title = "Чат с Avtovozom"
             if is_staff:
                 uc = user_map.get(chat.user_id) if chat.user_id is not None else None
-                peer_display = _user_peer_chat_label(uc)
+                title = _client_person_name(uc)
+                if uc:
+                    peer_display = (uc.email or "").strip() or _client_person_name(uc)
+                else:
+                    peer_display = "Клиент"
                 peer_role = "client"
                 unread = _unread_platform_for_staff(db, chat)
             elif current_user.id == chat.user_id:
+                title = "Чат с Avtovozom"
                 peer_display = "Avtovozom"
                 peer_role = "platform"
                 unread = _unread_platform_for_client(db, chat)
@@ -6408,6 +6492,15 @@ async def send_chat_message(
     if recipient_id:
         preview = text_clean or (att_name or "Вложение")
         notify_chat_message(db, recipient_user_id=recipient_id, chat_id=chat.id, preview=preview)
+        if chat.user_id is not None and recipient_id == chat.user_id:
+            schedule_chat_email_notification(
+                db,
+                user_id=recipient_id,
+                chat_id=chat.id,
+                message_id=msg.id,
+                preview=preview,
+            )
+            db.commit()
 
     return msg
 
