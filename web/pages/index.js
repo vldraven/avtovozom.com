@@ -2332,11 +2332,8 @@ export default function Home({ initialData = null }) {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {isAdminRole(me?.role) ? (
                       <>
-                        <Link href={`/staff/publish-telegram/${car.id}`} className="btn btn-secondary btn-sm">
-                          В Telegram
-                        </Link>
-                        <Link href={`/staff/publish-vk/${car.id}`} className="btn btn-secondary btn-sm">
-                          В VK
+                        <Link href={`/staff/publish-social/${car.id}`} className="btn btn-secondary btn-sm">
+                          В соцсети
                         </Link>
                         <Link href={`/staff/publish-avito/${car.id}`} className="btn btn-secondary btn-sm">
                           На Avito

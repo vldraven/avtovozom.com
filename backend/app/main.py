@@ -225,6 +225,9 @@ from .schemas import (
     VkComposeOut,
     VkPublishIn,
     VkPublishOut,
+    VkUserTokenIn,
+    VkUserTokenSaveOut,
+    VkUserTokenStatusOut,
     PasswordResetConfirmIn,
     PasswordResetStartIn,
     ProfileUpdateIn,
@@ -4555,6 +4558,35 @@ def admin_car_vk_compose(
     publication = get_vk_publication(db, car.id)
     data = build_vk_compose_response(compose, publication=publication)
     return VkComposeOut(**data)
+
+
+@app.get("/admin/integrations/vk", response_model=VkUserTokenStatusOut)
+def admin_vk_integration_status(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    from .app_settings import vk_user_token_status
+    from .vk_client import vk_is_configured
+
+    st = vk_user_token_status(db)
+    return VkUserTokenStatusOut(vk_group_configured=vk_is_configured(), **st)
+
+
+@app.put("/admin/integrations/vk/user-token", response_model=VkUserTokenSaveOut)
+def admin_vk_save_user_token(
+    payload: VkUserTokenIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    from .app_settings import set_vk_user_token, vk_user_token_status
+    from .vk_client import vk_is_configured
+
+    set_vk_user_token(db, payload.token, expires_in=payload.expires_in)
+    st = vk_user_token_status(db)
+    return VkUserTokenSaveOut(
+        ok=True,
+        status=VkUserTokenStatusOut(vk_group_configured=vk_is_configured(), **st),
+    )
 
 
 @app.post("/admin/cars/{car_id}/vk/publish", response_model=VkPublishOut)

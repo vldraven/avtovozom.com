@@ -11,9 +11,11 @@ from sqlalchemy.orm import Session
 
 from .listing_compose import ListingMarketingCompose
 from .models import CarExternalPublication
+from .app_settings import get_vk_user_token
 from .vk_client import (
     MAX_WALL_PHOTOS,
     VkApiError,
+    load_vk_config_from_env,
     publish_listing_to_group,
     vk_is_configured,
 )
@@ -152,11 +154,15 @@ def publish_car_to_vk(
     db.commit()
     db.refresh(pub)
 
+    db_token, _expires = get_vk_user_token(db)
+    cfg = load_vk_config_from_env(user_access_token=db_token or None)
+
     try:
         result = publish_listing_to_group(
             message=text,
             photo_urls=photo_urls,
             listing_web_url=listing_web_url,
+            cfg=cfg,
         )
     except VkApiError as exc:
         pub.status = "error"

@@ -1,65 +1,43 @@
 # Публикация объявлений в группу VK
 
-Админка: карточка объявления → **В VK** → `/staff/publish-vk/{id}`.
+Админка: карточка → **В соцсети** → `/staff/publish-social/{id}` (каналы Telegram + VK).
 
-Backend вызывает VK API напрямую (без n8n): загрузка фото на стену + `wall.post` от имени сообщества.
+Backend вызывает VK API напрямую (без n8n): опционально загрузка фото + `wall.post` от имени сообщества.
 
-## Что нужно в VK
+## Что нужно
 
-1. **Сообщество (группа)** — ID без минуса, например `123456789` (в API `owner_id=-123456789`).
-2. **Standalone-приложение** на [dev.vk.com](https://dev.vk.com/) (или VK ID).
-3. **User access token** пользователя, который **админ или редактор** группы.
+1. **`VK_GROUP_ID` + `VK_GROUP_ACCESS_TOKEN`** в `/opt/avtovozom/.env` — ключ сообщества (бессрочный).
+2. **User-токен для фотокарусели** — в админке на странице поста (хранится в БД `app_settings`, ~24 ч). Env `VK_USER_ACCESS_TOKEN` — только fallback.
 
-   Нужны права (scopes): `photos`, `wall`, желательно `offline` (долгий токен).
+Ссылка OAuth для токена фото (App ID из `VK_OAUTH_CLIENT_ID`, по умолчанию `54689021`):
 
-   Важно: для загрузки фото на стену **community (group) token обычно не подходит** (ошибка 27 на `photos.getWallUploadServer`). Нужен именно **user token**.
-
-   Право `wall` у пользовательских токенов VK иногда выдаётся ограниченно — при отказе пишите в поддержку VK / проверяйте Implicit Flow со `scope=photos,wall,offline,groups`.
-
-Пример Implicit Flow (подставьте `client_id` приложения):
-
-```
-https://oauth.vk.com/authorize?client_id=APP_ID&display=page&redirect_uri=https://oauth.vk.com/blank.html&scope=photos,wall,offline,groups&response_type=token&v=5.199
+```text
+https://oauth.vk.com/authorize?client_id=54689021&display=page&redirect_uri=https://oauth.vk.com/blank.html&scope=photos&response_type=token&v=5.199
 ```
 
-После редиректа скопируйте `access_token` из фрагмента URL.
+После редиректа вставьте URL или `access_token` в блок «Токен VK для фотокарусели» и нажмите **Сохранить**.
 
-## Переменные окружения
-
-В `.env` на сервере (и в `docker-compose.prod.yml` они пробрасываются в backend):
+## Переменные на проде
 
 ```env
-VK_GROUP_ID=123456789
-VK_USER_ACCESS_TOKEN=vk1.a....
+VK_GROUP_ID=34626704
+VK_GROUP_ACCESS_TOKEN=vk1.a....
 VK_API_VERSION=5.199
+# VK_OAUTH_CLIENT_ID=54689021
 ```
 
-Перезапустите backend после изменения `.env`.
+Миграция: `backend/migrations/022_app_settings.sql` (или `create_all` при старте backend).
 
-## Ручная проверка (spike)
-
-С машины, где есть доступ к API и токену:
+Перезапуск:
 
 ```bash
-cd backend
-export VK_GROUP_ID=...
-export VK_USER_ACCESS_TOKEN=...
-PYTHONPATH=. python -m scripts.test_vk_wall_post --message "Тест avtovozom"
-# с фото:
-PYTHONPATH=. python -m scripts.test_vk_wall_post --message "Тест" --photo "https://avtovozom.com/media/..."
+cd /opt/avtovozom && docker compose -f docker-compose.prod.yml up -d backend
 ```
-
-Ожидается строка `OK post_id=… url=https://vk.com/wall-…_…`.
 
 ## API
 
-- `GET /admin/cars/{id}/vk-compose` — данные карточки, шаблон текста, статус прошлой публикации.
-- `POST /admin/cars/{id}/vk/publish` — тело `{ "text", "photo_ids": [], "attach_listing_link": true }`.
+- `GET /admin/integrations/vk` — статус group config + user token (preview, expires).
+- `PUT /admin/integrations/vk/user-token` — тело `{ "token", "expires_in": 86400 }` (можно полный redirect URL).
+- `GET /admin/cars/{id}/vk-compose` / `POST /admin/cars/{id}/vk/publish`.
 
-Учёт: строка в `car_external_publications` с `channel=vk` (`avito_item_id` = post_id, `avito_url` = URL поста).
-
-## Ограничения
-
-- До 10 вложений на пост (фото + опционально ссылка на сайт).
-- Токен пользователя нужно хранить в секретах и ротировать при компрометации.
-- Массовая автопубликация из плана импорта в первой версии не делается — только ручная кнопка админа.
+Учёт: `car_external_publications` с `channel=vk`.

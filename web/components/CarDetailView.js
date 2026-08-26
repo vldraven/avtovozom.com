@@ -1119,11 +1119,8 @@ export default function CarDetailView({
                     )}
                     {isAdminRole(me.role) && carId != null && (
                       <>
-                        <Link href={`/staff/publish-telegram/${carId}`} className="btn btn-secondary">
-                          Пост в Telegram
-                        </Link>
-                        <Link href={`/staff/publish-vk/${carId}`} className="btn btn-secondary">
-                          В VK
+                        <Link href={`/staff/publish-social/${carId}`} className="btn btn-secondary">
+                          Пост в соцсети
                         </Link>
                         <Link href={`/staff/publish-avito/${carId}`} className="btn btn-secondary">
                           На Avito
