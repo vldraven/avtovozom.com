@@ -571,6 +571,21 @@ class ImportCandidate(Base):
     profile = relationship("SearchProfile", back_populates="candidates")
 
 
+class AppSetting(Base):
+    """Простые key/value настройки (ротируемые секреты админки)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        server_default=text("NOW()"),
+    )
+
+
 class AgentMemory(Base):
     """Долгосрочная память агента (уроки из TG revise/cancel и т.п.)."""
 

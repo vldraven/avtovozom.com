@@ -4,7 +4,8 @@ Spike / ручная проверка VK wall.post.
 
 Требует в окружении:
   VK_GROUP_ID=123456789
-  VK_USER_ACCESS_TOKEN=...   # user token (не community), scopes: photos,wall,offline
+  VK_GROUP_ACCESS_TOKEN=...  # ключ сообщества (обязательно для wall.post)
+  VK_USER_ACCESS_TOKEN=...   # опционально: фото (user token, scope photos)
   VK_API_VERSION=5.199       # опционально
 
 Примеры:
@@ -30,8 +31,8 @@ def main() -> int:
     cfg = load_vk_config_from_env()
     if cfg is None:
         print(
-            "Задайте VK_GROUP_ID и VK_USER_ACCESS_TOKEN "
-            "(user access token админа/редактора группы).",
+            "Задайте VK_GROUP_ID и VK_GROUP_ACCESS_TOKEN "
+            "(ключ сообщества; см. deploy/VK_SETUP_RU.md).",
             file=sys.stderr,
         )
         return 2

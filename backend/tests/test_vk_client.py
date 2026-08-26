@@ -12,7 +12,7 @@ from app.listing_compose import ListingMarketingCompose
 
 class VkClientTests(unittest.TestCase):
     def test_wall_post_builds_url(self):
-        cfg = VkConfig(group_id=111, user_access_token="tok", api_version="5.199")
+        cfg = VkConfig(group_id=111, group_access_token="group-tok", api_version="5.199")
         with patch("app.vk_client._api_call", return_value={"post_id": 42}) as mock_call:
             result = wall_post(cfg, message="Hello", attachments=["photo-111_1"])
         self.assertEqual(result.post_id, 42)
@@ -22,9 +22,10 @@ class VkClientTests(unittest.TestCase):
         self.assertEqual(args[0], "wall.post")
         self.assertEqual(args[1]["from_group"], 1)
         self.assertEqual(args[1]["owner_id"], -111)
+        self.assertEqual(kwargs["token"], "group-tok")
 
     def test_wall_post_requires_content(self):
-        cfg = VkConfig(group_id=1, user_access_token="t")
+        cfg = VkConfig(group_id=1, group_access_token="t")
         with self.assertRaises(VkApiError):
             wall_post(cfg, message="  ", attachments=[])
 

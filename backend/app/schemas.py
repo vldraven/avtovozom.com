@@ -803,6 +803,26 @@ class VkComposeOut(BaseModel):
     publication: VkPublicationOut | None = None
 
 
+class VkUserTokenStatusOut(BaseModel):
+    configured: bool = False
+    source: str | None = None
+    preview: str = ""
+    expires_at: str | None = None
+    expired: bool = False
+    oauth_url: str = ""
+    vk_group_configured: bool = False
+
+
+class VkUserTokenIn(BaseModel):
+    token: str = Field(..., min_length=0, max_length=4000)
+    expires_in: int | None = Field(default=86400, ge=0, le=366 * 24 * 3600)
+
+
+class VkUserTokenSaveOut(BaseModel):
+    ok: bool = True
+    status: VkUserTokenStatusOut
+
+
 class VkPublishIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=12000)
     photo_ids: list[int] = Field(default_factory=list)

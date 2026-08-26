@@ -29,8 +29,20 @@ class VkApiError(RuntimeError):
 @dataclass
 class VkConfig:
     group_id: int
-    user_access_token: str
+    # Ключ сообщества — для wall.post (актуальный путь без Standalone).
+    group_access_token: str
+    # User token админа — только для photos.* (community token даёт error 27).
+    # Может быть пустым: тогда пост уйдёт текстом + ссылкой без фото.
+    user_access_token: str = ""
     api_version: str = DEFAULT_API_VERSION
+
+    @property
+    def wall_token(self) -> str:
+        return self.group_access_token
+
+    @property
+    def photo_token(self) -> str:
+        return (self.user_access_token or "").strip()
 
 
 @dataclass
@@ -40,10 +52,19 @@ class VkWallPostResult:
     wall_url: str
 
 
-def load_vk_config_from_env() -> VkConfig | None:
+def load_vk_config_from_env(*, user_access_token: str | None = None) -> VkConfig | None:
+    """
+    group_id + community token из env.
+    user_access_token: явный (из БД) перекрывает VK_USER_ACCESS_TOKEN из env.
+    """
     raw_gid = (os.getenv("VK_GROUP_ID") or "").strip()
-    token = (os.getenv("VK_USER_ACCESS_TOKEN") or "").strip()
-    if not raw_gid or not token:
+    group_token = (os.getenv("VK_GROUP_ACCESS_TOKEN") or "").strip()
+    env_user = (os.getenv("VK_USER_ACCESS_TOKEN") or "").strip()
+    override = (user_access_token or "").strip()
+    user_token = override or env_user
+    # Обратная совместимость: раньше в VK_USER_ACCESS_TOKEN клали единственный токен.
+    wall_token = group_token or user_token
+    if not raw_gid or not wall_token:
         return None
     try:
         group_id = int(raw_gid)
@@ -52,7 +73,14 @@ def load_vk_config_from_env() -> VkConfig | None:
     if group_id <= 0:
         return None
     version = (os.getenv("VK_API_VERSION") or DEFAULT_API_VERSION).strip() or DEFAULT_API_VERSION
-    return VkConfig(group_id=group_id, user_access_token=token, api_version=version)
+    # Фото: явный/env user token; если wall взят только из user (нет group) — он же.
+    photo_token = user_token if group_token else user_token
+    return VkConfig(
+        group_id=group_id,
+        group_access_token=wall_token,
+        user_access_token=photo_token,
+        api_version=version,
+    )
 
 
 def vk_is_configured() -> bool:
@@ -110,10 +138,16 @@ def download_photo_to_temp(url: str, *, timeout: float = 60.0) -> Path:
 
 
 def get_wall_upload_server(cfg: VkConfig) -> str:
+    token = cfg.photo_token
+    if not token:
+        raise VkApiError(
+            "Нет VK_USER_ACCESS_TOKEN: загрузка фото недоступна ключу сообщества "
+            "(photos.getWallUploadServer → error 27)."
+        )
     resp = _api_call(
         "photos.getWallUploadServer",
         {"group_id": cfg.group_id},
-        token=cfg.user_access_token,
+        token=token,
         api_version=cfg.api_version,
     )
     if not isinstance(resp, dict) or not resp.get("upload_url"):
@@ -136,6 +170,9 @@ def upload_photo_file(upload_url: str, file_path: Path, *, timeout: float = 90.0
 
 def save_wall_photo(cfg: VkConfig, upload: dict[str, Any]) -> str:
     """Вернуть attachment вида photo{owner_id}_{id}."""
+    token = cfg.photo_token
+    if not token:
+        raise VkApiError("Нет VK_USER_ACCESS_TOKEN для photos.saveWallPhoto")
     resp = _api_call(
         "photos.saveWallPhoto",
         {
@@ -144,7 +181,7 @@ def save_wall_photo(cfg: VkConfig, upload: dict[str, Any]) -> str:
             "server": upload.get("server"),
             "hash": upload.get("hash"),
         },
-        token=cfg.user_access_token,
+        token=token,
         api_version=cfg.api_version,
     )
     if not isinstance(resp, list) or not resp:
@@ -162,15 +199,36 @@ def upload_wall_photos_from_urls(cfg: VkConfig, photo_urls: list[str]) -> list[s
     urls = [u for u in photo_urls if (u or "").strip()][:MAX_WALL_PHOTOS]
     if not urls:
         return []
-    upload_url = get_wall_upload_server(cfg)
+    if not cfg.photo_token:
+        log.warning(
+            "VK: пропускаю %s фото — задайте VK_USER_ACCESS_TOKEN (user token админа, scope photos)",
+            len(urls),
+        )
+        return []
     attachments: list[str] = []
     for url in urls:
         tmp: Path | None = None
+        last_exc: Exception | None = None
         try:
             tmp = download_photo_to_temp(url)
-            uploaded = upload_photo_file(upload_url, tmp)
-            att = save_wall_photo(cfg, uploaded)
-            attachments.append(att)
+            for attempt in range(3):
+                try:
+                    upload_url = get_wall_upload_server(cfg)
+                    uploaded = upload_photo_file(upload_url, tmp)
+                    att = save_wall_photo(cfg, uploaded)
+                    attachments.append(att)
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    log.warning(
+                        "VK photo upload attempt %s/3 failed url=%s: %s",
+                        attempt + 1,
+                        url[:120],
+                        exc,
+                    )
+            if last_exc is not None:
+                raise last_exc
         except Exception as exc:
             log.warning("VK photo upload failed url=%s: %s", url[:120], exc)
             raise VkApiError(f"Не удалось загрузить фото в VK: {exc}") from exc
@@ -209,7 +267,7 @@ def wall_post(
     resp = _api_call(
         "wall.post",
         params,
-        token=cfg.user_access_token,
+        token=cfg.wall_token,
         api_version=cfg.api_version,
         timeout=60.0,
     )
@@ -226,20 +284,24 @@ def publish_listing_to_group(
     photo_urls: list[str],
     listing_web_url: str | None = None,
     cfg: VkConfig | None = None,
+    user_access_token: str | None = None,
 ) -> VkWallPostResult:
-    config = cfg or load_vk_config_from_env()
+    config = cfg or load_vk_config_from_env(user_access_token=user_access_token)
     if config is None:
         raise VkApiError(
-            "VK не настроен: задайте VK_GROUP_ID и VK_USER_ACCESS_TOKEN "
-            "(user token админа группы со scopes photos,wall,offline)."
+            "VK не настроен: задайте VK_GROUP_ID и VK_GROUP_ACCESS_TOKEN "
+            "(ключ сообщества из Управление → Работа с API)."
         )
     link = (listing_web_url or "").strip() or None
     # Оставляем слот под ссылку на карточку (лимит VK — 10 вложений)
     photo_budget = MAX_WALL_PHOTOS - (1 if link else 0)
     attachments = upload_wall_photos_from_urls(config, photo_urls[: max(0, photo_budget)])
+    # Без фото VK отклоняет attachment-ссылку (link_photo_sizing_rule).
+    # URL уже обычно есть в тексте поста — как attachment вешаем только с фото.
+    link_attachment = link if attachments else None
     return wall_post(
         config,
         message=message,
         attachments=attachments,
-        link_url=link,
+        link_url=link_attachment,
     )
