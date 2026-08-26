@@ -1,0 +1,39 @@
+# One-shot: VK publish status + photo token + backend logs
+name: Prod VK diagnose
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch VK publish diagnostics
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH=(ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}")
+          "${SSH[@]}" "cd '${DEPLOY_PATH}' && (
+            echo '=== app_settings vk* ==='
+            docker compose -f docker-compose.prod.yml exec -T postgres \
+              psql -U avtovozom -d avtovozom -c \
+              \"SELECT key, left(value,12) AS prefix, length(value) AS len, updated_at FROM app_settings WHERE key LIKE 'vk%' ORDER BY key;\"
+            echo '=== env VK_* present (names only) ==='
+            docker compose -f docker-compose.prod.yml exec -T backend \
+              sh -c 'env | grep -E \"^VK_\" | sed -E \"s/=.*/=…/\" | sort' || true
+            echo '=== recent vk publications ==='
+            docker compose -f docker-compose.prod.yml exec -T postgres \
+              psql -U avtovozom -d avtovozom -c \
+              \"SELECT car_id, status, avito_item_id AS post_id, left(coalesce(avito_url,''),90) AS url, left(coalesce(last_error,''),240) AS err, published_at, left(compose_snapshot_json,500) AS snap FROM car_external_publications WHERE channel='vk' ORDER BY COALESCE(published_at, updated_at) DESC NULLS LAST LIMIT 8;\"
+            echo '=== backend VK/photo logs ==='
+            docker compose -f docker-compose.prod.yml logs --tail=800 backend 2>&1 \
+              | grep -iE 'vk|photo upload|пропуск|wall\\.post|getWallUpload|saveWallPhoto' | tail -120 || true
+          )"
