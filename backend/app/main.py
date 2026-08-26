@@ -103,6 +103,7 @@ from .trim_display import (
     filter_param_sections_for_card,
     normalize_spec_heading,
     sanitize_config_sections_for_display,
+    sanitize_trim_name_ru,
 )
 from .email_utils import send_email
 from .faq_sections import normalize_faq_section
@@ -467,7 +468,7 @@ def _trim_to_out(trim: CarTrim | None) -> CarTrimOut | None:
     param_sections = filter_param_sections_for_card(doc.param_sections)
     return CarTrimOut(
         id=trim.id,
-        name_ru=normalize_spec_heading(trim.name_ru or ""),
+        name_ru=sanitize_trim_name_ru(trim.name_ru or ""),
         sections=sections,
         param_sections=param_sections,
     )

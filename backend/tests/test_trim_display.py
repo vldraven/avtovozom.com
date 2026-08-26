@@ -7,6 +7,8 @@ from app.trim_display import (
     format_trim_item_for_ui,
     prepare_param_sections_from_zh,
     prepare_trim_sections_from_zh,
+    sanitize_config_sections_for_display,
+    sanitize_trim_name_ru,
     translate_group_zh,
     translate_item_zh,
 )
@@ -117,6 +119,80 @@ class TrimDisplayTests(unittest.TestCase):
         flat = {it["name"]: it["value"] for sec in out for it in sec["items"]}
         self.assertEqual(flat["Двигатель"], "расширенный диапазон 95 л.с.")
         self.assertEqual(flat["Кузов"], "5 дв., 5 мест, лифтбек")
+
+    def test_sanitize_stored_overview_and_airbags(self) -> None:
+        """Прод: сохранённые секции с иероглифами дочищаются на выдаче."""
+        stored = [
+            {
+                "group": "Основное",
+                "items": [
+                    {"name": "Кузов", "value": "4门5座三厢车"},
+                    {"name": "Привод", "value": "前置前驱"},
+                ],
+            },
+            {
+                "group": "Безопасность",
+                "items": [
+                    {"name": "主 副驾驶座安全气囊, водителя", "value": "●"},
+                    {"name": "前 后排侧气囊, передние", "value": "●"},
+                ],
+            },
+        ]
+        out = sanitize_config_sections_for_display(stored)
+        flat = {it["name"]: it["value"] for sec in out for it in sec["items"]}
+        self.assertEqual(flat["Привод"], "Передний")
+        self.assertIn("седан", flat["Кузов"].lower())
+        self.assertNotRegex(flat["Кузов"], r"[\u4e00-\u9fff]")
+        self.assertEqual(flat["Подушки безопасности (водителя)"], "●")
+        self.assertEqual(flat["Боковые подушки безопасности (передние)"], "●")
+        self.assertEqual(
+            sanitize_trim_name_ru("宝马1系 2023款 120i M运动曜夜版"),
+            "BMW 1 Series 2023 120i M Sport Night Edition",
+        )
+
+    def test_bmw_airbags_and_drive_from_zh(self) -> None:
+        from app.trim_config_ui import prepare_config_sections_from_zh
+
+        sections = prepare_config_sections_from_zh(
+            [
+                {
+                    "group": "基本参数",
+                    "kind": "param",
+                    "items": [
+                        {"name": "车身结构", "value": "4门5座三厢车"},
+                        {"name": "驱动方式", "value": "前置前驱"},
+                    ],
+                },
+                {
+                    "group": "安全",
+                    "kind": "config",
+                    "items": [
+                        {"name": "主/副驾驶座安全气囊", "value": "主●/副●"},
+                        {"name": "前/后排侧气囊", "value": "前●/后—"},
+                    ],
+                },
+            ]
+        )
+        overview = {
+            it["name"]: it["value"]
+            for s in sections
+            if s["group"] == "Основное"
+            for it in s["items"]
+        }
+        self.assertEqual(overview["Привод"], "Передний")
+        self.assertIn("седан", overview["Кузов"].lower())
+        self.assertNotRegex(overview["Кузов"], r"[\u4e00-\u9fff]")
+        safety = {
+            it["name"]: it["value"]
+            for s in sections
+            if s["group"] == "Безопасность"
+            for it in s["items"]
+        }
+        self.assertEqual(safety["Подушки безопасности (водителя)"], "●")
+        self.assertEqual(safety["Подушки безопасности (пассажира)"], "●")
+        self.assertEqual(safety["Боковые подушки безопасности (передние)"], "●")
+        for name in safety:
+            self.assertNotRegex(name, r"[\u4e00-\u9fff]")
 
     def test_label_fixes(self) -> None:
         row = format_trim_item_for_ui("Аппаратное обеспечение", "●")
