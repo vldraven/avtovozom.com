@@ -9,6 +9,8 @@ from typing import Any
 from .trim_display import (
     _ABSENT_VALUES,
     _HAS_CJK,
+    _format_drive_value,
+    _translate_cjk_in_param_value,
     classify_trim_value,
     fix_trim_label_ru,
     format_gearbox_value_ru,
@@ -57,8 +59,15 @@ _OVERVIEW_ITEM_ZH: dict[str, str] = {
 # Название опции (обфусцированное или полное) → русская подпись
 _CONFIG_NAME_ZH: dict[str, str] = {
     "主/副座安全": "Подушки безопасности",
+    "主/副驾驶座安全气囊": "Подушки безопасности",
+    "主副驾驶座安全气囊": "Подушки безопасности",
     "/侧": "Боковые подушки безопасности",
+    "前/后排侧气囊": "Боковые подушки безопасности",
+    "前后排侧气囊": "Боковые подушки безопасности",
     "/头部(气帘)": "Подушки безопасности оконные (шторки)",
+    "前/后排头部气囊(气帘)": "Подушки безопасности оконные (шторки)",
+    "前/后排头部气囊": "Подушки безопасности оконные (шторки)",
+    "膝部气囊": "Коленные подушки безопасности",
     "被动行人保护": "Защита пешеходов",
     "缺气保用轮胎": "Шины runflat",
     "ABS防抱死": "Антиблокировочная система (ABS)",
@@ -237,6 +246,18 @@ _VALUE_ZH: dict[str, str] = {
     "纵置": "Продольное",
     "横置": "Поперечное",
     "三厢车": "Седан",
+    "两厢车": "Хэтчбек",
+    "掀背车": "Лифтбек",
+    "旅行车": "Универсал",
+    "前置前驱": "Передний",
+    "前置后驱": "Задний",
+    "后置后驱": "Задний",
+    "四驱": "Полный",
+    "全时四驱": "Полный",
+    "适时四驱": "Полный",
+    "分时四驱": "Полный",
+    "电动四驱": "Полный",
+    "双电机四驱": "Полный",
     "湿式双离合": "робот DCT",
     "干式双离合": "робот DCT",
     "双离合": "робот DCT",
@@ -292,11 +313,19 @@ def _translate_value_text(raw: str, *, group_zh: str = "", name_zh: str = "") ->
         elif re.fullmatch(r"\d+个", p):
             out.append(p.replace("个", ""))
         elif _HAS_CJK.search(p):
-            tr = _cached_translate(p)
-            out.append(tr if tr else p)
+            dict_tr = _translate_cjk_in_param_value(p)
+            if dict_tr and not _HAS_CJK.search(dict_tr):
+                out.append(dict_tr)
+            else:
+                tr = _cached_translate(p)
+                cleaned = _translate_cjk_in_param_value(tr) if tr else ""
+                out.append(cleaned if cleaned else (tr or p))
         else:
             out.append(p)
-    return ", ".join(dict.fromkeys(out)) if out else s
+    joined = ", ".join(dict.fromkeys(out)) if out else s
+    if _HAS_CJK.search(joined):
+        joined = _translate_cjk_in_param_value(joined)
+    return joined
 
 
 def _label_for_name(name_zh: str, group_zh: str = "") -> str:
@@ -305,11 +334,26 @@ def _label_for_name(name_zh: str, group_zh: str = "") -> str:
     group_label = _CONFIG_GROUP_ITEM_ZH.get((g, n))
     if group_label:
         return group_label
-    if n in _CONFIG_NAME_ZH:
-        return _CONFIG_NAME_ZH[n]
+    for key in (
+        n,
+        n.replace(" ", ""),
+        n.replace("/", ""),
+        re.sub(r"\s*/\s*", "/", n),
+        re.sub(r"[/\s]+", "", n),
+    ):
+        if key in _CONFIG_NAME_ZH:
+            return _CONFIG_NAME_ZH[key]
+    # normalize_spec_heading превращает «主/副…» → «主 副…»
+    spaced = normalize_spec_heading(n)
+    if spaced in _CONFIG_NAME_ZH:
+        return _CONFIG_NAME_ZH[spaced]
+    compact = re.sub(r"[\s/]+", "", n)
+    for zh, ru in _CONFIG_NAME_ZH.items():
+        if re.sub(r"[\s/]+", "", zh) == compact:
+            return ru
     if _HAS_CJK.search(n):
         tr = _cached_translate(n)
-        if tr and tr != n:
+        if tr and tr != n and not _HAS_CJK.search(tr):
             return normalize_spec_heading(fix_trim_label_ru(tr))
     return normalize_spec_heading(fix_trim_label_ru(n)) if n else ""
 
@@ -392,10 +436,22 @@ def _parse_overview_item(name_zh: str, value_zh: str) -> dict[str, str] | None:
     if name == "挡位个数" and value.isdigit():
         return {"name": label, "value": value}
     if name == "发动机":
-        v = value.replace("马力", " л.с.")
+        v = _translate_cjk_in_param_value(value.replace("马力", " л.с."))
+        if not v:
+            return None
         return {"name": label, "value": v}
     if name in ("变速箱", "简称", "变速箱类型"):
         text = format_gearbox_value_ru(value)
+        if not text:
+            return None
+        return {"name": label, "value": text}
+    if name == "驱动方式":
+        text = _format_drive_value(value)
+        if not text:
+            return None
+        return {"name": label, "value": text}
+    if name in ("车身结构", "能源类型"):
+        text = _translate_cjk_in_param_value(value)
         if not text:
             return None
         return {"name": label, "value": text}

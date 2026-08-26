@@ -651,10 +651,109 @@ def filter_param_sections_for_card(sections: list[dict[str, Any]]) -> list[dict[
     return sanitize_param_sections_for_display(out)
 
 
+_CONFIG_LABEL_CJK: list[tuple[str, str]] = sorted(
+    [
+        ("主/副驾驶座安全气囊", "Подушки безопасности"),
+        ("主 副驾驶座安全气囊", "Подушки безопасности"),
+        ("主副驾驶座安全气囊", "Подушки безопасности"),
+        ("主/副座安全", "Подушки безопасности"),
+        ("前/后排侧气囊", "Боковые подушки безопасности"),
+        ("前 后排侧气囊", "Боковые подушки безопасности"),
+        ("前后排侧气囊", "Боковые подушки безопасности"),
+        ("前/后排头部气囊(气帘)", "Подушки безопасности оконные (шторки)"),
+        ("前/后排头部气囊", "Подушки безопасности оконные (шторки)"),
+        ("前 后排头部气囊 气帘", "Подушки безопасности оконные (шторки)"),
+        ("前 后排头部气囊", "Подушки безопасности оконные (шторки)"),
+        ("膝部气囊", "Коленные подушки безопасности"),
+    ],
+    key=lambda x: len(x[0]),
+    reverse=True,
+)
+
+_POS_LABEL_SUFFIX_RE = re.compile(
+    r",\s*(водителя|пассажира|передние|задние)\s*$",
+    re.I,
+)
+
+_TRIM_NAME_FRAGMENTS_ZH: list[tuple[str, str]] = sorted(
+    [
+        ("运动曜夜版", "Sport Night Edition"),
+        ("曜夜版", "Night Edition"),
+        ("运动套装", "M Sport"),
+        ("运动版", "Sport"),
+        ("领先型", "Leading"),
+        ("豪华型", "Luxury"),
+        ("尊享型", "Exclusive"),
+        ("宝马", "BMW"),
+        ("奥迪", "Audi"),
+        ("奔驰", "Mercedes-Benz"),
+        ("大众", "Volkswagen"),
+        ("丰田", "Toyota"),
+        ("本田", "Honda"),
+        ("日产", "Nissan"),
+        ("1系", "1 Series"),
+        ("2系", "2 Series"),
+        ("3系", "3 Series"),
+        ("4系", "4 Series"),
+        ("5系", "5 Series"),
+        ("7系", "7 Series"),
+        ("款", ""),
+    ],
+    key=lambda x: len(x[0]),
+    reverse=True,
+)
+
+
+def sanitize_trim_name_ru(name: str | None) -> str:
+    """Убрать иероглифы из названия комплектации на выдаче."""
+    s = normalize_spec_heading(name or "")
+    if not s or not _HAS_CJK.search(s):
+        return s
+    out = s
+    for zh, ru in _TRIM_NAME_FRAGMENTS_ZH:
+        if zh in out:
+            out = out.replace(zh, f" {ru} " if ru else " ")
+    out = re.sub(r"[\u4e00-\u9fff]+", " ", out)
+    out = re.sub(r"\s+", " ", out).strip(" -·,")
+    return out or s
+
+
+def sanitize_config_label_ru(name: str) -> str:
+    """Перевести оставшиеся китайские подписи опций (в т.ч. уже сохранённые)."""
+    s = (name or "").strip()
+    if not s or not _HAS_CJK.search(s):
+        return s
+    pos_m = _POS_LABEL_SUFFIX_RE.search(s)
+    pos = pos_m.group(1).lower() if pos_m else None
+    base = _POS_LABEL_SUFFIX_RE.sub("", s).strip()
+    mapped: str | None = None
+    for zh, ru in _CONFIG_LABEL_CJK:
+        if base == zh or zh in base:
+            mapped = ru
+            break
+    if mapped is None:
+        compact = re.sub(r"[\s/]+", "", base)
+        for zh, ru in _CONFIG_LABEL_CJK:
+            if re.sub(r"[\s/]+", "", zh) == compact:
+                mapped = ru
+                break
+    if mapped:
+        if pos and "подуш" in mapped.lower():
+            return f"{mapped} ({pos})"
+        if pos:
+            return f"{mapped}, {pos}"
+        return mapped
+    cleaned = re.sub(r"[\u4e00-\u9fff]+", " ", base)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,/-")
+    if cleaned and pos:
+        return f"{cleaned}, {pos}"
+    return cleaned or s
+
+
 def sanitize_config_sections_for_display(
     sections: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Дочистить сохранённые секции попапа: КПП без иероглифов."""
+    """Дочистить сохранённые секции попапа: без иероглифов в подписях и значениях."""
     out: list[dict[str, Any]] = []
     for sec in sections:
         if not isinstance(sec, dict):
@@ -663,18 +762,21 @@ def sanitize_config_sections_for_display(
         for it in sec.get("items") or []:
             if not isinstance(it, dict):
                 continue
-            name = str(it.get("name") or "").strip()
+            name = sanitize_config_label_ru(str(it.get("name") or "").strip())
             value = str(it.get("value") or "").strip()
             if not name or not value:
                 continue
-            if name.casefold() in _GEARBOX_LABELS_RU or looks_like_gearbox_value(value):
+            name_cf = name.casefold()
+            if name_cf in _GEARBOX_LABELS_RU or looks_like_gearbox_value(value):
                 value = format_gearbox_value_ru(value)
-            if _HAS_CJK.search(value) and (
-                name.casefold() in _GEARBOX_LABELS_RU or looks_like_gearbox_value(value)
-            ):
+            elif name_cf == "привод":
+                value = _format_drive_value(value)
+            elif _HAS_CJK.search(value):
+                value = _translate_cjk_in_param_value(value)
+            if _HAS_CJK.search(value):
                 value = re.sub(r"[\u4e00-\u9fff]+", "", value)
                 value = re.sub(r"\s+", " ", value).strip(" ,/-")
-            if value:
+            if value and not _HAS_CJK.search(name):
                 items.append({"name": name, "value": value})
         if items:
             payload = {k: v for k, v in sec.items() if k != "items"}
