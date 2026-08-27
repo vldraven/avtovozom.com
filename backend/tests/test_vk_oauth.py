@@ -33,13 +33,30 @@ class VkOAuthHelpersTests(unittest.TestCase):
                 "https://api.avtovozom.com/admin/integrations/vk/oauth/callback",
             )
 
-    def test_mode_classic_with_secret(self):
+    def test_mode_defaults_classic(self):
         with patch.dict(
             "os.environ",
-            {"VK_OAUTH_CLIENT_SECRET": "sec", "VK_OAUTH_MODE": ""},
+            {"VK_OAUTH_CLIENT_SECRET": "", "VK_OAUTH_MODE": ""},
             clear=False,
         ):
             self.assertEqual(vk_oauth_mode(), "classic")
+
+    def test_begin_classic_requires_secret(self):
+        db = MagicMock()
+        with patch.dict(
+            "os.environ",
+            {
+                "VK_OAUTH_CLIENT_SECRET": "",
+                "VK_OAUTH_MODE": "classic",
+                "PUBLIC_API_ORIGIN": "http://localhost:8000",
+            },
+            clear=False,
+        ):
+            from app.vk_oauth import VkOAuthError
+
+            with self.assertRaises(VkOAuthError) as ctx:
+                begin_vk_oauth(db, return_to="/staff/publish-social/9")
+            self.assertIn("VK_OAUTH_CLIENT_SECRET", str(ctx.exception))
 
     def test_begin_vkid_stores_pending(self):
         db = MagicMock()

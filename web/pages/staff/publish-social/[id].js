@@ -445,8 +445,9 @@ export default function PublishSocialPage() {
                 </div>
                 {vkTokenStatus?.oauth_redirect_uri ? (
                   <p className="muted" style={{ fontSize: "0.8rem", marginTop: 0 }}>
-                    В кабинете VK добавьте Trusted redirect URL:{" "}
+                    В настройках приложения VK: Authorized redirect URI ={" "}
                     <code style={{ wordBreak: "break-all" }}>{vkTokenStatus.oauth_redirect_uri}</code>
+                    {" · "}нужен <code>VK_OAUTH_CLIENT_SECRET</code> в .env сервера
                     {vkTokenStatus.oauth_mode ? ` · mode=${vkTokenStatus.oauth_mode}` : ""}
                   </p>
                 ) : null}
