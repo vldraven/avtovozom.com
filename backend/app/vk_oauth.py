@@ -70,11 +70,15 @@ def vk_oauth_client_secret() -> str:
 
 
 def vk_oauth_mode() -> str:
-    """classic — oauth.vk.com + client_secret; vkid — PKCE без секрета."""
+    """
+    classic — oauth.vk.com + client_secret (предпочтительный путь для photos).
+    vkid — id.vk.ru PKCE; у многих mini-app страница authorize падает с «Ошибка загрузки».
+    """
     mode = (os.getenv("VK_OAUTH_MODE") or "").strip().lower()
     if mode in ("classic", "vkid"):
         return mode
-    return "classic" if vk_oauth_client_secret() else "vkid"
+    # По умолчанию classic: Implicit/oauth.vk.com у приложения уже работал.
+    return "classic"
 
 
 def safe_return_to(raw: str | None) -> str:
@@ -102,8 +106,12 @@ def begin_vk_oauth(db: Session, *, return_to: str | None = None) -> dict[str, st
     if mode == "classic":
         if not vk_oauth_client_secret():
             raise VkOAuthError(
-                "Задайте VK_OAUTH_CLIENT_SECRET (защищённый ключ приложения) "
-                "или VK_OAUTH_MODE=vkid для PKCE."
+                "На сервере нет VK_OAUTH_CLIENT_SECRET. "
+                "В кабинете приложения (vk.com/apps → ваше приложение → Настройки) "
+                "скопируйте «Защищённый ключ» в /opt/avtovozom/.env как "
+                "VK_OAUTH_CLIENT_SECRET=… и перезапустите backend. "
+                "Также добавьте Authorized redirect URI: "
+                f"{redirect_uri}"
             )
         q = urlencode(
             {

@@ -17,21 +17,23 @@ Implicit-токен (`response_type=token` → `blank.html#access_token=…`) п
 
 Server-side OAuth (`response_type=code`): обмен code→token делает backend → токен привязан к IP сервера.
 
-## Кабинет VK / VK ID
+## Кабинет приложения (classic oauth.vk.com)
 
-В Trusted redirect URL добавьте **точно**:
+По умолчанию используется **classic** (не VK ID): страница `id.vk.com` у mini-app часто даёт «Ошибка загрузки».
+
+1. [Управление приложениями](https://vk.com/apps?act=manage) → приложение `54689021` → **Настройки**.
+2. Скопируйте **Защищённый ключ** → `VK_OAUTH_CLIENT_SECRET` в `/opt/avtovozom/.env`.
+3. В **Authorized redirect URI** / базовый домен добавьте **точно**:
 
 ```text
 https://api.avtovozom.com/admin/integrations/vk/oauth/callback
 ```
 
-Локально:
+Локально: `http://localhost:8000/admin/integrations/vk/oauth/callback`.
 
-```text
-http://localhost:8000/admin/integrations/vk/oauth/callback
-```
+4. `docker compose -f docker-compose.prod.yml up -d backend`
 
-(или значение `VK_OAUTH_REDIRECT_URI`, если задали вручную.)
+Опционально `VK_OAUTH_MODE=vkid` — только если classic недоступен и в VK ID заведён Trusted redirect.
 
 ## Переменные
 
@@ -40,11 +42,10 @@ VK_GROUP_ID=34626704
 VK_GROUP_ACCESS_TOKEN=vk1.a....
 VK_API_VERSION=5.199
 VK_OAUTH_CLIENT_ID=54689021
-# classic: oauth.vk.com + секрет приложения
-# VK_OAUTH_CLIENT_SECRET=
-# VK_OAUTH_MODE=classic   # если секрет задан — classic по умолчанию; иначе vkid (PKCE)
+VK_OAUTH_CLIENT_SECRET=  # обязателен для classic
+# VK_OAUTH_MODE=classic
 # VK_OAUTH_REDIRECT_URI=https://api.avtovozom.com/admin/integrations/vk/oauth/callback
-# PUBLIC_API_ORIGIN=https://api.avtovozom.com
+PUBLIC_API_ORIGIN=https://api.avtovozom.com
 ```
 
 Миграция: `backend/migrations/022_app_settings.sql` (или `create_all` при старте backend).
