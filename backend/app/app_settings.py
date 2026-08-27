@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -99,21 +98,15 @@ def mask_token(token: str) -> str:
 
 
 def vk_oauth_authorize_url(*, scope: str = "photos") -> str:
-    client_id = (os.getenv("VK_OAUTH_CLIENT_ID") or DEFAULT_VK_OAUTH_CLIENT_ID).strip()
-    q = urlencode(
-        {
-            "client_id": client_id,
-            "display": "page",
-            "redirect_uri": "https://oauth.vk.com/blank.html",
-            "scope": scope,
-            "response_type": "token",
-            "v": "5.199",
-        }
-    )
-    return f"https://oauth.vk.com/authorize?{q}"
+    """Implicit Flow (IP браузера) — fallback для ручной вставки."""
+    from .vk_oauth import implicit_oauth_url_for_docs
+
+    return implicit_oauth_url_for_docs(scope=scope)
 
 
 def vk_user_token_status(db: Session) -> dict[str, Any]:
+    from .vk_oauth import vk_oauth_mode, vk_oauth_redirect_uri
+
     token, expires_at = get_vk_user_token(db)
     env_fallback = (os.getenv("VK_USER_ACCESS_TOKEN") or "").strip()
     effective = token or env_fallback
@@ -128,4 +121,6 @@ def vk_user_token_status(db: Session) -> dict[str, Any]:
         "expires_at": expires_at.isoformat(timespec="seconds") + "Z" if expires_at else None,
         "expired": expired,
         "oauth_url": vk_oauth_authorize_url(),
+        "oauth_redirect_uri": vk_oauth_redirect_uri(),
+        "oauth_mode": vk_oauth_mode(),
     }

@@ -7,37 +7,54 @@ Backend вызывает VK API напрямую (без n8n): опционал�
 ## Что нужно
 
 1. **`VK_GROUP_ID` + `VK_GROUP_ACCESS_TOKEN`** в `/opt/avtovozom/.env` — ключ сообщества (бессрочный).
-2. **User-токен для фотокарусели** — в админке на странице поста (хранится в БД `app_settings`, ~24 ч). Env `VK_USER_ACCESS_TOKEN` — только fallback.
+2. **User-токен для фотокарусели** — через кнопку **«Подключить через сервер»** в админке (хранится в БД `app_settings`).
 
-Ссылка OAuth для токена фото (App ID из `VK_OAUTH_CLIENT_ID`, по умолчанию `54689021`):
+### Почему не вставлять токен из браузера
+
+Implicit-токен (`response_type=token` → `blank.html#access_token=…`) привязан к **IP устройства**.
+Запросы `photos.*` идут с **IP backend** → ошибка
+`access_token was given to another ip address`.
+
+Server-side OAuth (`response_type=code`): обмен code→token делает backend → токен привязан к IP сервера.
+
+## Кабинет VK / VK ID
+
+В Trusted redirect URL добавьте **точно**:
 
 ```text
-https://oauth.vk.com/authorize?client_id=54689021&display=page&redirect_uri=https://oauth.vk.com/blank.html&scope=photos&response_type=token&v=5.199
+https://api.avtovozom.com/admin/integrations/vk/oauth/callback
 ```
 
-После редиректа вставьте URL или `access_token` в блок «Токен VK для фотокарусели» и нажмите **Сохранить**.
+Локально:
 
-## Переменные на проде
+```text
+http://localhost:8000/admin/integrations/vk/oauth/callback
+```
+
+(или значение `VK_OAUTH_REDIRECT_URI`, если задали вручную.)
+
+## Переменные
 
 ```env
 VK_GROUP_ID=34626704
 VK_GROUP_ACCESS_TOKEN=vk1.a....
 VK_API_VERSION=5.199
-# VK_OAUTH_CLIENT_ID=54689021
+VK_OAUTH_CLIENT_ID=54689021
+# classic: oauth.vk.com + секрет приложения
+# VK_OAUTH_CLIENT_SECRET=
+# VK_OAUTH_MODE=classic   # если секрет задан — classic по умолчанию; иначе vkid (PKCE)
+# VK_OAUTH_REDIRECT_URI=https://api.avtovozom.com/admin/integrations/vk/oauth/callback
+# PUBLIC_API_ORIGIN=https://api.avtovozom.com
 ```
 
 Миграция: `backend/migrations/022_app_settings.sql` (или `create_all` при старте backend).
 
-Перезапуск:
-
-```bash
-cd /opt/avtovozom && docker compose -f docker-compose.prod.yml up -d backend
-```
-
 ## API
 
-- `GET /admin/integrations/vk` — статус group config + user token (preview, expires).
-- `PUT /admin/integrations/vk/user-token` — тело `{ "token", "expires_in": 86400 }` (можно полный redirect URL).
-- `GET /admin/cars/{id}/vk-compose` / `POST /admin/cars/{id}/vk/publish`.
+- `GET /admin/integrations/vk` — статус + `oauth_redirect_uri` / `oauth_mode`
+- `POST /admin/integrations/vk/oauth/start` — `{ return_to }` → `{ authorize_url }`
+- `GET /admin/integrations/vk/oauth/callback` — redirect от VK, сохраняет токен в БД
+- `PUT /admin/integrations/vk/user-token` — ручная вставка (fallback, обычно ломается из‑за IP)
+- `GET /admin/cars/{id}/vk-compose` / `POST /admin/cars/{id}/vk/publish`
 
 Учёт: `car_external_publications` с `channel=vk`.

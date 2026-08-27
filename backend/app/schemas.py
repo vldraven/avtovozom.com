@@ -810,6 +810,8 @@ class VkUserTokenStatusOut(BaseModel):
     expires_at: str | None = None
     expired: bool = False
     oauth_url: str = ""
+    oauth_redirect_uri: str = ""
+    oauth_mode: str = ""
     vk_group_configured: bool = False
 
 
@@ -821,6 +823,16 @@ class VkUserTokenIn(BaseModel):
 class VkUserTokenSaveOut(BaseModel):
     ok: bool = True
     status: VkUserTokenStatusOut
+
+
+class VkOAuthStartIn(BaseModel):
+    return_to: str | None = Field(default=None, max_length=240)
+
+
+class VkOAuthStartOut(BaseModel):
+    authorize_url: str
+    redirect_uri: str
+    mode: str
 
 
 class VkPublishIn(BaseModel):

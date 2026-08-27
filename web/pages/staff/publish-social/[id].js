@@ -60,6 +60,7 @@ export default function PublishSocialPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
   const [tokenBusy, setTokenBusy] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -134,10 +135,32 @@ export default function PublishSocialPage() {
   }, [router, carId]);
 
   useEffect(() => {
-    if (!token || !carId || !me || !isAdminRole(me.role)) return;
+    if (!router.isReady || !token || !carId || !me || !isAdminRole(me.role)) return;
     loadCompose();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per car/auth
   }, [token, carId, me]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const flag = router.query.vk_oauth;
+    if (!flag) return;
+    const detail = router.query.detail;
+    if (flag === "ok") {
+      setMessage("Токен VK получен через сервер (тот же IP, что у API). Можно публиковать с фото.");
+      if (token) loadVkTokenStatus(token).then((tok) => tok && setVkTokenStatus(tok));
+    } else if (flag === "error") {
+      setError(
+        typeof detail === "string" && detail
+          ? `VK OAuth: ${detail}`
+          : "VK OAuth не удался"
+      );
+    }
+    const nextQuery = { ...router.query };
+    delete nextQuery.vk_oauth;
+    delete nextQuery.detail;
+    router.replace({ pathname: router.pathname, query: nextQuery }, undefined, { shallow: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot query flag
+  }, [router.isReady, router.query.vk_oauth]);
 
   const photosSorted = useMemo(
     () => (data?.photos ? [...data.photos].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id) : []),
@@ -182,6 +205,39 @@ export default function PublishSocialPage() {
       setError("Сбой сети или таймаут");
     } finally {
       setAiBusy(false);
+    }
+  }
+
+  async function startVkOauth() {
+    setError("");
+    setMessage("");
+    if (!token) return;
+    setOauthBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/integrations/vk/oauth/start`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          return_to: carId ? `/staff/publish-social/${carId}` : "/staff/publish-social",
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.detail || "Не удалось начать VK OAuth");
+        return;
+      }
+      if (!body.authorize_url) {
+        setError("Сервер не вернул authorize_url");
+        return;
+      }
+      window.location.href = body.authorize_url;
+    } catch {
+      setError("Сбой сети при старте VK OAuth");
+    } finally {
+      setOauthBusy(false);
     }
   }
 
@@ -374,32 +430,55 @@ export default function PublishSocialPage() {
               <div className="panel" style={{ marginBottom: "1rem" }}>
                 <h2 className="panel-heading-sm">Токен VK для фотокарусели</h2>
                 <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
-                  {vkTokenHint || "Статус токена…"} Ключ сообщества остаётся в .env; этот user-токен (~сутки) хранится в БД.
+                  {vkTokenHint || "Статус токена…"} Implicit-токен из браузера привязан к IP устройства —
+                  API ходит с IP сервера и получает ошибку. Нужен OAuth через сервер.
                 </p>
-                {vkTokenStatus?.oauth_url ? (
-                  <p style={{ margin: "0 0 0.75rem" }}>
-                    <a href={vkTokenStatus.oauth_url} target="_blank" rel="noopener noreferrer">
-                      Получить токен в VK (scope photos)
-                    </a>
-                  </p>
-                ) : null}
-                <textarea
-                  className="input"
-                  rows={3}
-                  value={vkTokenInput}
-                  onChange={(e) => setVkTokenInput(e.target.value)}
-                  placeholder="Вставьте access_token или полный URL после oauth.vk.com/blank.html#…"
-                />
-                <div style={{ marginTop: 8 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
                   <button
                     type="button"
                     className="btn btn-secondary"
-                    disabled={tokenBusy || !vkTokenInput.trim()}
-                    onClick={saveVkToken}
+                    disabled={oauthBusy}
+                    onClick={startVkOauth}
                   >
-                    {tokenBusy ? "Сохранение…" : "Сохранить токен VK"}
+                    {oauthBusy ? "Открываю VK…" : "Подключить через сервер"}
                   </button>
                 </div>
+                {vkTokenStatus?.oauth_redirect_uri ? (
+                  <p className="muted" style={{ fontSize: "0.8rem", marginTop: 0 }}>
+                    В кабинете VK добавьте Trusted redirect URL:{" "}
+                    <code style={{ wordBreak: "break-all" }}>{vkTokenStatus.oauth_redirect_uri}</code>
+                    {vkTokenStatus.oauth_mode ? ` · mode=${vkTokenStatus.oauth_mode}` : ""}
+                  </p>
+                ) : null}
+                <details style={{ marginTop: 8 }}>
+                  <summary className="muted" style={{ cursor: "pointer", fontSize: "0.85rem" }}>
+                    Вручную (не рекомендуется — IP браузера)
+                  </summary>
+                  <p style={{ margin: "0.5rem 0" }}>
+                    {vkTokenStatus?.oauth_url ? (
+                      <a href={vkTokenStatus.oauth_url} target="_blank" rel="noopener noreferrer">
+                        Получить Implicit-токен в VK
+                      </a>
+                    ) : null}
+                  </p>
+                  <textarea
+                    className="input"
+                    rows={3}
+                    value={vkTokenInput}
+                    onChange={(e) => setVkTokenInput(e.target.value)}
+                    placeholder="access_token или URL после oauth.vk.com/blank.html#…"
+                  />
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={tokenBusy || !vkTokenInput.trim()}
+                      onClick={saveVkToken}
+                    >
+                      {tokenBusy ? "Сохранение…" : "Сохранить токен вручную"}
+                    </button>
+                  </div>
+                </details>
               </div>
 
               <div className="panel" style={{ marginBottom: "1rem" }}>
