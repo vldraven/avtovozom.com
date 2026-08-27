@@ -225,6 +225,8 @@ from .schemas import (
     VkComposeOut,
     VkPublishIn,
     VkPublishOut,
+    VkOAuthStartIn,
+    VkOAuthStartOut,
     VkUserTokenIn,
     VkUserTokenSaveOut,
     VkUserTokenStatusOut,
@@ -4570,6 +4572,83 @@ def admin_vk_integration_status(
 
     st = vk_user_token_status(db)
     return VkUserTokenStatusOut(vk_group_configured=vk_is_configured(), **st)
+
+
+@app.post("/admin/integrations/vk/oauth/start", response_model=VkOAuthStartOut)
+def admin_vk_oauth_start(
+    payload: VkOAuthStartIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    """Старт server-side OAuth: code обменивается на IP backend (не браузера)."""
+    from .vk_oauth import VkOAuthError, begin_vk_oauth
+
+    try:
+        data = begin_vk_oauth(db, return_to=payload.return_to)
+    except VkOAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return VkOAuthStartOut(**data)
+
+
+@app.get("/admin/integrations/vk/oauth/callback")
+def admin_vk_oauth_callback(
+    db: Session = Depends(get_db),
+    code: str | None = None,
+    state: str | None = None,
+    device_id: str | None = None,
+    payload: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    """
+    Redirect URI для кабинета VK / VK ID.
+    Без Bearer: state одноразовый из POST /oauth/start.
+    """
+    from fastapi.responses import RedirectResponse
+
+    from .vk_oauth import VkOAuthError, complete_vk_oauth, safe_return_to
+
+    web = _public_web_origin()
+
+    def _redirect(path: str, **q: str) -> RedirectResponse:
+        from urllib.parse import urlencode
+
+        qs = urlencode({k: v for k, v in q.items() if v})
+        url = f"{web}{path}"
+        if qs:
+            url = f"{url}?{qs}"
+        return RedirectResponse(url=url, status_code=302)
+
+    if error:
+        return _redirect(
+            "/staff/publish-social",
+            vk_oauth="error",
+            detail=(error_description or error)[:300],
+        )
+
+    try:
+        result = complete_vk_oauth(
+            db,
+            code=code,
+            state=state,
+            device_id=device_id,
+            payload=payload,
+        )
+    except VkOAuthError as exc:
+        return _redirect(
+            "/staff/publish-social",
+            vk_oauth="error",
+            detail=str(exc)[:300],
+        )
+    except Exception as exc:
+        return _redirect(
+            "/staff/publish-social",
+            vk_oauth="error",
+            detail=f"OAuth сбой: {exc}"[:300],
+        )
+
+    return_to = safe_return_to(result.get("return_to"))
+    return _redirect(return_to, vk_oauth="ok")
 
 
 @app.put("/admin/integrations/vk/user-token", response_model=VkUserTokenSaveOut)
