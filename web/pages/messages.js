@@ -10,7 +10,12 @@ import {
   resolveAuthSessionFailure,
   tryRefreshAccessToken,
 } from "../lib/auth";
-import { getGuestChatToken, GUEST_QUICK_PROMPTS, setGuestChatToken } from "../lib/guestChat";
+import {
+  getGuestChatToken,
+  guestNeedsAiReply,
+  GUEST_QUICK_PROMPTS,
+  setGuestChatToken,
+} from "../lib/guestChat";
 import { mediaSrc } from "../lib/media";
 import { isStaffRole } from "../lib/roles";
 import SiteHeader from "../components/SiteHeader";
@@ -233,16 +238,7 @@ export default function MessagesPage() {
           }
           return list;
         });
-        setGuestAwaitingAi((waiting) => {
-          if (!waiting) return false;
-          for (let i = list.length - 1; i >= 0; i -= 1) {
-            const m = list[i];
-            if (m.message_type === "system") continue;
-            // Peer reply arrived (AI or staff)
-            return !(m.message_type === "assistant" || m.sender_user_id != null);
-          }
-          return true;
-        });
+        setGuestAwaitingAi(guestNeedsAiReply(list));
         if (!quiet) scrollThreadToEnd();
       }
       setListVisible(false);

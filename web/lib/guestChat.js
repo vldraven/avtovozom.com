@@ -27,3 +27,14 @@ export function setGuestChatToken(token) {
     /* ignore quota / private mode */
   }
 }
+
+/** Последнее несистемное сообщение от гостя — ждём ответ ИИ или сотрудника. */
+export function guestNeedsAiReply(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return false;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m.message_type === "system") continue;
+    return !(m.message_type === "assistant" || m.sender_user_id != null);
+  }
+  return false;
+}

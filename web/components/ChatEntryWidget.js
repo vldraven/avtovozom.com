@@ -20,7 +20,7 @@ import {
   chatEntryPathHidden,
   chatEntryRoleHidden,
 } from "../lib/chatEntryWidget";
-import { getGuestChatToken, setGuestChatToken } from "../lib/guestChat";
+import { getGuestChatToken, guestNeedsAiReply, setGuestChatToken } from "../lib/guestChat";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MOBILE_MQ = "(max-width: 768px)";
@@ -137,15 +137,7 @@ export default function ChatEntryWidget() {
         if (res.ok) {
           const list = (await res.json()) || [];
           setMessages(list);
-          setGuestAwaitingAi((waiting) => {
-            if (!waiting) return false;
-            for (let i = list.length - 1; i >= 0; i -= 1) {
-              const m = list[i];
-              if (m.message_type === "system") continue;
-              return !(m.message_type === "assistant" || m.sender_user_id != null);
-            }
-            return true;
-          });
+          setGuestAwaitingAi(guestNeedsAiReply(list));
           if (!quiet) scrollThreadToEnd();
         }
       } finally {
