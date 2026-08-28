@@ -279,6 +279,58 @@ export default function ChatEntryWidget() {
     };
   }, [phase, hidden]);
 
+  /**
+   * Mobile: при фокусе в поле чата тапбар остаётся под клавиатурой (как у поиска
+   * в каталоге) — не поднимаем dock и убираем зазор под tabbar у виджета.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined" || hidden || !isMobile) return undefined;
+    let focusTimer = 0;
+
+    const inputFocused = () => {
+      const ae = document.activeElement;
+      return Boolean(ae?.classList?.contains("chat-entry__input"));
+    };
+
+    const sync = () => {
+      document.body.classList.toggle("chat-entry-kb-open", inputFocused());
+    };
+
+    const scheduleSync = (...delays) => {
+      window.clearTimeout(focusTimer);
+      const run = (i) => {
+        if (i >= delays.length) return;
+        focusTimer = window.setTimeout(() => {
+          sync();
+          run(i + 1);
+        }, delays[i]);
+      };
+      run(0);
+    };
+
+    const onFocusIn = (e) => {
+      if (!(e.target instanceof HTMLElement)) return;
+      if (!e.target.classList.contains("chat-entry__input")) return;
+      sync();
+      scheduleSync(50, 150, 320);
+    };
+
+    const onFocusOut = () => scheduleSync(180);
+
+    sync();
+    window.visualViewport?.addEventListener("resize", sync);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.visualViewport?.removeEventListener("resize", sync);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+      document.body.classList.remove("chat-entry-kb-open");
+    };
+  }, [hidden, isMobile]);
+
   const openPanel = async () => {
     setPhase("open");
     setSendErr("");

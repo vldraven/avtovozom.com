@@ -14166,4 +14166,21 @@ a.contacts-card:hover {
   body.chat-entry-expanded.layout--car-detail-cta .layout:not(.layout--no-mobile-dock) {
     padding-bottom: calc(3.55rem + 14rem + env(safe-area-inset-bottom, 0px));
   }
+
+  /* Клавиатура открыта: dock скрыт (JS), виджет без зазора под tabbar */
+  body.chat-entry-kb-open .chat-entry--mobile {
+    bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  body.chat-entry-kb-open .chat-entry--mobile.chat-entry--car-detail {
+    bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  body.chat-entry-kb-open.chat-entry-expanded .layout:not(.layout--no-mobile-dock) {
+    padding-bottom: calc(10rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  body.chat-entry-kb-open.chat-entry-expanded.layout--car-detail-cta .layout:not(.layout--no-mobile-dock) {
+    padding-bottom: calc(14rem + env(safe-area-inset-bottom, 0px));
+  }
 }
