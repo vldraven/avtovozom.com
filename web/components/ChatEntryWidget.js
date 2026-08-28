@@ -21,6 +21,7 @@ import {
   chatEntryRoleHidden,
 } from "../lib/chatEntryWidget";
 import { getGuestChatToken, guestNeedsAiReply, setGuestChatToken } from "../lib/guestChat";
+import { sanitizeConsultantReplyText } from "../lib/consultantReplyText";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MOBILE_MQ = "(max-width: 768px)";
@@ -506,7 +507,13 @@ export default function ChatEntryWidget() {
                   className={`chat-entry__bubble-row${mine ? " chat-entry__bubble-row--mine" : ""}`}
                 >
                   <div className={`chat-entry__bubble${mine ? " chat-entry__bubble--mine" : ""}`}>
-                    {m.text ? <p>{m.text}</p> : null}
+                    {m.text ? (
+                      <p>
+                        {m.message_type === "assistant"
+                          ? sanitizeConsultantReplyText(m.text)
+                          : m.text}
+                      </p>
+                    ) : null}
                     <time dateTime={m.created_at}>{formatMsgTime(m.created_at)}</time>
                   </div>
                 </div>
