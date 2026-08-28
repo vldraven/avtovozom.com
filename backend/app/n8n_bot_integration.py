@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Literal
 
@@ -17,6 +18,42 @@ from .telegram_notify import notify_calculation_request
 N8N_BOT_API_SECRET_ENV = "N8N_TELEGRAM_BOT_API_SECRET"
 
 ALLOWED_LEAD_SOURCES = frozenset({"telegram_bot", "guest_web"})
+
+# Ключи JSON-параметров n8n-инструментов (search_cars, create_lead, …).
+# LLM иногда «протекает» ими в user-visible текст — убираем префикс.
+_TOOL_JSON_KEYS = frozenset(
+    {
+        "q",
+        "max_total_rub",
+        "min_total_rub",
+        "listing_id",
+        "user_name",
+        "user_contact",
+        "comment",
+        "car_id",
+    }
+)
+
+
+def sanitize_consultant_reply_text(text: str) -> str:
+    """Убрать ведущий JSON с параметрами tool-call из ответа консультанта."""
+    s = (text or "").strip()
+    if not s.startswith("{"):
+        return s
+
+    decoder = json.JSONDecoder()
+    while s.startswith("{"):
+        try:
+            obj, idx = decoder.raw_decode(s)
+        except json.JSONDecodeError:
+            break
+        if not isinstance(obj, dict):
+            break
+        keys = set(obj.keys())
+        if keys and not keys.issubset(_TOOL_JSON_KEYS):
+            break
+        s = s[idx:].lstrip(" \t\n\r")
+    return s.strip()
 
 
 class N8nBotCreateRequestIn(BaseModel):
@@ -147,7 +184,7 @@ def post_guest_bot_reply(
     payload: N8nGuestReplyIn,
 ) -> N8nGuestReplyOut:
     token = (payload.guest_token or "").strip()
-    text = (payload.text or "").strip()
+    text = sanitize_consultant_reply_text((payload.text or "").strip())
     if not text:
         raise HTTPException(status_code=400, detail="text is required")
 
