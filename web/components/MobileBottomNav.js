@@ -132,10 +132,12 @@ export default function MobileBottomNav() {
 
   // Guest chat opens the thread without ?chat= — hide dock via body class from messages.js
   const [messagesBodyThreadOpen, setMessagesBodyThreadOpen] = useState(false);
+  const [chatEntryKbOpen, setChatEntryKbOpen] = useState(false);
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
     const sync = () => {
       setMessagesBodyThreadOpen(document.body.classList.contains("messages-thread-open"));
+      setChatEntryKbOpen(document.body.classList.contains("chat-entry-kb-open"));
     };
     sync();
     const obs = new MutationObserver(sync);
@@ -143,7 +145,7 @@ export default function MobileBottomNav() {
     return () => obs.disconnect();
   }, []);
 
-  if (messagesThreadOpen || messagesBodyThreadOpen) return null;
+  if (messagesThreadOpen || messagesBodyThreadOpen || chatEntryKbOpen) return null;
 
   const isHomeNav = router.pathname === "/";
   const isCatalogNav =
