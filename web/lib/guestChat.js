@@ -1,5 +1,13 @@
 const GUEST_CHAT_TOKEN_KEY = "avt_guest_chat_token";
 
+/** Быстрые подсказки гостевого чата (messages + виджет входа). */
+export const GUEST_QUICK_PROMPTS = [
+  "Получить расчёт на автомобиль",
+  "Сколько обычно занимает доставка?",
+  "Как происходит оплата?",
+  "Консультация по автомобилю",
+];
+
 export function getGuestChatToken() {
   if (typeof window === "undefined") return "";
   try {

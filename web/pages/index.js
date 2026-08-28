@@ -1397,7 +1397,7 @@ export default function Home({ initialData = null }) {
         <title>Автовозом — Платформа подбора и доставки автомобилей из Китая в РФ напрямую от дилеров.</title>
         <meta
           name="description"
-          content="Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены на сайте с учётом доставки до Москвы и таможенного оформления."
+          content="Каталог автомобилей, подбор, выкуп, доставка, таможенное оформление."
         />
         <link rel="canonical" href={absoluteUrl("/")} />
         <meta
@@ -1406,7 +1406,7 @@ export default function Home({ initialData = null }) {
         />
         <meta
           property="og:description"
-          content="Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены на сайте с учётом доставки до Москвы и таможенного оформления."
+          content="Каталог автомобилей, подбор, выкуп, доставка, таможенное оформление."
         />
         <meta property="og:url" content={absoluteUrl("/")} />
         <script {...jsonLdScriptProps(organizationAndWebSiteJsonLd())}></script>
@@ -2378,23 +2378,6 @@ export default function Home({ initialData = null }) {
           onChatsUpdated={() => {}}
         />
       )}
-
-          <Link href="/messages" className="home-d-consult home-only-desktop">
-            <span className="home-d-consult__icon" aria-hidden>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8A2.5 2.5 0 0 1 17.5 17H9l-4 3v-3.5A2.5 2.5 0 0 1 4 14.5v-8Z"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <span className="home-d-consult__text">
-              <strong>Есть вопрос?</strong>
-              <span>Ответит менеджер в чате</span>
-            </span>
-          </Link>
 
         </div>
       </main>
