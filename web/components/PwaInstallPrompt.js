@@ -78,11 +78,11 @@ export default function PwaInstallPrompt() {
       <div className="pwa-install__sheet">
         <div className="pwa-install__grabber" aria-hidden />
         <div className="pwa-install__content">
-          <strong>Установите avtovozom</strong>
+          <strong>Установить приложение Автовозом</strong>
           <p>
             {deferredPrompt
               ? "Добавьте сайт на рабочий стол и открывайте его как мобильное приложение."
-              : "На iPhone нажмите «Поделиться», затем «На экран Домой»."}
+              : 'Нажмите "Поделиться" а затем "Добавить на экран Домой".'}
           </p>
         </div>
         <div className="pwa-install__actions">
