@@ -2379,23 +2379,6 @@ export default function Home({ initialData = null }) {
         />
       )}
 
-          <Link href="/messages" className="home-d-consult home-only-desktop">
-            <span className="home-d-consult__icon" aria-hidden>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8A2.5 2.5 0 0 1 17.5 17H9l-4 3v-3.5A2.5 2.5 0 0 1 4 14.5v-8Z"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <span className="home-d-consult__text">
-              <strong>Есть вопрос?</strong>
-              <span>Ответит менеджер в чате</span>
-            </span>
-          </Link>
-
         </div>
       </main>
     </div>

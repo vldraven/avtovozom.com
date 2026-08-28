@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import "../lib/suppressExtensionErrors";
 import AppLockGate from "../components/AppLockGate";
+import ChatEntryWidget from "../components/ChatEntryWidget";
 import MobileBottomNav from "../components/MobileBottomNav";
 import PwaInstallPrompt from "../components/PwaInstallPrompt";
 import PwaServiceWorker from "../components/PwaServiceWorker";
@@ -144,6 +145,7 @@ export default function App({ Component, pageProps }) {
         </AppLockGate>
         {showFooter ? <SiteFooter /> : null}
         {showMobileBottomNav ? <MobileBottomNav /> : null}
+        <ChatEntryWidget />
         <PwaInstallPrompt />
         <PwaServiceWorker />
         <YandexMetrika />
