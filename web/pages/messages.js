@@ -10,7 +10,7 @@ import {
   resolveAuthSessionFailure,
   tryRefreshAccessToken,
 } from "../lib/auth";
-import { getGuestChatToken, setGuestChatToken } from "../lib/guestChat";
+import { getGuestChatToken, GUEST_QUICK_PROMPTS, setGuestChatToken } from "../lib/guestChat";
 import { mediaSrc } from "../lib/media";
 import { isStaffRole } from "../lib/roles";
 import SiteHeader from "../components/SiteHeader";
@@ -19,12 +19,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const GUEST_CHAT_PLACEHOLDER_ID = "guest";
 const GUEST_CHAT_TITLE = "Консультант Avtovozom";
 const GUEST_CHAT_SUB = "Отвечает сразу · ИИ-помощник";
-const GUEST_QUICK_PROMPTS = [
-  "Получить расчёт на автомобиль",
-  "Сколько обычно занимает доставка?",
-  "Как происходит оплата?",
-  "Консультация по автомобилю",
-];
 
 function GuestConsultantIcon() {
   return (

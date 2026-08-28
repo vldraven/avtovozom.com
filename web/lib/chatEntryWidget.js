@@ -1,10 +1,8 @@
-export const CHAT_ENTRY_COLLAPSED_SAMPLE = "Сколько выйдет до Казани?";
+export const CHAT_ENTRY_COLLAPSED_TITLE = "Спросите про любое авто";
+export const CHAT_ENTRY_COLLAPSED_SUB = "Отвечаем в течение минуты, без регистрации";
+export const CHAT_ENTRY_COLLAPSED_HINT = "Спросите — ответим за минуту";
 
-export const CHAT_ENTRY_SUGGESTIONS = [
-  "Сколько выйдет Li Auto L7 до Казани?",
-  "Что входит в цену под ключ?",
-  "Можно посмотреть отчёт по осмотру?",
-];
+export { GUEST_QUICK_PROMPTS as CHAT_ENTRY_SUGGESTIONS } from "./guestChat";
 
 export const CHAT_ENTRY_WELCOME_GUEST =
   "Здравствуйте! Помогу с подбором авто из Китая, расчётом «под ключ» и сроками доставки. Задайте вопрос или выберите пример ниже.";

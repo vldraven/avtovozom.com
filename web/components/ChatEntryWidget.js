@@ -9,11 +9,11 @@ import {
   tryRefreshAccessToken,
 } from "../lib/auth";
 import {
-  CHAT_ENTRY_COLLAPSED_SAMPLE,
+  CHAT_ENTRY_COLLAPSED_SUB,
+  CHAT_ENTRY_COLLAPSED_TITLE,
   CHAT_ENTRY_SUB_AUTH,
   CHAT_ENTRY_SUB_GUEST,
   CHAT_ENTRY_SUGGESTIONS,
-  CHAT_ENTRY_TITLE_AUTH,
   CHAT_ENTRY_TITLE_GUEST,
   CHAT_ENTRY_WELCOME_AUTH,
   CHAT_ENTRY_WELCOME_GUEST,
@@ -27,8 +27,28 @@ const MOBILE_MQ = "(max-width: 768px)";
 
 function ConsultantAvatar({ small = false }) {
   return (
-    <span className={`chat-entry__avatar${small ? " chat-entry__avatar--sm" : ""}`} aria-hidden>
+    <span
+      className={`chat-entry__avatar${small ? " chat-entry__avatar--sm" : ""}`}
+      aria-hidden
+    >
       AV
+      <span className="chat-entry__avatar-online" />
+    </span>
+  );
+}
+
+function ExpandChatButton() {
+  return (
+    <span className="chat-entry__expand-btn" aria-hidden>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M8 4l8 8-8 8"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
     </span>
   );
 }
@@ -77,8 +97,9 @@ export default function ChatEntryWidget() {
   const hiddenByRole = chatEntryRoleHidden(me?.role);
   const hidden = hiddenByPath || hiddenByRole;
   const onCarDetail = router.pathname.startsWith("/cars/");
+  const hasThread = messages.length > 0;
 
-  const title = isGuest ? CHAT_ENTRY_TITLE_GUEST : CHAT_ENTRY_TITLE_AUTH;
+  const title = isGuest ? CHAT_ENTRY_TITLE_GUEST : "Чат с Avtovozom";
   const subtitle = isGuest ? CHAT_ENTRY_SUB_GUEST : CHAT_ENTRY_SUB_AUTH;
   const welcome = isGuest ? CHAT_ENTRY_WELCOME_GUEST : CHAT_ENTRY_WELCOME_AUTH;
 
@@ -195,6 +216,21 @@ export default function ChatEntryWidget() {
     setPlatformChatId(chatId);
   }, [resolvePlatformChat]);
 
+  const reloadThread = useCallback(
+    async (opts = {}) => {
+      if (isGuest) {
+        await loadGuestMessages(guestToken || getGuestChatToken(), opts);
+        return;
+      }
+      const chatId = platformChatId || (token ? await resolvePlatformChat(token) : null);
+      if (chatId) {
+        if (chatId !== platformChatId) setPlatformChatId(chatId);
+        await loadAuthMessages(chatId, token, opts);
+      }
+    },
+    [isGuest, guestToken, platformChatId, token, loadGuestMessages, loadAuthMessages, resolvePlatformChat]
+  );
+
   useEffect(() => {
     const mq = typeof window !== "undefined" ? window.matchMedia(MOBILE_MQ) : null;
     if (!mq) return undefined;
@@ -223,60 +259,35 @@ export default function ChatEntryWidget() {
   }, [hidden, bootstrapAuth, persistGuestToken]);
 
   useEffect(() => {
-    if (hidden || phase !== "chat" || isMobile) return undefined;
-    if (isGuest) {
-      const gt = guestToken || getGuestChatToken();
-      if (!gt) return undefined;
-      loadGuestMessages(gt);
-      const ms = guestAwaitingAi ? 2500 : 26000;
-      const id = setInterval(() => loadGuestMessages(gt, { quiet: true }), ms);
-      return () => clearInterval(id);
-    }
-    if (!platformChatId || !token) return undefined;
-    loadAuthMessages(platformChatId, token);
-    const id = setInterval(() => loadAuthMessages(platformChatId, token, { quiet: true }), 26000);
+    if (hidden || phase !== "open" || isMobile) return undefined;
+    reloadThread();
+    const ms = isGuest && guestAwaitingAi ? 2500 : 26000;
+    const id = setInterval(() => reloadThread({ quiet: true }), ms);
     return () => clearInterval(id);
-  }, [
-    hidden,
-    phase,
-    isMobile,
-    isGuest,
-    guestToken,
-    guestAwaitingAi,
-    platformChatId,
-    token,
-    loadGuestMessages,
-    loadAuthMessages,
-  ]);
+  }, [hidden, phase, isMobile, isGuest, guestAwaitingAi, reloadThread]);
 
   useEffect(() => {
-    if (phase === "chat") scrollThreadToEnd();
+    if (phase === "open") scrollThreadToEnd();
   }, [messages, phase, scrollThreadToEnd]);
 
   useEffect(() => {
     if (typeof document === "undefined" || hidden) return undefined;
     document.body.classList.toggle("chat-entry-open", phase !== "collapsed");
-    document.body.classList.toggle("chat-entry-expanded", phase === "expanded");
-    document.body.classList.toggle("chat-entry-chat", phase === "chat");
+    document.body.classList.toggle("chat-entry-expanded", phase === "open");
     return () => {
-      document.body.classList.remove("chat-entry-open", "chat-entry-expanded", "chat-entry-chat");
+      document.body.classList.remove("chat-entry-open", "chat-entry-expanded");
     };
   }, [phase, hidden]);
 
-  const openExpanded = () => setPhase("expanded");
-  const closeWidget = () => setPhase("collapsed");
-
-  const openDesktopChat = useCallback(async () => {
-    setPhase("chat");
+  const openPanel = async () => {
+    setPhase("open");
     setSendErr("");
-    if (isGuest) {
-      await loadGuestMessages(guestToken || getGuestChatToken());
-      return;
+    if (!isMobile) {
+      await reloadThread();
     }
-    if (platformChatId) {
-      await loadAuthMessages(platformChatId, token);
-    }
-  }, [isGuest, guestToken, platformChatId, token, loadGuestMessages, loadAuthMessages]);
+  };
+
+  const closeWidget = () => setPhase("collapsed");
 
   const navigateToMessages = useCallback(
     (query = {}) => {
@@ -303,7 +314,7 @@ export default function ChatEntryWidget() {
 
   const sendAuthText = async (text) => {
     let chatId = platformChatId;
-    let access = token || getStoredToken();
+    const access = token || getStoredToken();
     if (!chatId) {
       chatId = await resolvePlatformChat(access);
       setPlatformChatId(chatId);
@@ -325,13 +336,13 @@ export default function ChatEntryWidget() {
     return { chat_id: chatId };
   };
 
-  const handleSend = async (rawText, opts = {}) => {
+  const handleSend = async (rawText) => {
     const text = String(rawText || draft || "").trim();
     if (!text || sending) return;
     setSending(true);
     setSendErr("");
     try {
-      if (isMobile && !opts.desktopInline) {
+      if (isMobile) {
         if (isGuest) {
           await sendGuestText(text);
           navigateToMessages({});
@@ -346,23 +357,11 @@ export default function ChatEntryWidget() {
 
       if (isGuest) {
         await sendGuestText(text);
-        setDraft("");
-        if (phase !== "chat") {
-          await openDesktopChat();
-        } else {
-          await loadGuestMessages(getGuestChatToken());
-        }
-        return;
+      } else {
+        await sendAuthText(text);
       }
-
-      await sendAuthText(text);
       setDraft("");
-      const chatId = platformChatId || (await resolvePlatformChat(token));
-      if (phase !== "chat") {
-        await openDesktopChat();
-      } else if (chatId) {
-        await loadAuthMessages(chatId, token);
-      }
+      await reloadThread();
     } catch (err) {
       setSendErr(err?.message || "Не удалось отправить");
     } finally {
@@ -372,8 +371,10 @@ export default function ChatEntryWidget() {
 
   if (hidden) return null;
 
-  const showInvite = phase === "expanded";
-  const showChat = phase === "chat" && !isMobile;
+  const showPanel = phase === "open";
+  const showInviteBody = !hasThread && !loadingThread;
+  const messagesHref =
+    !isGuest && platformChatId ? `/messages?chat=${encodeURIComponent(String(platformChatId))}` : "/messages";
 
   return (
     <div
@@ -381,118 +382,68 @@ export default function ChatEntryWidget() {
       aria-live="polite"
     >
       {phase === "collapsed" ? (
-        <button type="button" className="chat-entry__collapsed" onClick={openExpanded}>
+        <button type="button" className="chat-entry__collapsed" onClick={openPanel}>
           <ConsultantAvatar small />
           <span className="chat-entry__collapsed-main">
-            <span className="chat-entry__collapsed-quote">«{CHAT_ENTRY_COLLAPSED_SAMPLE}»</span>
-            <span className="chat-entry__collapsed-sub">Спросите — ответим за минуту</span>
+            <span className="chat-entry__collapsed-title">{CHAT_ENTRY_COLLAPSED_TITLE}</span>
+            <span className="chat-entry__collapsed-sub">{CHAT_ENTRY_COLLAPSED_SUB}</span>
           </span>
-          <span className="chat-entry__collapsed-chev" aria-hidden>
-            ↑
-          </span>
+          <ExpandChatButton />
         </button>
       ) : null}
 
-      {showInvite ? (
-        <section className="chat-entry__panel chat-entry__panel--invite" aria-label="Приглашение в чат">
+      {showPanel ? (
+        <section
+          className={`chat-entry__panel${!isMobile ? " chat-entry__panel--chat" : ""}`}
+          aria-label={hasThread ? "Чат" : "Приглашение в чат"}
+        >
           <header className="chat-entry__head">
-            <div className="chat-entry__head-main">
+            <Link
+              href={messagesHref}
+              className="chat-entry__head-main chat-entry__head-link"
+              onClick={closeWidget}
+            >
               <ConsultantAvatar />
               <div>
-                <h2 className="chat-entry__title">{title}</h2>
-                <p className="chat-entry__sub">{subtitle}</p>
+                <h2 className="chat-entry__title">
+                  {hasThread || !isGuest ? title : CHAT_ENTRY_COLLAPSED_TITLE}
+                </h2>
+                <p className="chat-entry__sub">
+                  {hasThread || !isGuest ? subtitle : CHAT_ENTRY_COLLAPSED_SUB}
+                </p>
               </div>
-            </div>
+            </Link>
             <button type="button" className="chat-entry__close" onClick={closeWidget} aria-label="Свернуть">
               ✕
             </button>
           </header>
 
-          <div className="chat-entry__welcome">
-            <div className="chat-entry__bubble chat-entry__bubble--peer">
-              <p>{welcome}</p>
-            </div>
-          </div>
-
-          <div className="chat-entry__suggestions">
-            {CHAT_ENTRY_SUGGESTIONS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                className="chat-entry__suggestion"
-                disabled={sending}
-                onClick={() => handleSend(item)}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-
-          <form
-            className="chat-entry__composer"
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSend();
-            }}
-          >
-            {sendErr ? <p className="chat-entry__err">{sendErr}</p> : null}
-            <label className="chat-entry__composer-row">
-              <span className="visually-hidden">Свой вопрос</span>
-              <input
-                className="chat-entry__input"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Свой вопрос…"
-                disabled={sending}
-              />
-              <button type="submit" className="chat-entry__send" disabled={sending || !draft.trim()}>
-                {sending ? "…" : "→"}
-              </button>
-            </label>
-            {isGuest ? (
-              <p className="chat-entry__hint muted">Без регистрации · ответ за минуту</p>
-            ) : (
-              <p className="chat-entry__hint muted">Диалог с Avtovozom по вашей сделке</p>
-            )}
-          </form>
-
-          {!isMobile ? (
-            <button type="button" className="chat-entry__open-full muted" onClick={openDesktopChat}>
-              Открыть чат в виджете
-            </button>
-          ) : null}
-        </section>
-      ) : null}
-
-      {showChat ? (
-        <section className="chat-entry__panel chat-entry__panel--chat" aria-label="Чат">
-          <header className="chat-entry__head">
-            <div className="chat-entry__head-main">
-              <ConsultantAvatar />
-              <div>
-                <h2 className="chat-entry__title">{title}</h2>
-                <p className="chat-entry__sub">{subtitle}</p>
-              </div>
-            </div>
-            <div className="chat-entry__head-actions">
-              <button type="button" className="chat-entry__icon-btn" onClick={closeWidget} aria-label="Свернуть">
-                —
-              </button>
-              <Link href="/messages" className="chat-entry__icon-btn" aria-label="Открыть на странице чатов">
-                ↗
-              </Link>
-            </div>
-          </header>
-
           <div className="chat-entry__messages" role="log">
-            {loadingThread && messages.length === 0 ? <p className="muted">Загрузка…</p> : null}
-            {messages.length === 0 && !loadingThread ? (
-              <div className="chat-entry__welcome">
-                <div className="chat-entry__bubble chat-entry__bubble--peer">
-                  <p>{welcome}</p>
+            {loadingThread && !hasThread ? <p className="muted">Загрузка…</p> : null}
+
+            {showInviteBody ? (
+              <>
+                <div className="chat-entry__welcome">
+                  <div className="chat-entry__bubble chat-entry__bubble--peer">
+                    <p>{welcome}</p>
+                  </div>
                 </div>
-              </div>
+                <div className="chat-entry__suggestions">
+                  {CHAT_ENTRY_SUGGESTIONS.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className="chat-entry__suggestion"
+                      disabled={sending}
+                      onClick={() => handleSend(item)}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </>
             ) : null}
+
             {messages.map((m) => {
               if (m.message_type === "system") {
                 return (
@@ -524,28 +475,33 @@ export default function ChatEntryWidget() {
             className="chat-entry__composer"
             onSubmit={(e) => {
               e.preventDefault();
-              handleSend(undefined, { desktopInline: true });
+              handleSend();
             }}
           >
             {sendErr ? <p className="chat-entry__err">{sendErr}</p> : null}
-            {isGuest && guestAwaitingAi ? (
+            {isGuest && guestAwaitingAi && hasThread ? (
               <p className="chat-entry__hint muted" aria-live="polite">
                 Консультант печатает…
               </p>
             ) : null}
             <label className="chat-entry__composer-row">
-              <span className="visually-hidden">Сообщение</span>
+              <span className="visually-hidden">{hasThread ? "Сообщение" : "Свой вопрос"}</span>
               <input
                 className="chat-entry__input"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder="Сообщение…"
+                placeholder={hasThread ? "Сообщение…" : "Свой вопрос…"}
                 disabled={sending}
               />
               <button type="submit" className="chat-entry__send" disabled={sending || !draft.trim()}>
                 {sending ? "…" : "→"}
               </button>
             </label>
+            {!hasThread ? (
+              <p className="chat-entry__hint muted">
+                {isGuest ? "Без регистрации · ответ за минуту" : "Диалог с Avtovozom по вашей сделке"}
+              </p>
+            ) : null}
           </form>
         </section>
       ) : null}

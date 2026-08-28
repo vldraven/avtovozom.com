@@ -33,8 +33,8 @@ export default function App({ Component, pageProps }) {
     path !== "/auth" &&
     path !== "/reset-password" &&
     path !== "/messages";
-  const showMobileBottomNav =
-    path !== "/messages" && path !== "/auth" && path !== "/reset-password";
+  // /messages: dock на списке чатов; внутри треда скрывает сам MobileBottomNav
+  const showMobileBottomNav = path !== "/auth" && path !== "/reset-password";
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -130,7 +130,7 @@ export default function App({ Component, pageProps }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta
           name="description"
-          content="Автовозом — сервис подбора и доставки автомобилей из Китая напрямую от дилеров. Цены на сайте с учётом доставки до Москвы и таможенного оформления."
+          content="Каталог автомобилей из Китая: подбор, доставка и сопровождение сделки."
         />
         <link rel="manifest" href="/manifest.webmanifest" />
         {noindex ? <meta name="robots" content="noindex, nofollow" /> : null}
