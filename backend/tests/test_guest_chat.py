@@ -166,6 +166,55 @@ class GuestChatApiTests(unittest.TestCase):
 
             ok = self.client.post(
                 "/integrations/n8n/bot/guest-reply",
+                json={
+                    "guest_token": token,
+                    "chat_id": chat_id,
+                    "text": (
+                        '{"q":"Audi","max_total_rub":2500000}\n\n'
+                        "Подберу варианты Audi до 2,5 млн ₽ под ключ до РФ."
+                    ),
+                },
+                headers={"X-N8N-Webhook-Secret": "guest-reply-secret"},
+            )
+            self.assertEqual(ok.status_code, 200, ok.text)
+            self.assertTrue(ok.json()["ok"])
+
+            msgs = self.client.get(f"/public/guest-chats/{token}/messages")
+            self.assertEqual(msgs.status_code, 200)
+            body = msgs.json()
+            self.assertEqual(len(body), 2)
+            assistant = body[1]
+            self.assertEqual(assistant["message_type"], "assistant")
+            self.assertEqual(
+                assistant["text"],
+                "Подберу варианты Audi до 2,5 млн ₽ под ключ до РФ.",
+            )
+            self.assertIsNone(assistant["sender_user_id"])
+        finally:
+            os.environ.pop("N8N_TELEGRAM_BOT_API_SECRET", None)
+
+    @patch("app.main.notify_guest_chat_started")
+    def test_guest_bot_reply_plain_text(self, _started):
+        import os
+
+        os.environ["N8N_TELEGRAM_BOT_API_SECRET"] = "guest-reply-secret"
+        try:
+            created = self.client.post(
+                "/public/guest-chats/messages",
+                json={"text": "Привет"},
+            )
+            self.assertEqual(created.status_code, 200, created.text)
+            token = created.json()["guest_token"]
+            chat_id = created.json()["chat_id"]
+
+            denied = self.client.post(
+                "/integrations/n8n/bot/guest-reply",
+                json={"guest_token": token, "chat_id": chat_id, "text": "Здравствуйте!"},
+            )
+            self.assertEqual(denied.status_code, 403)
+
+            ok = self.client.post(
+                "/integrations/n8n/bot/guest-reply",
                 json={"guest_token": token, "chat_id": chat_id, "text": "Здравствуйте!"},
                 headers={"X-N8N-Webhook-Secret": "guest-reply-secret"},
             )

@@ -16,6 +16,7 @@ import {
   GUEST_QUICK_PROMPTS,
   setGuestChatToken,
 } from "../lib/guestChat";
+import { sanitizeConsultantReplyText } from "../lib/consultantReplyText";
 import { mediaSrc } from "../lib/media";
 import { isStaffRole } from "../lib/roles";
 import SiteHeader from "../components/SiteHeader";
@@ -994,7 +995,15 @@ export default function MessagesPage() {
                               className={`messenger__bubble-row${mine ? " messenger__bubble-row--mine" : ""}`}
                             >
                               <div className={`messenger__bubble${mine ? " messenger__bubble--mine" : ""}`}>
-                                {m.text ? <p className="messenger__bubble-text">{renderMessageText(m.text)}</p> : null}
+                                {m.text ? (
+                                  <p className="messenger__bubble-text">
+                                    {renderMessageText(
+                                      m.message_type === "assistant"
+                                        ? sanitizeConsultantReplyText(m.text)
+                                        : m.text
+                                    )}
+                                  </p>
+                                ) : null}
                                 {att ? (
                                   <div className="messenger__attachment">
                                     {showImg ? (

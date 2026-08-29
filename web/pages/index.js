@@ -13,6 +13,7 @@ import SiteLogo from "../components/SiteLogo";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import HeaderProfileLink from "../components/HeaderProfileLink";
 import HeaderFavoritesLink from "../components/HeaderFavoritesLink";
+import SiteHeaderPhoneLink from "../components/SiteHeaderPhoneLink";
 import TelegramChannelHeaderLink from "../components/TelegramChannelHeaderLink";
 import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
@@ -1468,6 +1469,7 @@ export default function Home({ initialData = null }) {
             <Link href="/faq">FAQ</Link>
           </nav>
           <div className="home-d-header__actions">
+            <SiteHeaderPhoneLink />
             <HeaderMessagesLink token={token} />
             <HeaderFavoritesLink token={token} />
             {!token ? (

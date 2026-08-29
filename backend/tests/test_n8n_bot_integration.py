@@ -16,6 +16,31 @@ from app.main import app
 from app.models import CalculationRequest, Car, CarBrand, CarModel
 
 
+from app.n8n_bot_integration import sanitize_consultant_reply_text
+
+
+class SanitizeConsultantReplyTests(unittest.TestCase):
+    def test_strips_search_tool_json_prefix(self) -> None:
+        raw = (
+            '{"q":"Audi","max_total_rub":2500000}\n\n'
+            "Подберу варианты Audi до 2,5 млн ₽ под ключ до РФ."
+        )
+        self.assertEqual(
+            sanitize_consultant_reply_text(raw),
+            "Подберу варианты Audi до 2,5 млн ₽ под ключ до РФ.",
+        )
+
+    def test_strips_empty_tool_json(self) -> None:
+        self.assertEqual(sanitize_consultant_reply_text("{} Ответ"), "Ответ")
+
+    def test_keeps_normal_text(self) -> None:
+        self.assertEqual(sanitize_consultant_reply_text("Здравствуйте!"), "Здравствуйте!")
+
+    def test_keeps_unrelated_json(self) -> None:
+        raw = '{"note":"hello"} Текст'
+        self.assertEqual(sanitize_consultant_reply_text(raw), raw)
+
+
 class N8nBotIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.engine = create_engine(
