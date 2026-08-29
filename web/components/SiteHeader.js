@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import SiteLogo from "./SiteLogo";
+import SiteHeaderPhoneLink from "./SiteHeaderPhoneLink";
+import { COMPANY } from "../lib/companyInfo";
 
 /**
  * Общий header consumer + staff.
@@ -16,6 +18,8 @@ export default function SiteHeader({
 }) {
   const logo = <SiteLogo href={logoHref} />;
 
+  const showAuthBar = Boolean(children) || Boolean(COMPANY.phone);
+
   return (
     <header className={`site-header${className ? ` ${className}` : ""}`}>
       <div className="container site-header__inner">
@@ -27,8 +31,9 @@ export default function SiteHeader({
         ) : (
           logo
         )}
-        {children != null ? (
+        {showAuthBar ? (
           <div className={`auth-bar${authBarClassName ? ` ${authBarClassName}` : ""}`} style={authBarStyle}>
+            <SiteHeaderPhoneLink />
             {children}
           </div>
         ) : null}

@@ -37,7 +37,7 @@ AVITO_CLIENT_SECRET=
 AVITO_USER_ID=                    # опционально; иначе определяется через /core/v1/accounts/self
 AVITO_FEED_SECRET=                # openssl rand -hex 32
 AVITO_DEFAULT_REGION=Москва
-AVITO_DEFAULT_CONTACT_PHONE=+7...
+AVITO_DEFAULT_CONTACT_PHONE=+7 (910) 008-47-04
 AVITO_CAR_TYPE=С пробегом
 ```
 

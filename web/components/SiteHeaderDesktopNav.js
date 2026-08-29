@@ -3,6 +3,7 @@ import Link from "next/link";
 import HeaderFavoritesLink from "./HeaderFavoritesLink";
 import HeaderMessagesLink from "./HeaderMessagesLink";
 import HeaderProfileLink from "./HeaderProfileLink";
+import SiteHeaderPhoneLink from "./SiteHeaderPhoneLink";
 import SiteLogo from "./SiteLogo";
 import { canCreateListings } from "../lib/roles";
 
@@ -33,6 +34,7 @@ export default function SiteHeaderDesktopNav({ active, token, me }) {
           ))}
         </nav>
         <div className="home-d-header__actions">
+          <SiteHeaderPhoneLink />
           <HeaderMessagesLink token={token} />
           <HeaderFavoritesLink token={token} />
           {!token ? (

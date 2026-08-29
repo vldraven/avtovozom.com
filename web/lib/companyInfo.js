@@ -16,7 +16,7 @@ export const COMPANY = {
   kpp: env("NEXT_PUBLIC_COMPANY_KPP", "775101001"),
   address: env("NEXT_PUBLIC_COMPANY_ADDRESS", "г. Москва, Прокшинский пр. 11"),
   city: env("NEXT_PUBLIC_COMPANY_CITY", "Москва"),
-  phone: env("NEXT_PUBLIC_COMPANY_PHONE", "+7 (916) 297-61-87"),
+  phone: env("NEXT_PUBLIC_COMPANY_PHONE", "+7 (910) 008-47-04"),
   email: env("NEXT_PUBLIC_COMPANY_EMAIL", "noreply@avtovozom.com"),
   workingHours: env("NEXT_PUBLIC_COMPANY_HOURS"),
   telegramUrl: TELEGRAM_CHANNEL_URL,

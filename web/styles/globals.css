@@ -11347,6 +11347,45 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   margin-left: auto;
 }
 
+.site-header-phone {
+  display: none;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.site-header-phone:hover {
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+@media (min-width: 1024px) {
+  .site-header-phone {
+    display: inline-flex;
+  }
+}
+
+.home-d-header .site-header-phone {
+  color: var(--color-ink);
+}
+
+.home-d-header .site-header-phone:hover {
+  color: #0284c7;
+  opacity: 1;
+}
+
+.site-header .site-header-phone {
+  color: inherit;
+}
+
+.site-header .auth-bar .site-header-phone {
+  margin-right: 4px;
+}
+
 .home-d-city {
   display: inline-flex;
   align-items: center;
