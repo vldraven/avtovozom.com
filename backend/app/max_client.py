@@ -57,16 +57,20 @@ def _max_photos_limit() -> int:
     return max(1, min(n, MAX_CHANNEL_PHOTOS))
 
 
+def _clean_env(value: str | None) -> str:
+    return (value or "").strip().strip('"').strip("'").strip()
+
+
 def load_max_config_from_env() -> MaxConfig | None:
-    token = (os.getenv("MAX_BOT_TOKEN") or "").strip()
-    raw_chat = (os.getenv("MAX_CHANNEL_CHAT_ID") or "").strip()
+    token = _clean_env(os.getenv("MAX_BOT_TOKEN"))
+    raw_chat = _clean_env(os.getenv("MAX_CHANNEL_CHAT_ID"))
     if not token or not raw_chat:
         return None
     try:
         chat_id = int(raw_chat)
     except ValueError:
         return None
-    if chat_id <= 0:
+    if chat_id == 0:
         return None
     base = (os.getenv("MAX_API_BASE") or DEFAULT_API_BASE).strip().rstrip("/") or DEFAULT_API_BASE
     return MaxConfig(
