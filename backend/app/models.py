@@ -411,10 +411,11 @@ class FaqItem(Base):
 
 
 class CarExternalPublication(Base):
-    """Связь объявления avtovozom с внешней площадкой (Avito Autoload / VK wall).
+    """Связь объявления avtovozom с внешней площадкой (Avito / VK / MAX).
 
     Для channel=avito: avito_item_id / avito_url — идентификаторы Avito.
     Для channel=vk: avito_item_id = post_id стены, avito_url = https://vk.com/wall-…_….
+    Для channel=max: avito_item_id = message id, avito_url = публичная ссылка на пост в канале.
     """
 
     __tablename__ = "car_external_publications"

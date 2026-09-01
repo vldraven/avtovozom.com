@@ -83,6 +83,13 @@ from .vk_publish import (
     get_vk_publication,
     publish_car_to_vk,
 )
+from .max_publish import (
+    build_max_compose_response,
+    get_max_publication,
+    max_integration_status,
+    publish_car_to_max,
+)
+from .max_client import MaxApiError, list_bot_chats, load_max_config_from_env
 from .listing_compose import build_listing_marketing_compose
 from .listing_copy_ru import basic_neutral_description_ru, pick_listing_title, russian_listing_title
 from .model_resolver import resolve_model_id_for_listing
@@ -225,6 +232,12 @@ from .schemas import (
     VkComposeOut,
     VkPublishIn,
     VkPublishOut,
+    MaxChatsListOut,
+    MaxChatOut,
+    MaxComposeOut,
+    MaxIntegrationStatusOut,
+    MaxPublishIn,
+    MaxPublishOut,
     VkOAuthStartIn,
     VkOAuthStartOut,
     VkUserTokenIn,
@@ -4706,6 +4719,103 @@ def admin_car_vk_publish(
         detail=detail,
         vk_post_id=meta.get("vk_post_id"),
         vk_url=meta.get("vk_url"),
+        publication_status=meta.get("publication_status"),
+    )
+
+
+@app.get("/admin/integrations/max", response_model=MaxIntegrationStatusOut)
+def admin_max_integration_status(
+    _: User = Depends(require_roles("admin")),
+):
+    return MaxIntegrationStatusOut(**max_integration_status())
+
+
+@app.get("/admin/integrations/max/chats", response_model=MaxChatsListOut)
+def admin_max_list_chats(
+    _: User = Depends(require_roles("admin")),
+):
+    cfg = load_max_config_from_env()
+    if cfg is None:
+        raise HTTPException(
+            status_code=400,
+            detail="MAX не настроен: задайте MAX_BOT_TOKEN (и опционально MAX_CHANNEL_CHAT_ID для публикации)",
+        )
+    try:
+        raw = list_bot_chats(cfg)
+    except MaxApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    chats: list[MaxChatOut] = []
+    for item in raw:
+        chat_id = item.get("chat_id")
+        if chat_id is None:
+            chat_id = item.get("id")
+        try:
+            cid = int(chat_id) if chat_id is not None else None
+        except (TypeError, ValueError):
+            cid = None
+        chats.append(
+            MaxChatOut(
+                chat_id=cid,
+                title=item.get("title") or item.get("name"),
+                type=item.get("type") or item.get("chat_type"),
+                status=item.get("status"),
+                link=item.get("link") or item.get("url"),
+            )
+        )
+    return MaxChatsListOut(chats=chats)
+
+
+@app.get("/admin/cars/{car_id}/max-compose", response_model=MaxComposeOut)
+def admin_car_max_compose(
+    car_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+    compose = _admin_build_listing_compose(car, db)
+    publication = get_max_publication(db, car.id)
+    data = build_max_compose_response(compose, publication=publication)
+    return MaxComposeOut(**data)
+
+
+@app.post("/admin/cars/{car_id}/max/publish", response_model=MaxPublishOut)
+def admin_car_max_publish(
+    car_id: int,
+    payload: MaxPublishIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    car = _admin_require_active_catalog_car(db, car_id)
+    compose = _admin_build_listing_compose(car, db)
+
+    by_photo = {p[0]: p for p in compose.photos}
+    photo_urls: list[str] = []
+    seen: set[int] = set()
+    for pid in payload.photo_ids:
+        if pid in seen:
+            continue
+        seen.add(pid)
+        row = by_photo.get(pid)
+        if not row:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Фото id={pid} не принадлежит объявлению",
+            )
+        photo_urls.append(row[3])
+
+    listing_url = compose.canonical_web_url if payload.attach_listing_link else ""
+    ok, detail, meta = publish_car_to_max(
+        db,
+        car_id=car.id,
+        text=payload.text.strip(),
+        photo_urls=photo_urls,
+        listing_web_url=listing_url,
+    )
+    return MaxPublishOut(
+        ok=ok,
+        detail=detail,
+        max_message_id=meta.get("max_message_id"),
+        max_url=meta.get("max_url"),
         publication_status=meta.get("publication_status"),
     )
 
