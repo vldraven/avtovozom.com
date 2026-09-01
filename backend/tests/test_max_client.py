@@ -25,7 +25,7 @@ class MaxClientTests(unittest.TestCase):
             "os.environ",
             {
                 "MAX_BOT_TOKEN": "tok123",
-                "MAX_CHANNEL_CHAT_ID": "987654321",
+                "MAX_CHANNEL_CHAT_ID": '"987654321"',
             },
             clear=False,
         ):
