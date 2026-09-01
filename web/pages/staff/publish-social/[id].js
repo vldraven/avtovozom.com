@@ -49,6 +49,7 @@ export default function PublishSocialPage() {
   const [me, setMe] = useState(null);
   const [data, setData] = useState(null);
   const [vkMeta, setVkMeta] = useState(null);
+  const [maxMeta, setMaxMeta] = useState(null);
   const [vkTokenStatus, setVkTokenStatus] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(() => new Set());
@@ -56,6 +57,7 @@ export default function PublishSocialPage() {
   const [styleHint, setStyleHint] = useState(DEFAULT_AI_STYLE_HINT);
   const [channelTg, setChannelTg] = useState(true);
   const [channelVk, setChannelVk] = useState(true);
+  const [channelMax, setChannelMax] = useState(true);
   const [vkTokenInput, setVkTokenInput] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
@@ -80,11 +82,14 @@ export default function PublishSocialPage() {
   const loadCompose = useCallback(async () => {
     if (!token || !carId) return;
     setLoadError("");
-    const [tgRes, vkRes, tok] = await Promise.all([
+    const [tgRes, vkRes, maxRes, tok] = await Promise.all([
       fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/telegram-compose`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
       fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/vk-compose`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/max-compose`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
       loadVkTokenStatus(token),
@@ -107,6 +112,13 @@ export default function PublishSocialPage() {
       setPostText((prev) => prev || vk.default_text || "");
     } else {
       setVkMeta(null);
+    }
+    if (maxRes.ok) {
+      const max = await maxRes.json();
+      setMaxMeta(max);
+      setPostText((prev) => prev || max.default_text || "");
+    } else {
+      setMaxMeta(null);
     }
     if (tok) setVkTokenStatus(tok);
   }, [token, carId, loadVkTokenStatus]);
@@ -278,7 +290,7 @@ export default function PublishSocialPage() {
       setError("Введите текст поста");
       return;
     }
-    if (!channelTg && !channelVk) {
+    if (!channelTg && !channelVk && !channelMax) {
       setError("Выберите хотя бы один канал");
       return;
     }
@@ -319,12 +331,34 @@ export default function PublishSocialPage() {
           parts.push(body.vk_url ? `VK: ок (${body.vk_url})` : "VK: ок");
         }
       }
+      if (channelMax) {
+        const res = await fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/max/publish`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ text, photo_ids, attach_listing_link: true }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body.ok) {
+          parts.push(`MAX: ${body.detail || "ошибка"}`);
+        } else {
+          parts.push(body.max_url ? `MAX: ок (${body.max_url})` : "MAX: ок");
+        }
+      }
       const failed = parts.some((p) => !p.includes(": ок"));
       if (failed) setError(parts.join(" · "));
       else setMessage(parts.join(" · "));
       if (channelVk) {
         const tok = await loadVkTokenStatus(token);
         if (tok) setVkTokenStatus(tok);
+      }
+      if (channelMax) {
+        const maxRes = await fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/max-compose`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (maxRes.ok) setMaxMeta(await maxRes.json());
       }
     } catch {
       setError("Сбой сети или таймаут");
@@ -373,7 +407,7 @@ export default function PublishSocialPage() {
           </p>
           <h1 className="section-title">Пост в соцсети</h1>
           <p className="muted" style={{ marginTop: "-0.5rem", marginBottom: "1.25rem" }}>
-            Один текст и фото → Telegram и/или VK. Генерация текста — как для Telegram (n8n).
+            Один текст и фото → Telegram, VK и/или MAX. Генерация текста — как для Telegram (n8n).
           </p>
 
           {!me ? (
@@ -408,7 +442,7 @@ export default function PublishSocialPage() {
                   <input type="checkbox" checked={channelTg} onChange={(e) => setChannelTg(e.target.checked)} />
                   Telegram-канал
                 </label>
-                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                   <input type="checkbox" checked={channelVk} onChange={(e) => setChannelVk(e.target.checked)} />
                   VK-группа
                   {vkMeta?.vk_configured === false ? (
@@ -417,11 +451,28 @@ export default function PublishSocialPage() {
                     </span>
                   ) : null}
                 </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input type="checkbox" checked={channelMax} onChange={(e) => setChannelMax(e.target.checked)} />
+                  MAX-канал
+                  {maxMeta?.max_configured === false ? (
+                    <span className="muted" style={{ fontSize: "0.85rem" }}>
+                      (MAX_BOT_TOKEN / MAX_CHANNEL_CHAT_ID не настроены)
+                    </span>
+                  ) : null}
+                </label>
                 {vkMeta?.publication?.vk_url ? (
                   <p className="muted" style={{ marginTop: 8, fontSize: "0.85rem" }}>
                     Уже в VK:{" "}
                     <a href={vkMeta.publication.vk_url} target="_blank" rel="noopener noreferrer">
                       {vkMeta.publication.vk_url}
+                    </a>
+                  </p>
+                ) : null}
+                {maxMeta?.publication?.max_url ? (
+                  <p className="muted" style={{ marginTop: 8, fontSize: "0.85rem" }}>
+                    Уже в MAX:{" "}
+                    <a href={maxMeta.publication.max_url} target="_blank" rel="noopener noreferrer">
+                      {maxMeta.publication.max_url}
                     </a>
                   </p>
                 ) : null}

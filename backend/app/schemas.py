@@ -855,6 +855,85 @@ class VkPublishOut(BaseModel):
     publication_status: str | None = None
 
 
+class MaxIntegrationStatusOut(BaseModel):
+    configured: bool = False
+    channel_chat_id_preview: str | None = None
+
+
+class MaxChatOut(BaseModel):
+    chat_id: int | None = None
+    title: str | None = None
+    type: str | None = None
+    status: str | None = None
+    link: str | None = None
+
+
+class MaxChatsListOut(BaseModel):
+    chats: list[MaxChatOut] = Field(default_factory=list)
+
+
+class MaxComposePhotoOut(BaseModel):
+    id: int
+    storage_url: str
+    sort_order: int
+    absolute_url: str
+
+
+class MaxPublicationOut(BaseModel):
+    status: str
+    max_message_id: int | None = None
+    max_url: str | None = None
+    last_error: str | None = None
+    published_at: str | None = None
+    last_text_preview: str | None = None
+
+
+class MaxComposeOut(BaseModel):
+    car_id: int
+    title: str
+    brand: str
+    model: str
+    generation: str | None = None
+    year: int
+    mileage_km: int | None = None
+    engine_volume_cc: int
+    horsepower: int
+    fuel_type: str | None = None
+    transmission: str | None = None
+    location_city: str | None = None
+    price_cny: float
+    description: str
+    rub_china: float | None = None
+    estimated_total_rub: float | None = None
+    canonical_path: str
+    canonical_web_url: str
+    photos: list[MaxComposePhotoOut]
+    default_text: str = ""
+    max_photos: int = 10
+    max_configured: bool = False
+    publication: MaxPublicationOut | None = None
+
+
+class MaxPublishIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4000)
+    photo_ids: list[int] = Field(default_factory=list)
+    attach_listing_link: bool = True
+
+    @model_validator(mode="after")
+    def _cap_photo_ids(self) -> MaxPublishIn:
+        if len(self.photo_ids) > 10:
+            raise ValueError("photo_ids: не более 10 для одного поста в MAX")
+        return self
+
+
+class MaxPublishOut(BaseModel):
+    ok: bool
+    detail: str | None = None
+    max_message_id: int | None = None
+    max_url: str | None = None
+    publication_status: str | None = None
+
+
 class AvitoStatusOut(BaseModel):
     ok: bool
     detail: str | None = None
