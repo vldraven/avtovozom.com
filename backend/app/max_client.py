@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -182,6 +184,43 @@ def _image_token_attachment(token: str) -> dict[str, Any]:
     return {"type": "image", "payload": {"token": token}}
 
 
+def _guess_image_content_type(file_path: Path) -> str:
+    guessed, _ = mimetypes.guess_type(file_path.name)
+    return guessed or "image/jpeg"
+
+
+def _extract_image_upload_token(
+    upload_resp: dict[str, Any],
+    uploaded: dict[str, Any],
+    upload_url: str,
+) -> str | None:
+    token = uploaded.get("token")
+    if token:
+        return str(token)
+
+    photos = uploaded.get("photos")
+    if isinstance(photos, dict):
+        for value in photos.values():
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            if isinstance(value, dict):
+                nested = value.get("token")
+                if nested:
+                    return str(nested)
+
+    token = upload_resp.get("token")
+    if token:
+        return str(token)
+
+    parsed = urlparse(upload_url)
+    query = parse_qs(parsed.query)
+    for key in ("token", "photo_token", "file_token"):
+        values = query.get(key)
+        if values and values[0].strip():
+            return values[0].strip()
+    return None
+
+
 def _upload_image_file(cfg: MaxConfig, file_path: Path) -> str:
     upload_resp = _api_request(
         cfg,
@@ -193,11 +232,13 @@ def _upload_image_file(cfg: MaxConfig, file_path: Path) -> str:
     if not isinstance(upload_resp, dict) or not upload_resp.get("url"):
         raise MaxApiError("POST /uploads: нет url", raw=upload_resp)
     upload_url = str(upload_resp["url"])
+    content_type = _guess_image_content_type(file_path)
     with file_path.open("rb") as fh:
         with _http_client(timeout=120.0) as client:
             resp = client.post(
                 upload_url,
-                files={"data": (file_path.name, fh, "image/jpeg")},
+                headers={"Authorization": cfg.auth_header},
+                files={"data": (file_path.name, fh, content_type)},
             )
         resp.raise_for_status()
         try:
@@ -206,12 +247,10 @@ def _upload_image_file(cfg: MaxConfig, file_path: Path) -> str:
             raise MaxApiError("upload: ответ не JSON", raw=resp.text) from exc
     if not isinstance(uploaded, dict):
         raise MaxApiError("upload: неожиданный ответ", raw=uploaded)
-    token = uploaded.get("token")
-    if not token and upload_resp.get("token"):
-        token = upload_resp.get("token")
+    token = _extract_image_upload_token(upload_resp, uploaded, upload_url)
     if not token:
-        raise MaxApiError("upload: нет token", raw=uploaded)
-    return str(token)
+        raise MaxApiError("upload: нет token", raw={"upload": upload_resp, "uploaded": uploaded})
+    return token
 
 
 def upload_image_from_url(cfg: MaxConfig, url: str) -> str:
