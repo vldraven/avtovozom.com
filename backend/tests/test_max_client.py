@@ -8,6 +8,7 @@ from unittest.mock import patch
 from app.max_client import (
     MaxApiError,
     MaxConfig,
+    _extract_image_upload_token,
     _link_keyboard_attachment,
     _parse_message_id,
     load_max_config_from_env,
@@ -51,6 +52,30 @@ class MaxClientTests(unittest.TestCase):
     def test_parse_message_id_from_body(self):
         msg = {"body": {"mid": "42"}, "timestamp": 1000}
         self.assertEqual(_parse_message_id(msg), 42)
+
+    def test_extract_image_upload_token_from_photos_map(self):
+        token = _extract_image_upload_token(
+            {"url": "https://iu.oneme.ru/upload.do"},
+            {"photos": {"1": "abc-token"}},
+            "https://iu.oneme.ru/upload.do",
+        )
+        self.assertEqual(token, "abc-token")
+
+    def test_extract_image_upload_token_from_nested_photos(self):
+        token = _extract_image_upload_token(
+            {"url": "https://iu.oneme.ru/upload.do"},
+            {"photos": {"1": {"token": "nested-token"}}},
+            "https://iu.oneme.ru/upload.do",
+        )
+        self.assertEqual(token, "nested-token")
+
+    def test_extract_image_upload_token_from_upload_url_query(self):
+        token = _extract_image_upload_token(
+            {"url": "https://iu.oneme.ru/upload.do?token=url-token"},
+            {},
+            "https://iu.oneme.ru/upload.do?token=url-token",
+        )
+        self.assertEqual(token, "url-token")
 
     def test_send_channel_message_success(self):
         cfg = MaxConfig(bot_token="tok", channel_chat_id=1)
