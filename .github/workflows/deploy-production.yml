@@ -69,4 +69,8 @@ jobs:
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "cd '${DEPLOY_PATH}' && docker compose -f docker-compose.prod.yml up -d --build && docker compose -f docker-compose.prod.yml ps && (sudo systemctl reload caddy || sudo systemctl restart caddy || true)"
+            "cd '${DEPLOY_PATH}' && docker compose -f docker-compose.prod.yml up -d --build && docker compose -f docker-compose.prod.yml ps"
+          rsync -avz -e "$RSYNC_RSH" scripts/prod-fix-caddy.sh "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/scripts/"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "chmod +x '${DEPLOY_PATH}/scripts/prod-fix-caddy.sh' && bash '${DEPLOY_PATH}/scripts/prod-fix-caddy.sh' '${DEPLOY_PATH}'"
