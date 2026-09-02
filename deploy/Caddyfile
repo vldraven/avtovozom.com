@@ -2,7 +2,7 @@
 # Перед запуском: DNS A-записи @, www, api → IP сервера; порты 80/443 открыты; docker compose.prod.yml запущен.
 
 {
-	email you@example.com
+	email noreply@avtovozom.com
 }
 
 # Канонический домен без www (SEO: один URL, без дублей).
