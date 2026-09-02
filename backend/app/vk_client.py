@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .http_ssl import http_verify
+
 log = logging.getLogger(__name__)
 
 VK_API = "https://api.vk.com/method"
@@ -126,7 +128,7 @@ def _guess_suffix(url: str, content_type: str | None) -> str:
 
 
 def download_photo_to_temp(url: str, *, timeout: float = 60.0) -> Path:
-    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+    with httpx.Client(timeout=timeout, follow_redirects=True, verify=http_verify()) as client:
         resp = client.get(url)
         resp.raise_for_status()
         suffix = _guess_suffix(url, resp.headers.get("content-type"))
