@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from threading import Lock
 from typing import Any
 
 import httpx
+
+from .http_ssl import http_verify
 
 VTB_CNY_TABLE_URL = (
     "https://www.vtb.ru/api/currencyrates/table/optimized?category=11&type=1"
@@ -20,8 +21,6 @@ VTB_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 CACHE_TTL = timedelta(minutes=20)
-# Сертификат *.vtb.ru выдан УЦ Минцифры — его нет в Mozilla/certifi (нужен в Docker/Linux).
-_RUSSIAN_TRUSTED_CA = Path(__file__).resolve().parent / "certs" / "russian_trusted_ca.pem"
 
 _lock = Lock()
 _cache_rate: float | None = None
@@ -108,10 +107,7 @@ def fetch_vtb_cny_sell_rate(*, force_refresh: bool = False) -> tuple[VtbCnySellR
             return VtbCnySellRate(rub_per_one_cny=_cache_rate, rate_date=_cache_date), None
 
     try:
-        verify: str | bool = True
-        if _RUSSIAN_TRUSTED_CA.is_file():
-            verify = str(_RUSSIAN_TRUSTED_CA)
-        with httpx.Client(timeout=20.0, follow_redirects=True, verify=verify) as client:
+        with httpx.Client(timeout=20.0, follow_redirects=True, verify=http_verify()) as client:
             r = client.get(
                 VTB_CNY_TABLE_URL,
                 headers={

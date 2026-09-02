@@ -11,13 +11,13 @@ from typing import Any
 
 import httpx
 
+from .http_ssl import http_verify
 from .vk_client import download_photo_to_temp
 
 log = logging.getLogger(__name__)
 
 DEFAULT_API_BASE = "https://platform-api2.max.ru"
 MAX_CHANNEL_PHOTOS = 10
-_RUSSIAN_TRUSTED_CA = Path(__file__).resolve().parent / "certs" / "russian_trusted_ca.pem"
 
 
 class MaxApiError(RuntimeError):
@@ -85,14 +85,8 @@ def max_is_configured() -> bool:
     return load_max_config_from_env() is not None
 
 
-def _http_verify() -> str | bool:
-    if _RUSSIAN_TRUSTED_CA.is_file():
-        return str(_RUSSIAN_TRUSTED_CA)
-    return True
-
-
 def _http_client(*, timeout: float = 60.0) -> httpx.Client:
-    return httpx.Client(timeout=timeout, follow_redirects=True, verify=_http_verify())
+    return httpx.Client(timeout=timeout, follow_redirects=True, verify=http_verify())
 
 
 def _extract_error_message(data: Any) -> str:
