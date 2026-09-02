@@ -18,6 +18,22 @@ const DEFAULT_AI_STYLE_HINT =
   "Или тут 👉: @avtovozombot\n" +
   "📞79100084704";
 
+const PUBLISH_TIMEOUT_MS = {
+  telegram: 120000,
+  vk: 180000,
+  max: 300000,
+};
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 120000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -299,14 +315,18 @@ export default function PublishSocialPage() {
     const parts = [];
     try {
       if (channelTg) {
-        const res = await fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/telegram/publish`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
+        const res = await fetchWithTimeout(
+          `${API_URL}/admin/cars/${encodeURIComponent(carId)}/telegram/publish`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ text, photo_ids }),
           },
-          body: JSON.stringify({ text, photo_ids }),
-        });
+          PUBLISH_TIMEOUT_MS.telegram
+        );
         const body = await res.json().catch(() => ({}));
         if (!res.ok || !body.ok) {
           parts.push(`Telegram: ${body.detail || "ошибка"}`);
@@ -315,14 +335,18 @@ export default function PublishSocialPage() {
         }
       }
       if (channelVk) {
-        const res = await fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/vk/publish`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
+        const res = await fetchWithTimeout(
+          `${API_URL}/admin/cars/${encodeURIComponent(carId)}/vk/publish`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ text, photo_ids, attach_listing_link: true }),
           },
-          body: JSON.stringify({ text, photo_ids, attach_listing_link: true }),
-        });
+          PUBLISH_TIMEOUT_MS.vk
+        );
         const body = await res.json().catch(() => ({}));
         if (!res.ok || !body.ok) {
           parts.push(`VK: ${body.detail || "ошибка"}`);
@@ -331,14 +355,18 @@ export default function PublishSocialPage() {
         }
       }
       if (channelMax) {
-        const res = await fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/max/publish`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
+        const res = await fetchWithTimeout(
+          `${API_URL}/admin/cars/${encodeURIComponent(carId)}/max/publish`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ text, photo_ids, attach_listing_link: true }),
           },
-          body: JSON.stringify({ text, photo_ids, attach_listing_link: true }),
-        });
+          PUBLISH_TIMEOUT_MS.max
+        );
         const body = await res.json().catch(() => ({}));
         if (!res.ok || !body.ok) {
           parts.push(`MAX: ${body.detail || "ошибка"}`);
@@ -349,18 +377,29 @@ export default function PublishSocialPage() {
       const failed = parts.some((p) => !p.includes(": ок"));
       if (failed) setError(parts.join(" · "));
       else setMessage(parts.join(" · "));
-      if (channelVk) {
-        const tok = await loadVkTokenStatus(token);
-        if (tok) setVkTokenStatus(tok);
+
+      try {
+        if (channelVk) {
+          const tok = await loadVkTokenStatus(token);
+          if (tok) setVkTokenStatus(tok);
+        }
+        if (channelMax) {
+          const maxRes = await fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/max-compose`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (maxRes.ok) setMaxMeta(await maxRes.json());
+        }
+      } catch {
+        // Статус публикации уже показан; ошибка обновления метаданных не должна затирать успех.
       }
-      if (channelMax) {
-        const maxRes = await fetch(`${API_URL}/admin/cars/${encodeURIComponent(carId)}/max-compose`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (maxRes.ok) setMaxMeta(await maxRes.json());
+    } catch (err) {
+      if (err?.name === "AbortError") {
+        setError(
+          "Таймаут запроса. Если пост уже ушёл в канал — обновите страницу и проверьте статус публикации."
+        );
+      } else {
+        setError("Сбой сети или таймаут");
       }
-    } catch {
-      setError("Сбой сети или таймаут");
     } finally {
       setPublishBusy(false);
     }

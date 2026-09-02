@@ -6,6 +6,7 @@ import logging
 import mimetypes
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -285,6 +286,17 @@ def _parse_message_id(message: dict[str, Any]) -> int | None:
     return None
 
 
+def _is_attachment_not_ready(exc: MaxApiError) -> bool:
+    msg = str(exc).lower()
+    raw = exc.raw
+    if isinstance(raw, dict):
+        code = str(raw.get("code") or "").lower()
+        detail = str(raw.get("message") or raw.get("detail") or "").lower()
+        if "attachment.not.ready" in code or "not.processed" in detail:
+            return True
+    return "attachment.not.ready" in msg or "not.processed" in msg
+
+
 def _send_message(
     cfg: MaxConfig,
     *,
@@ -323,6 +335,40 @@ def _send_message(
     )
 
 
+def _send_message_with_retry(
+    cfg: MaxConfig,
+    *,
+    text: str,
+    attachments: list[dict[str, Any]],
+) -> MaxChannelPostResult:
+    delays = (0, 2, 4, 8)
+    last_exc: MaxApiError | None = None
+    for delay in delays:
+        if delay:
+            time.sleep(delay)
+        try:
+            return _send_message(cfg, text=text, attachments=attachments)
+        except MaxApiError as exc:
+            if _is_attachment_not_ready(exc):
+                last_exc = exc
+                log.warning("MAX: вложение ещё обрабатывается, повтор через %ss: %s", delay, exc)
+                continue
+            raise
+    if last_exc is not None:
+        raise last_exc
+    raise MaxApiError("MAX: не удалось отправить сообщение")
+
+
+def _upload_image_tokens(cfg: MaxConfig, urls: list[str]) -> list[str]:
+    if not urls:
+        return []
+    workers = min(3, len(urls))
+    if workers == 1:
+        return [upload_image_from_url(cfg, urls[0])]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(lambda url: upload_image_from_url(cfg, url), urls))
+
+
 def _should_retry_with_upload(exc: MaxApiError) -> bool:
     msg = str(exc).lower()
     return any(
@@ -352,20 +398,16 @@ def send_channel_message(
         attachments.append(_link_keyboard_attachment(link))
 
     try:
-        return _send_message(cfg, text=text, attachments=attachments)
+        return _send_message_with_retry(cfg, text=text, attachments=attachments)
     except MaxApiError as exc:
         if not urls or not _should_retry_with_upload(exc):
             raise
         log.warning("MAX: повтор с upload вместо URL: %s", exc)
 
-    token_attachments: list[dict[str, Any]] = []
-    for url in urls:
-        token = upload_image_from_url(cfg, url)
-        token_attachments.append(_image_token_attachment(token))
-        time.sleep(0.3)
+    token_attachments = [_image_token_attachment(token) for token in _upload_image_tokens(cfg, urls)]
     if link:
         token_attachments.append(_link_keyboard_attachment(link))
-    return _send_message(cfg, text=text, attachments=token_attachments)
+    return _send_message_with_retry(cfg, text=text, attachments=token_attachments)
 
 
 def publish_listing_to_channel(

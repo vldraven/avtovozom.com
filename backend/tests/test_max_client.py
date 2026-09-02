@@ -9,6 +9,7 @@ from app.max_client import (
     MaxApiError,
     MaxConfig,
     _extract_image_upload_token,
+    _is_attachment_not_ready,
     _link_keyboard_attachment,
     _parse_message_id,
     load_max_config_from_env,
@@ -76,6 +77,11 @@ class MaxClientTests(unittest.TestCase):
             "https://iu.oneme.ru/upload.do?token=url-token",
         )
         self.assertEqual(token, "url-token")
+
+    def test_is_attachment_not_ready(self):
+        exc = MaxApiError("x", raw={"code": "attachment.not.ready"})
+        self.assertTrue(_is_attachment_not_ready(exc))
+        self.assertFalse(_is_attachment_not_ready(MaxApiError("other error")))
 
     def test_send_channel_message_success(self):
         cfg = MaxConfig(bot_token="tok", channel_chat_id=1)
