@@ -1,0 +1,45 @@
+# Починка HTTPS (Caddy / Let's Encrypt) на проде через SSH.
+# Запускается при пуше в main (вместе с деплоем) или вручную: Actions → Prod fix caddy.
+name: Prod fix caddy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/prod-fix-caddy.yml
+      - scripts/prod-fix-caddy.sh
+      - deploy/Caddyfile
+
+concurrency:
+  group: prod-fix-caddy
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fix Caddy on server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST:-}" && test -n "${DEPLOY_USER:-}" && test -n "${DEPLOY_PATH:-}" && test -n "${SSH_KEY:-}" || {
+            echo "Missing secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PATH, DEPLOY_SSH_KEY"
+            exit 1
+          }
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          RSYNC_RSH="ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new"
+          rsync -avz -e "$RSYNC_RSH" scripts/prod-fix-caddy.sh "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}/scripts/"
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "chmod +x '${DEPLOY_PATH}/scripts/prod-fix-caddy.sh' && bash '${DEPLOY_PATH}/scripts/prod-fix-caddy.sh' '${DEPLOY_PATH}'"

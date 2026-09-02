@@ -42,7 +42,9 @@ jobs:
             curl -fsS http://127.0.0.1:8000/health || true
             curl -fsS -o /dev/null -w 'web:%{http_code}\n' http://127.0.0.1:3000/ || true
             echo '=== caddy ==='
-            if command -v systemctl >/dev/null 2>&1; then
-              sudo systemctl reload caddy || sudo systemctl restart caddy || true
+            if [[ -x '${DEPLOY_PATH}/scripts/prod-fix-caddy.sh' ]]; then
+              bash '${DEPLOY_PATH}/scripts/prod-fix-caddy.sh' '${DEPLOY_PATH}'
+            elif command -v systemctl >/dev/null 2>&1; then
+              systemctl restart caddy || sudo systemctl restart caddy
             fi
           )"
