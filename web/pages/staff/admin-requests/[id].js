@@ -34,6 +34,8 @@ export default function AdminRequestDetailPage() {
   const [me, setMe] = useState(null);
   const [req, setReq] = useState(null);
   const [loadError, setLoadError] = useState("");
+  const [chatErr, setChatErr] = useState("");
+  const [openingChat, setOpeningChat] = useState(false);
 
   useEffect(() => {
     const t = getStoredToken();
@@ -76,6 +78,44 @@ export default function AdminRequestDetailPage() {
   function logout() {
     clearToken({ logout: true });
     router.push("/");
+  }
+
+  async function openClientChat() {
+    if (!token || !requestId || openingChat) return;
+    setChatErr("");
+    setOpeningChat(true);
+    try {
+      if (req?.platform_chat_id != null) {
+        router.push(`/messages?chat=${encodeURIComponent(String(req.platform_chat_id))}`);
+        return;
+      }
+      const res = await fetch(
+        `${API_URL}/admin/calculation-requests/${encodeURIComponent(requestId)}/open-platform-chat`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setChatErr(
+          typeof body.detail === "string"
+            ? body.detail
+            : "Не удалось открыть чат с клиентом"
+        );
+        return;
+      }
+      const chatId = body.chat_id;
+      if (chatId == null) {
+        setChatErr("Не удалось открыть чат с клиентом");
+        return;
+      }
+      router.push(`/messages?chat=${encodeURIComponent(String(chatId))}`);
+    } catch {
+      setChatErr("Сбой связи с API");
+    } finally {
+      setOpeningChat(false);
+    }
   }
 
   if (!me) {
@@ -143,6 +183,22 @@ export default function AdminRequestDetailPage() {
                       <span className="muted"> · user_id {req.client_user_id}</span>
                     ) : null}
                   </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: "0.5rem" }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={openingChat}
+                      onClick={openClientChat}
+                    >
+                      {openingChat ? "Открываем…" : "Открыть чат с клиентом"}
+                    </button>
+                    {req.client_user_id == null && !req.platform_chat_id ? (
+                      <span className="muted" style={{ fontSize: "0.85rem" }}>
+                        Если клиент ещё не зарегистрирован — чат недоступен
+                      </span>
+                    ) : null}
+                  </div>
+                  {chatErr ? <div className="alert alert--danger">{chatErr}</div> : null}
                   {req.car_page_url ? (
                     <p style={{ margin: 0 }}>
                       <a href={req.car_page_url} target="_blank" rel="noopener noreferrer">

@@ -35,6 +35,7 @@ export default function AdminRequestsPage() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [openingChatId, setOpeningChatId] = useState(null);
 
   useEffect(() => {
     const t = getStoredToken();
@@ -74,6 +75,46 @@ export default function AdminRequestsPage() {
     router.push("/");
   }
 
+  async function openClientChat(e, r) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!token || !r?.id || openingChatId != null) return;
+    setError("");
+    setOpeningChatId(r.id);
+    try {
+      if (r.platform_chat_id != null) {
+        router.push(`/messages?chat=${encodeURIComponent(String(r.platform_chat_id))}`);
+        return;
+      }
+      const res = await fetch(
+        `${API_URL}/admin/calculation-requests/${encodeURIComponent(String(r.id))}/open-platform-chat`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(
+          typeof body.detail === "string"
+            ? body.detail
+            : `Заявка #${r.id}: не удалось открыть чат`
+        );
+        return;
+      }
+      const chatId = body.chat_id;
+      if (chatId == null) {
+        setError(`Заявка #${r.id}: не удалось открыть чат`);
+        return;
+      }
+      router.push(`/messages?chat=${encodeURIComponent(String(chatId))}`);
+    } catch {
+      setError("Сбой связи с API");
+    } finally {
+      setOpeningChatId(null);
+    }
+  }
+
   if (!me || loading) {
     return (
       <div className="layout">
@@ -107,45 +148,72 @@ export default function AdminRequestsPage() {
             <ul className="profile-request-list">
               {requests.map((r) => (
                 <li key={r.id} className="profile-request-card" style={{ listStyle: "none" }}>
-                  <Link
-                    href={`/staff/admin-requests/${r.id}`}
+                  <div
                     className="profile-request-card__header profile-request-card__header--expanded"
-                    style={{ textDecoration: "none", color: "inherit" }}
+                    style={{ display: "flex", alignItems: "stretch", gap: 8 }}
                   >
-                    {r.car_thumb_url ? (
-                      <img
-                        className="profile-request-card__thumb-img"
-                        src={mediaSrc(r.car_thumb_url, MEDIA_WIDTH.thumb)}
-                        alt=""
-                        width={88}
-                        height={66}
-                      />
-                    ) : (
-                      <div className="profile-request-card__thumb-ph" aria-hidden />
-                    )}
-                    <div className="profile-request-card__body">
-                      <div className="profile-request-card__title-line">
-                        <span className="profile-request-card__title-text">
-                          #{r.id} · {r.car_brand} {r.car_model}
-                          {r.car_year != null ? ` · ${r.car_year}` : ""}
-                        </span>
-                        <span
-                          className={`admin-requests-offers-pill${
-                            (r.offers?.length ?? 0) === 0 ? " admin-requests-offers-pill--empty" : ""
-                          }`}
-                          title="Ответы дилеров по заявке"
-                        >
-                          {offersLabel(r.offers?.length ?? 0)}
-                        </span>
+                    <Link
+                      href={`/staff/admin-requests/${r.id}`}
+                      style={{
+                        textDecoration: "none",
+                        color: "inherit",
+                        display: "flex",
+                        flex: 1,
+                        minWidth: 0,
+                        alignItems: "center",
+                        gap: "0.75rem",
+                      }}
+                    >
+                      {r.car_thumb_url ? (
+                        <img
+                          className="profile-request-card__thumb-img"
+                          src={mediaSrc(r.car_thumb_url, MEDIA_WIDTH.thumb)}
+                          alt=""
+                          width={88}
+                          height={66}
+                        />
+                      ) : (
+                        <div className="profile-request-card__thumb-ph" aria-hidden />
+                      )}
+                      <div className="profile-request-card__body">
+                        <div className="profile-request-card__title-line">
+                          <span className="profile-request-card__title-text">
+                            #{r.id} · {r.car_brand} {r.car_model}
+                            {r.car_year != null ? ` · ${r.car_year}` : ""}
+                          </span>
+                          <span
+                            className={`admin-requests-offers-pill${
+                              (r.offers?.length ?? 0) === 0 ? " admin-requests-offers-pill--empty" : ""
+                            }`}
+                            title="Ответы дилеров по заявке"
+                          >
+                            {offersLabel(r.offers?.length ?? 0)}
+                          </span>
+                        </div>
+                        <div className="muted profile-request-card__meta-tight">{r.car_title}</div>
+                        <div className="muted profile-request-card__meta-loose">
+                          {formatDate(r.created_at)} · {r.status}
+                          {r.client_email ? ` · ${r.client_email}` : ""}
+                        </div>
                       </div>
-                      <div className="muted profile-request-card__meta-tight">{r.car_title}</div>
-                      <div className="muted profile-request-card__meta-loose">
-                        {formatDate(r.created_at)} · {r.status}
-                        {r.client_email ? ` · ${r.client_email}` : ""}
-                      </div>
+                      <span className="btn btn-ghost btn-sm profile-request-card__toggle">Подробнее →</span>
+                    </Link>
+                    <div style={{ display: "flex", alignItems: "center", paddingRight: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={openingChatId === r.id}
+                        onClick={(e) => openClientChat(e, r)}
+                        title={
+                          r.platform_chat_id || r.client_user_id
+                            ? "Чат с клиентом (Avtovozom)"
+                            : "Открыть чат, если клиент зарегистрирован"
+                        }
+                      >
+                        {openingChatId === r.id ? "…" : "Чат"}
+                      </button>
                     </div>
-                    <span className="btn btn-ghost btn-sm profile-request-card__toggle">Подробнее →</span>
-                  </Link>
+                  </div>
                 </li>
               ))}
             </ul>

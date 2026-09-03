@@ -8,6 +8,15 @@ import shutil
 import time
 import uuid
 import zlib
+
+from .admin_request_chat import (
+    ensure_platform_chat as _ensure_platform_chat_row,
+    extract_emails_from_contact,
+    find_platform_chat_id,
+    link_request_to_client_user,
+    platform_chat_mentions_request,
+    resolve_request_client_user,
+)
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -5567,24 +5576,9 @@ def admin_list_calculation_requests(
         .all()
     )
     my_list = _calculation_requests_to_my_out(db, requests)
-    user_ids = [r.user_id for r in requests if r.user_id]
-    users_map: dict[int, User] = {}
-    if user_ids:
-        users = db.execute(select(User).where(User.id.in_(user_ids))).scalars().all()
-        users_map = {u.id: u for u in users}
     out: list[AdminCalculationRequestOut] = []
     for r_db, base in zip(requests, my_list):
-        u = users_map.get(r_db.user_id) if r_db.user_id else None
-        out.append(
-            AdminCalculationRequestOut(
-                **base.model_dump(),
-                client_email=u.email if u else None,
-                client_user_id=r_db.user_id,
-                car_page_url=(
-                    _public_car_page_url(db, r_db.car_id) if r_db.car_id is not None else None
-                ),
-            )
-        )
+        out.append(_admin_calculation_request_out(db, r_db, base, ensure_chat=False))
     return out
 
 
@@ -5602,14 +5596,77 @@ def admin_get_calculation_request(
     built = _calculation_requests_to_my_out(db, [r])
     if not built:
         raise HTTPException(status_code=404, detail="Request not found")
-    base = built[0]
-    u = None
-    if r.user_id:
-        u = db.execute(select(User).where(User.id == r.user_id)).scalar_one_or_none()
+    return _admin_calculation_request_out(db, r, built[0], ensure_chat=False)
+
+
+@app.post(
+    "/admin/calculation-requests/{request_id}/open-platform-chat",
+    response_model=OpenChatOut,
+)
+def admin_open_platform_chat_for_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    """Открыть (или создать) чат клиента с Avtovozom по заявке.
+
+    Для freeform без user_id — ищем зарегистрированного пользователя по email в контакте.
+    """
+    r = db.execute(
+        select(CalculationRequest).where(CalculationRequest.id == request_id)
+    ).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    user = resolve_request_client_user(db, r)
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Клиент ещё не зарегистрирован на сайте — чат недоступен",
+        )
+
+    link_request_to_client_user(db, r, user)
+    chat = _ensure_platform_chat(db, user.id)
+    if not platform_chat_mentions_request(db, chat.id, r.id):
+        msg = ChatMessage(
+            chat_id=chat.id,
+            sender_user_id=user.id,
+            message_type="system",
+            text=_format_platform_request_system_message(db, r),
+        )
+        db.add(msg)
+        db.flush()
+        db.refresh(msg)
+        chat.last_message_at = msg.created_at
+    db.commit()
+    return OpenChatOut(chat_id=chat.id)
+
+
+def _admin_calculation_request_out(
+    db: Session,
+    r: CalculationRequest,
+    base: CalculationRequestMyOut,
+    *,
+    ensure_chat: bool,
+) -> AdminCalculationRequestOut:
+    user = resolve_request_client_user(db, r)
+    client_email = user.email if user else None
+    if not client_email:
+        emails = extract_emails_from_contact(r.user_contact)
+        client_email = emails[0] if emails else None
+    client_user_id = user.id if user else r.user_id
+    platform_chat_id = None
+    if user is not None:
+        if ensure_chat:
+            platform_chat_id = _ensure_platform_chat(db, user.id).id
+            db.commit()
+        else:
+            platform_chat_id = find_platform_chat_id(db, user.id)
     return AdminCalculationRequestOut(
-        **base.model_dump(),
-        client_email=u.email if u else None,
-        client_user_id=r.user_id,
+        **base.model_dump(exclude={"platform_chat_id"}),
+        platform_chat_id=platform_chat_id,
+        client_email=client_email,
+        client_user_id=client_user_id,
         car_page_url=(
             _public_car_page_url(db, r.car_id) if r.car_id is not None else None
         ),
@@ -5971,21 +6028,7 @@ def _user_is_staff(user: User) -> bool:
 
 
 def _ensure_platform_chat(db: Session, user_id: int) -> Chat:
-    existing = db.execute(
-        select(Chat).where(Chat.chat_type == "platform", Chat.user_id == user_id)
-    ).scalar_one_or_none()
-    if existing:
-        return existing
-    chat = Chat(
-        chat_type="platform",
-        user_id=user_id,
-        request_id=None,
-        dealer_user_id=None,
-        status="open",
-    )
-    db.add(chat)
-    db.flush()
-    return chat
+    return _ensure_platform_chat_row(db, user_id)
 
 
 def _format_platform_request_system_message(db: Session, request: CalculationRequest) -> str:
