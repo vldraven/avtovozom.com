@@ -1,3 +1,4 @@
+import { MAX_CHANNEL_HANDLE, MAX_CHANNEL_URL } from "./maxChannel";
 import { TELEGRAM_CHANNEL_URL } from "./telegramChannel";
 
 function env(name, fallback = "") {
@@ -21,6 +22,8 @@ export const COMPANY = {
   workingHours: env("NEXT_PUBLIC_COMPANY_HOURS"),
   telegramUrl: TELEGRAM_CHANNEL_URL,
   telegramHandle: "@avtovozom",
+  maxUrl: MAX_CHANNEL_URL,
+  maxHandle: MAX_CHANNEL_HANDLE,
 };
 
 export function hasLegalRequisites() {
