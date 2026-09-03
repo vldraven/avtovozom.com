@@ -2,6 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 
 import SiteHeader from "../components/SiteHeader";
+import MaxIcon from "../components/MaxIcon";
 import { COMPANY, phoneHref } from "../lib/companyInfo";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { absoluteUrl } from "../lib/siteUrl";
@@ -20,6 +21,8 @@ const TG_ICON = (
     />
   </svg>
 );
+
+const MAX_ICON = <MaxIcon size={18} />;
 
 const PHONE_ICON = (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -114,6 +117,15 @@ export default function AboutPage({ listingsCount = 0 }) {
                   {TG_ICON}
                   Написать в Telegram
                 </a>
+                <a
+                  href={COMPANY.maxUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn about-btn-max"
+                >
+                  {MAX_ICON}
+                  Написать в MAX
+                </a>
                 {COMPANY.phone ? (
                   <a href={`tel:${tel}`} className="btn about-btn-phone">
                     {PHONE_ICON}
@@ -173,6 +185,15 @@ export default function AboutPage({ listingsCount = 0 }) {
               >
                 {TG_ICON}
                 Написать в Telegram
+              </a>
+              <a
+                href={COMPANY.maxUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="about-cta-band__btn about-cta-band__btn--max"
+              >
+                {MAX_ICON}
+                Написать в MAX
               </a>
               {COMPANY.phone ? (
                 <a href={`tel:${tel}`} className="about-cta-band__btn about-cta-band__btn--phone">

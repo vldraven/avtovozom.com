@@ -2,6 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 
 import SiteHeader from "../components/SiteHeader";
+import MaxIcon from "../components/MaxIcon";
 import { COMPANY, hasLegalRequisites, phoneHref } from "../lib/companyInfo";
 import { breadcrumbListJsonLd, jsonLdScriptProps, organizationContactJsonLd } from "../lib/schema";
 import { absoluteUrl } from "../lib/siteUrl";
@@ -9,7 +10,7 @@ import { absoluteUrl } from "../lib/siteUrl";
 const CANONICAL_PATH = "/contacts";
 const TITLE = "Контакты Автовозом — связаться и реквизиты";
 const DESCRIPTION =
-  "Контакты сервиса Автовозом: телефон, email, Telegram и юридические реквизиты ООО «АВТОВОЗОМ». Оставьте заявку на расчёт доставки авто из Китая.";
+  "Контакты сервиса Автовозом: телефон, email, Telegram, MAX и юридические реквизиты ООО «АВТОВОЗОМ». Оставьте заявку на расчёт доставки авто из Китая.";
 
 function TgIcon() {
   return (
@@ -112,6 +113,21 @@ export default function ContactsPage() {
                   <span className="contacts-card__body">
                     <span className="contacts-card__title">Telegram</span>
                     <span className="contacts-card__sub">{COMPANY.telegramHandle} · отвечаем быстро</span>
+                  </span>
+                  <span className="contacts-card__arrow"><ChevronRight /></span>
+                </a>
+
+                {/* MAX */}
+                <a
+                  href={COMPANY.maxUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="contacts-card contacts-card--max"
+                >
+                  <span className="contacts-card__icon"><MaxIcon size={22} /></span>
+                  <span className="contacts-card__body">
+                    <span className="contacts-card__title">MAX</span>
+                    <span className="contacts-card__sub">{COMPANY.maxHandle} · канал в мессенджере</span>
                   </span>
                   <span className="contacts-card__arrow"><ChevronRight /></span>
                 </a>

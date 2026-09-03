@@ -25,7 +25,7 @@ function normalizeJsonLd(data) {
 export const BRAND_NAME = COMPANY.brandName;
 export const BRAND_ALT_NAMES = ["avtovozom", "Avtovozom", "avtovozom.com"];
 export const BRAND_EMAIL = COMPANY.email;
-export const BRAND_SAME_AS = [COMPANY.telegramUrl];
+export const BRAND_SAME_AS = [COMPANY.telegramUrl, COMPANY.maxUrl].filter(Boolean);
 
 function organizationJsonLdNode() {
   const url = absoluteUrl("/");

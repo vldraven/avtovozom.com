@@ -13417,6 +13417,27 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   text-decoration: none;
 }
 
+.about-btn-max {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 48px;
+  padding: 0 1.375rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #471aff 0%, #9500ff 100%);
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.about-btn-max:hover {
+  opacity: 0.88;
+  color: #ffffff;
+  text-decoration: none;
+}
+
 .about-btn-phone {
   display: inline-flex;
   align-items: center;
@@ -13582,6 +13603,11 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   color: #ffffff;
 }
 
+.about-cta-band__btn--max {
+  background: linear-gradient(135deg, #471aff 0%, #9500ff 100%);
+  color: #ffffff;
+}
+
 .about-cta-band__btn--phone {
   background: rgba(248, 250, 252, 0.08);
   border: 1px solid rgba(248, 250, 252, 0.2);
@@ -13680,6 +13706,10 @@ a.contacts-card:hover {
 
 .contacts-card--tg {
   background: #26a5e4;
+}
+
+.contacts-card--max {
+  background: linear-gradient(135deg, #471aff 0%, #9500ff 100%);
 }
 
 .contacts-card--white {
