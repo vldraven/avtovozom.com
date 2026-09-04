@@ -787,11 +787,10 @@ export default function CarDetailView({
                       className="photo-gallery__stage"
                       src={mediaSrc(hero.storage_url, MEDIA_WIDTH.detail)}
                       alt={`${car.title} — фото ${safeIndex + 1}`}
-                      fill
                       sizes="(max-width: 767px) 100vw, 900px"
                       priority
                       draggable={false}
-                      style={{ objectFit: "cover" }}
+                      style={{ width: "100%", height: "auto", objectFit: "contain" }}
                     />
                     <button
                       type="button"
