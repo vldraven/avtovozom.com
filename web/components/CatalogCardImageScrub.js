@@ -118,16 +118,30 @@ export default function CatalogCardImageScrub({ photos }) {
       onClickCapture={onClickCapture}
     >
       {show ? (
-        <MediaImage
-          className="catalog-card__image"
-          src={mediaSrc(show, MEDIA_WIDTH.card)}
-          alt=""
-          fill
-          sizes="(max-width: 767px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          loading="lazy"
-          draggable={false}
-          style={{ objectFit: "cover" }}
-        />
+        <>
+          {/* Фон без «пустых» полей: тот же кадр cover+blur, поверх — полный кадр contain. */}
+          <MediaImage
+            className="catalog-card__image catalog-card__image--bleed"
+            src={mediaSrc(show, MEDIA_WIDTH.card)}
+            alt=""
+            fill
+            sizes="(max-width: 767px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            loading="lazy"
+            draggable={false}
+            aria-hidden
+            style={{ objectFit: "cover" }}
+          />
+          <MediaImage
+            className="catalog-card__image catalog-card__image--fit"
+            src={mediaSrc(show, MEDIA_WIDTH.card)}
+            alt=""
+            fill
+            sizes="(max-width: 767px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            loading="lazy"
+            draggable={false}
+            style={{ objectFit: "contain" }}
+          />
+        </>
       ) : (
         <div className="catalog-card__placeholder">Нет фото</div>
       )}
