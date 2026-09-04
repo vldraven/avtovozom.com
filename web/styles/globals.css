@@ -379,18 +379,19 @@ a:hover {
 }
 
 .app-lock .pin-keypad__key {
-  border: none;
-  border-radius: 4px;
-  background: #0284c7;
-  color: #fff;
+  border: 1px solid rgba(248, 250, 252, 0.14);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.08);
+  color: #f8fafc;
 }
 
 .app-lock .pin-keypad__key:active {
-  background: #0369a1;
+  background: rgba(248, 250, 252, 0.16);
 }
 
 .app-lock .pin-keypad__key--muted {
   background: transparent;
+  border-color: transparent;
   color: #94a3b8;
 }
 
@@ -6981,10 +6982,24 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
     width: 100%;
   }
 
+  /* iOS Chrome/Safari: светлый body иначе торчит белой полосой под контентом */
+  html:has(.pin-panel__mobile.pin-panel--dark),
+  body:has(.pin-panel__mobile.pin-panel--dark) {
+    background: #0f172a !important;
+  }
+
   .auth-layout:has(.pin-panel__mobile.pin-panel--dark) {
-    background: #0f172a;
-    min-height: 100vh;
+    position: fixed;
+    inset: 0;
+    z-index: 2100;
+    width: 100%;
+    min-height: 100%;
     min-height: 100dvh;
+    min-height: -webkit-fill-available;
+    background: #0f172a;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .auth-layout:has(.pin-panel__mobile.pin-panel--dark) .site-header {
@@ -6992,11 +7007,19 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   }
 
   .auth-layout:has(.pin-panel__mobile.pin-panel--dark) .auth-layout__main--page {
-    min-height: 100vh;
+    min-height: 100%;
     min-height: 100dvh;
-    align-items: center;
+    min-height: -webkit-fill-available;
+    align-items: flex-start;
+    justify-content: flex-start;
     background: #0f172a;
-    padding: max(1.25rem, env(safe-area-inset-top, 0px)) 1rem max(1.5rem, env(safe-area-inset-bottom, 0px));
+    padding: max(1rem, env(safe-area-inset-top, 0px)) 1rem
+      max(1.25rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .auth-layout:has(.pin-panel__mobile.pin-panel--dark) .auth-page {
+    width: min(100%, 24rem);
+    margin: 0 auto;
   }
 
   .auth-prompt-overlay:has(.pin-panel__mobile.pin-panel--dark) {
@@ -7013,6 +7036,17 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
     box-shadow: none;
     max-height: none;
     overflow: visible;
+  }
+
+  .app-lock {
+    position: fixed;
+    inset: 0;
+    z-index: 2100;
+    min-height: 100%;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+    align-items: flex-start;
+    padding-top: max(1rem, env(safe-area-inset-top, 0px));
   }
 }
 
@@ -7043,19 +7077,20 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
 }
 
 .pin-panel--dark .pin-keypad__key {
-  border: none;
-  border-radius: 4px;
-  background: #0284c7;
-  color: #fff;
+  border: 1px solid rgba(248, 250, 252, 0.14);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.08);
+  color: #f8fafc;
   box-shadow: none;
 }
 
 .pin-panel--dark .pin-keypad__key:active {
-  background: #0369a1;
+  background: rgba(248, 250, 252, 0.16);
 }
 
 .pin-panel--dark .pin-keypad__key--muted {
   background: transparent;
+  border-color: transparent;
   color: #94a3b8;
 }
 
@@ -7082,6 +7117,14 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   width: 100%;
   min-height: 48px;
   border-radius: var(--radius-sm, 8px);
+  background: var(--color-accent, #0ea5e9);
+  border-color: var(--color-accent, #0ea5e9);
+  color: #fff;
+}
+
+.pin-panel--dark .btn-primary.pin-pad__submit:disabled {
+  opacity: 0.45;
+  color: #fff;
 }
 
 .pin-panel--dark .btn-ghost {
@@ -7373,7 +7416,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   width: 100%;
   font-size: clamp(1.25rem, 4.6vw, 1.55rem);
   font-weight: 600;
-  border-radius: 4px;
+  border-radius: 12px;
 }
 
 .pin-panel--keypad:not(.pin-panel--dark) .pin-keypad__key {
@@ -9557,7 +9600,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
     width: 100%;
     font-size: clamp(1.25rem, 4.6vw, 1.55rem);
     font-weight: 600;
-    border-radius: 4px;
+    border-radius: 12px;
   }
 
   .panel--pin-setup .pin-panel--confirm {
@@ -9595,16 +9638,17 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   .panel--pin-setup .pin-panel--dark .pin-keypad__key,
   .panel--pin-setup .pin-panel__mobile .pin-keypad__key,
   .app-lock .pin-keypad__key {
-    background: #0284c7;
-    border: none;
+    background: rgba(248, 250, 252, 0.08);
+    border: 1px solid rgba(248, 250, 252, 0.14);
     box-shadow: none;
-    color: #fff;
+    color: #f8fafc;
+    border-radius: 12px;
   }
 
   .panel--pin-setup .pin-panel--dark .pin-keypad__key:active,
   .panel--pin-setup .pin-panel__mobile .pin-keypad__key:active,
   .app-lock .pin-keypad__key:active {
-    background: #0369a1;
+    background: rgba(248, 250, 252, 0.16);
   }
 
   .panel--pin-setup .pin-panel--dark .pin-keypad__key--muted,
