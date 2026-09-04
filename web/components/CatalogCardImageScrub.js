@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
+import { warmMediaImageSources } from "../lib/mediaImageCache";
 import MediaImage from "./MediaImage";
 
 function indexFromRatio(ratio, n) {
@@ -10,11 +11,7 @@ function indexFromRatio(ratio, n) {
 }
 
 function preloadImageSources(sources) {
-  for (const src of sources) {
-    const img = new Image();
-    img.decoding = "async";
-    img.src = src;
-  }
+  warmMediaImageSources(sources);
 }
 
 /**
