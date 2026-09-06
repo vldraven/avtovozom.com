@@ -18,7 +18,13 @@ import {
   handleListingDetailRouteChangeStart,
   peekListingReturnPath,
 } from "../lib/listingNavigation";
-import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
+import {
+  DETAIL_SIZES,
+  DETAIL_SRCSET_WIDTHS,
+  MEDIA_WIDTH,
+  mediaSrc,
+  mediaSrcSet,
+} from "../lib/media";
 import MediaImage from "./MediaImage";
 import { absoluteUrl } from "../lib/siteUrl";
 import { seoDescription } from "../lib/seoText";
@@ -698,7 +704,22 @@ export default function CarDetailView({
   const metaDesc = seoDescription(
     car.description || `${car.brand} ${car.model}, ${car.year} год — цена в ¥, доставка в Россию.`
   );
-  const ogImage = hero?.storage_url ? mediaSrc(hero.storage_url) : "";
+  const firstPhoto = sortedPhotos[0];
+  const ogImage = firstPhoto?.storage_url
+    ? mediaSrc(firstPhoto.storage_url, MEDIA_WIDTH.detail)
+    : "";
+  const preloadSrc = firstPhoto?.storage_url
+    ? mediaSrc(firstPhoto.storage_url, MEDIA_WIDTH.detail)
+    : "";
+  const preloadSrcSet = firstPhoto?.storage_url
+    ? mediaSrcSet(firstPhoto.storage_url, DETAIL_SRCSET_WIDTHS)
+    : undefined;
+  const stageSrc = hero?.storage_url
+    ? mediaSrc(hero.storage_url, MEDIA_WIDTH.detail)
+    : "";
+  const stageSrcSet = hero?.storage_url
+    ? mediaSrcSet(hero.storage_url, DETAIL_SRCSET_WIDTHS)
+    : undefined;
 
   const totalRubRf =
     car.price_breakdown?.total_rub != null
@@ -739,6 +760,16 @@ export default function CarDetailView({
         <meta property="og:description" content={metaDesc} />
         <meta property="og:url" content={canonical} />
         {ogImage ? <meta property="og:image" content={ogImage} /> : null}
+        {preloadSrc ? (
+          <link
+            rel="preload"
+            as="image"
+            href={preloadSrc}
+            {...(preloadSrcSet
+              ? { imageSrcSet: preloadSrcSet, imageSizes: DETAIL_SIZES }
+              : {})}
+          />
+        ) : null}
         <meta name="twitter:title" content={car.title} />
         <meta name="twitter:description" content={metaDesc} />
         {ogImage ? <meta name="twitter:image" content={ogImage} /> : null}
@@ -785,10 +816,12 @@ export default function CarDetailView({
                   >
                     <MediaImage
                       className="photo-gallery__stage"
-                      src={mediaSrc(hero.storage_url, MEDIA_WIDTH.detail)}
+                      src={stageSrc}
+                      srcSet={stageSrcSet}
+                      sizes={DETAIL_SIZES}
                       alt={`${car.title} — фото ${safeIndex + 1}`}
-                      sizes="(max-width: 767px) 100vw, 900px"
-                      priority
+                      priority={safeIndex === 0}
+                      fetchPriority={safeIndex === 0 ? "high" : "auto"}
                       draggable={false}
                       style={{ width: "100%", height: "auto", objectFit: "contain" }}
                     />

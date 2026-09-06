@@ -13,6 +13,7 @@ from .che168_parser import (
     http_referer_for_request_url,
     upgrade_vehicle_photo_url,
 )
+from .media_resize import warm_media_variants
 
 _HEADERS_BASE = {
     "User-Agent": (
@@ -91,6 +92,7 @@ def download_car_photos(car_id: int, urls: list[str], max_count: int = 12) -> li
             except Exception:
                 continue
     if saved:
+        warm_media_variants(saved)
         return saved
     return [u for u in normalized[:max_count] if u.startswith("http")]
 
@@ -135,6 +137,8 @@ def save_uploaded_car_photos(
         path = car_dir / fname
         path.write_bytes(data)
         saved.append(f"/media/cars/{car_id}/{fname}")
+    if saved:
+        warm_media_variants(saved)
     return saved
 
 
@@ -182,7 +186,9 @@ def save_brand_logo(brand_id: int, data: bytes) -> str | None:
     fname = f"logo{ext}"
     path = brand_dir / fname
     path.write_bytes(data)
-    return f"/media/brands/{brand_id}/{fname}"
+    url = f"/media/brands/{brand_id}/{fname}"
+    warm_media_variants([url], widths=(160,))
+    return url
 
 
 _CHAT_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024

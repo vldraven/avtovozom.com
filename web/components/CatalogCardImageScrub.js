@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
+import {
+  CARD_SIZES,
+  CARD_SRCSET_WIDTHS,
+  MEDIA_WIDTH,
+  mediaSrc,
+  mediaSrcSet,
+} from "../lib/media";
 import { warmMediaImageSources } from "../lib/mediaImageCache";
 import MediaImage from "./MediaImage";
 
@@ -19,8 +25,10 @@ function preloadImageSources(sources) {
  * Клик без жеста ведёт в карточку (родительский Link).
  * Остальные кадры подгружаются только при явном взаимодействии (hover/touch),
  * чтобы не перегружать сеть на длинных списках.
+ *
+ * Bleed-слой — лёгкий thumb (160px), основной кадр — srcset 320/480/640.
  */
-export default function CatalogCardImageScrub({ photos }) {
+export default function CatalogCardImageScrub({ photos, priority = false }) {
   const urls = useMemo(() => {
     const sorted = [...(photos || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     return sorted.map((p) => p.storage_url).filter(Boolean);
@@ -99,6 +107,9 @@ export default function CatalogCardImageScrub({ photos }) {
   }
 
   const show = n > 0 ? urls[Math.min(active, n - 1)] : null;
+  const fitSrc = show ? mediaSrc(show, MEDIA_WIDTH.card) : "";
+  const fitSrcSet = show ? mediaSrcSet(show, CARD_SRCSET_WIDTHS) : undefined;
+  const bleedSrc = show ? mediaSrc(show, MEDIA_WIDTH.thumb) : "";
 
   return (
     <div
@@ -116,25 +127,27 @@ export default function CatalogCardImageScrub({ photos }) {
     >
       {show ? (
         <>
-          {/* Фон без «пустых» полей: тот же кадр cover+blur, поверх — полный кадр contain. */}
+          {/* Лёгкий blur-фон (160px), не дублируем тяжёлый 640px decode. */}
           <MediaImage
             className="catalog-card__image catalog-card__image--bleed"
-            src={mediaSrc(show, MEDIA_WIDTH.card)}
+            src={bleedSrc}
             alt=""
             fill
-            sizes="(max-width: 767px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            loading="lazy"
+            loading={priority ? "eager" : "lazy"}
+            priority={false}
             draggable={false}
             aria-hidden
             style={{ objectFit: "cover" }}
           />
           <MediaImage
             className="catalog-card__image catalog-card__image--fit"
-            src={mediaSrc(show, MEDIA_WIDTH.card)}
+            src={fitSrc}
+            srcSet={fitSrcSet}
+            sizes={CARD_SIZES}
             alt=""
             fill
-            sizes="(max-width: 767px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            loading="lazy"
+            priority={priority}
+            loading={priority ? "eager" : "lazy"}
             draggable={false}
             style={{ objectFit: "contain" }}
           />

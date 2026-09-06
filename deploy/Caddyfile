@@ -6,8 +6,15 @@
 }
 
 # Канонический домен без www (SEO: один URL, без дублей).
+# Опционально: отдавать /media и /media-img с того же origin, что и сайт
+# (лучше HTTP-кэш браузера, проще CDN). Тогда в NEXT_PUBLIC_API_URL для img
+# можно оставить api.*, либо проксировать медиа сюда и сменить mediaSrc на relative.
 avtovozom.com {
 	encode gzip
+	# Раскомментируйте после проверки, что api слушает :8000 на этом хосте:
+	# handle /media* {
+	# 	reverse_proxy 127.0.0.1:8000
+	# }
 	reverse_proxy 127.0.0.1:3000
 }
 

@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 from pathlib import Path
 
 # Белый список ширин — защита от произвольного resize-abuse.
 ALLOWED_WIDTHS = frozenset({160, 320, 480, 640, 960})
 
+# Ширины, которые реально запрашивает фронт (списки + карточка + lightbox).
+WARM_WIDTHS = (160, 320, 480, 640, 960)
+
 # JPEG quality: баланс размер/артефакты для карточек каталога.
 _JPEG_QUALITY = 78
 _CACHE_DIRNAME = ".cache"
+
+logger = logging.getLogger(__name__)
 
 
 def media_root() -> Path:
@@ -84,3 +90,25 @@ def resize_local_image(src: Path, width: int) -> tuple[bytes, str]:
     tmp.write_bytes(data)
     tmp.replace(cached)
     return data, "image/jpeg"
+
+
+def warm_media_variants(
+    storage_urls: list[str],
+    widths: tuple[int, ...] = WARM_WIDTHS,
+) -> None:
+    """
+    Прогрев дискового кэша /media-img после сохранения фото.
+    Убирает cold-resize stampede при первой отдаче каталога.
+    Ошибки глотаем — оригинал уже на диске, resize подтянется по запросу.
+    """
+    for url in storage_urls or []:
+        src = resolve_local_media_path(url)
+        if src is None:
+            continue
+        for w in widths:
+            if w not in ALLOWED_WIDTHS:
+                continue
+            try:
+                resize_local_image(src, w)
+            except Exception:
+                logger.exception("media warm failed path=%s w=%s", url, w)

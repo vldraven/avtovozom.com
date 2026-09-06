@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 
 function BrandLogoItem({ brand, eager, tile }) {
   return (
@@ -10,7 +10,7 @@ function BrandLogoItem({ brand, eager, tile }) {
       title={brand.name}
     >
       <img
-        src={mediaSrc(brand.logo_storage_url)}
+        src={mediaSrc(brand.logo_storage_url, MEDIA_WIDTH.thumb)}
         alt=""
         width={tile ? 48 : 48}
         height={tile ? 48 : 48}

@@ -1221,7 +1221,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                     ) : (
                     <>
                     <div className="catalog-grid">
-                      {cars.map((car) => {
+                      {cars.map((car, idx) => {
                         const totalRub =
                           car.price_breakdown?.total_rub != null
                             ? car.price_breakdown.total_rub
@@ -1239,7 +1239,12 @@ export default function CatalogTreePage({ initialPayload = null }) {
                             className="catalog-card__main"
                             onClickCapture={(e) => saveCatalogScrollPosition(e, car.id)}
                           >
-                            <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
+                            <CatalogCardMedia
+                              photos={car.photos}
+                              carId={car.id}
+                              car={car}
+                              imagePriority={idx < 6}
+                            />
                             <div className="catalog-card__content">
                               <h3 className="catalog-card__title">{car.title}</h3>
                               <p className="catalog-card__meta">

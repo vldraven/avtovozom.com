@@ -16,6 +16,7 @@ from app.media_resize import (
     cache_path_for,
     resize_local_image,
     resolve_local_media_path,
+    warm_media_variants,
 )
 
 
@@ -72,6 +73,13 @@ class MediaResizeTests(unittest.TestCase):
         _make_jpeg(src)
         with self.assertRaises(ValueError):
             resize_local_image(src, 777)
+
+    def test_warm_media_variants_fills_cache(self):
+        src = self.root / "cars" / "3" / "0.jpg"
+        _make_jpeg(src, size=(1024, 768))
+        warm_media_variants(["/media/cars/3/0.jpg"], widths=(160, 640))
+        self.assertTrue(cache_path_for(src, 160).is_file())
+        self.assertTrue(cache_path_for(src, 640).is_file())
 
 
 if __name__ == "__main__":
