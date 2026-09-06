@@ -1,4 +1,5 @@
 import { appendFiltersToSearchParams } from "./catalogFilters";
+import { LIST_PHOTO_LIMIT } from "./media";
 
 export function segmentsFromSlugParam(slug) {
   if (slug == null) return [];
@@ -148,7 +149,7 @@ export function buildCatalogCarsQuery(
   }
   const qq = textQuery != null ? String(textQuery).trim() : "";
   if (qq) params.set("q", qq);
-  params.set("photo_limit", "8");
+  params.set("photo_limit", String(LIST_PHOTO_LIMIT));
   params.set("limit", String(limit));
   const pageNum = Math.max(1, Number(page) || 1);
   if (pageNum > 1) params.set("page", String(pageNum));

@@ -2940,7 +2940,7 @@ def public_dealer_profile(user_id: int, db: Session = Depends(get_db)):
                 price_breakdown=None,
                 estimated_total_rub=est,
                 include_description=False,
-                photo_limit=8,
+                photo_limit=4,
             )
         )
     co = (user.company_name or "").strip()

@@ -16,6 +16,7 @@ export default function HomeCarCard({
   draggable = false,
   role,
   "data-home-car-id": dataHomeCarId,
+  imagePriority = false,
 }) {
   if (!car) return null;
 
@@ -35,7 +36,12 @@ export default function HomeCarCard({
         draggable={draggable}
         onClickCapture={onClickCapture}
       >
-        <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
+        <CatalogCardMedia
+          photos={car.photos}
+          carId={car.id}
+          car={car}
+          imagePriority={imagePriority}
+        />
         <div className={isDesktop ? "catalog-card__content home-d-card__body" : "catalog-card__content home-m-card__body"}>
           <p className={isDesktop ? "home-d-card__price" : "home-m-card__price"}>
             {totalRub != null ? (

@@ -20,7 +20,7 @@ import RequestConfirmModal from "../components/RequestConfirmModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
 import { carSpecMetaBits, carListingTitle, carTotalRub } from "../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
-import { mediaSrc } from "../lib/media";
+import { LIST_PHOTO_LIMIT, MEDIA_WIDTH, mediaSrc } from "../lib/media";
 import { peekScrollRestoreTarget, isListingBackNavigation, saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { organizationAndWebSiteJsonLd, jsonLdScriptProps } from "../lib/schema";
@@ -358,7 +358,7 @@ export default function Home({ initialData = null }) {
   const loadCars = useCallback(async () => {
     if (!router.isReady) return;
     const params = new URLSearchParams();
-    params.set("photo_limit", "8");
+    params.set("photo_limit", String(LIST_PHOTO_LIMIT));
     params.set("limit", String(HOME_FRESH_LOTS_LIMIT));
     params.set("sort", "date_desc");
     if (homeFilterApplied.brandId) params.set("brand_id", String(homeFilterApplied.brandId));
@@ -366,7 +366,7 @@ export default function Home({ initialData = null }) {
     appendFiltersToSearchParams(params, homeFilterApplied);
     const popularParams = new URLSearchParams();
     popularParams.set("is_popular", "true");
-    popularParams.set("photo_limit", "8");
+    popularParams.set("photo_limit", String(LIST_PHOTO_LIMIT));
     popularParams.set("limit", String(HOME_POPULAR_CARS_LIMIT));
     popularParams.set("sort", "date_desc");
     if (homeFilterApplied.brandId) popularParams.set("brand_id", String(homeFilterApplied.brandId));
@@ -1674,7 +1674,7 @@ export default function Home({ initialData = null }) {
                       title={b.name}
                     >
                       <img
-                        src={mediaSrc(b.logo_storage_url)}
+                        src={mediaSrc(b.logo_storage_url, MEDIA_WIDTH.thumb)}
                         alt=""
                         width={40}
                         height={40}
@@ -1697,13 +1697,14 @@ export default function Home({ initialData = null }) {
                   </Link>
                 </div>
                 <div className="home-m-models__scroller">
-                  {popularCars.map((car) => (
+                  {popularCars.map((car, idx) => (
                     <HomeCarCard
                       key={`m-pop-${car.id}`}
                       car={car}
                       variant="mobile"
                       className="home-m-models__card"
                       draggable={false}
+                      imagePriority={idx < 2}
                       onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
                     />
                   ))}
@@ -1729,12 +1730,13 @@ export default function Home({ initialData = null }) {
                 </div>
               ) : (
                 <div className="home-m-arrivals__list">
-                  {cars.slice(0, HOME_FRESH_LOTS_LIMIT).map((car) => (
+                  {cars.slice(0, HOME_FRESH_LOTS_LIMIT).map((car, idx) => (
                     <HomeCarCard
                       key={`m-${car.id}`}
                       car={car}
                       variant="mobile"
                       draggable={false}
+                      imagePriority={idx < 4}
                       onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
                     />
                   ))}
@@ -1899,7 +1901,7 @@ export default function Home({ initialData = null }) {
                 </div>
               ) : (
                 <div className="home-d-carousel" role="list">
-                  {desktopArrivals.map((car) => {
+                  {desktopArrivals.map((car, idx) => {
                     const totalRub = carTotalRub(car);
                     const title = carListingTitle(car);
                     const metaBits = carSpecMetaBits(car);
@@ -1916,7 +1918,12 @@ export default function Home({ initialData = null }) {
                           draggable={false}
                           onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
                         >
-                          <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
+                          <CatalogCardMedia
+                            photos={car.photos}
+                            carId={car.id}
+                            car={car}
+                            imagePriority={idx < 4}
+                          />
                           <div className="catalog-card__content home-d-card__body">
                             <p className="home-d-card__price">
                               {totalRub != null ? (
@@ -1980,13 +1987,14 @@ export default function Home({ initialData = null }) {
                   </Link>
                 </div>
                 <div className="home-d-carousel" role="list">
-                  {popularCars.map((car) => (
+                  {popularCars.map((car, idx) => (
                     <HomeCarCard
                       key={`pop-${car.id}`}
                       car={car}
                       variant="desktop"
                       role="listitem"
                       draggable={false}
+                      imagePriority={idx < 4}
                       onClickCapture={(e) => saveHomeScrollPosition(e, car.id)}
                     />
                   ))}
@@ -2413,13 +2421,13 @@ export async function getServerSideProps({ query }) {
 
   const api = getServerApiBase();
   const params = new URLSearchParams();
-  params.set("photo_limit", "8");
+  params.set("photo_limit", String(LIST_PHOTO_LIMIT));
   params.set("limit", String(HOME_FRESH_LOTS_LIMIT));
   params.set("sort", "date_desc");
 
   const popularParams = new URLSearchParams();
   popularParams.set("is_popular", "true");
-  popularParams.set("photo_limit", "8");
+  popularParams.set("photo_limit", String(LIST_PHOTO_LIMIT));
   popularParams.set("limit", String(HOME_POPULAR_CARS_LIMIT));
   popularParams.set("sort", "date_desc");
 

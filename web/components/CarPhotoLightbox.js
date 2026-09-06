@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { mediaSrc } from "../lib/media";
+import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
 
 /**
  * Полноэкранный просмотр фото (десктоп и мобильный): стрелки, свайп, Escape, клик по фону — закрыть.
  * onClose(lastIndex) — индекс последнего кадра при закрытии.
+ * Кадры отдаём через /media-img w=960, не оригиналы — быстрее на мобиле.
  */
 export default function CarPhotoLightbox({ open, onClose, urls, title, initialIndex = 0 }) {
   const [idx, setIdx] = useState(initialIndex);
@@ -118,7 +119,12 @@ export default function CarPhotoLightbox({ open, onClose, urls, title, initialIn
           onTouchEnd={onTouchEnd}
           onClick={(e) => e.stopPropagation()}
         >
-          <img src={mediaSrc(src)} alt="" className="car-lightbox__img" />
+          <img
+            src={mediaSrc(src, MEDIA_WIDTH.detail)}
+            alt=""
+            className="car-lightbox__img"
+            decoding="async"
+          />
         </div>
         {n > 1 ? (
           <div className="car-lightbox__counter">

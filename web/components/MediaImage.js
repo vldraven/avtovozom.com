@@ -6,11 +6,13 @@ import { ensureMediaImageCached, peekMediaImageCache } from "../lib/mediaImageCa
  * Обычный <img> для /media/* и media-proxy.
  * next/image не используем: оптимизатор на сервере не достучится до localhost:8000 в Docker.
  *
- * При первом показе — сетевой URL + фоновый прогрев blob-кэша;
- * при remount («назад» в каталог) — сразу blob URL из памяти, без повторной загрузки.
+ * Первый показ — сетевой URL (и srcSet), без параллельного fetch.
+ * Blob-кэш прогревается после onLoad (обычно из HTTP-кэша) — «назад» в каталог без мигания.
  */
 export default function MediaImage({
   src,
+  srcSet,
+  sizes,
   alt = "",
   className,
   fill,
@@ -18,7 +20,9 @@ export default function MediaImage({
   height,
   priority,
   loading,
+  fetchPriority,
   style,
+  onLoad,
   ...rest
 }) {
   const initialCached = typeof window !== "undefined" ? peekMediaImageCache(src) : null;
@@ -39,25 +43,50 @@ export default function MediaImage({
     }
     setDisplaySrc(src);
     setFromCache(false);
-    ensureMediaImageCached(src);
     return undefined;
   }, [src]);
 
   if (!src) return null;
 
   const resolvedLoading = priority || fromCache ? "eager" : loading || "lazy";
+  const resolvedFetchPriority =
+    fetchPriority || (priority ? "high" : undefined);
+  // Blob URL не совместим с srcSet — отдаём только src из кэша.
+  const resolvedSrcSet = fromCache ? undefined : srcSet;
+  const resolvedSizes = resolvedSrcSet ? sizes : undefined;
+
+  function handleLoad(e) {
+    if (!fromCache && src) {
+      // После отрисовки — прогрев памяти из HTTP-кэша, без конкуренции с первым paint.
+      const schedule =
+        typeof requestIdleCallback === "function"
+          ? (cb) => requestIdleCallback(cb, { timeout: 2500 })
+          : (cb) => setTimeout(cb, 0);
+      schedule(() => {
+        ensureMediaImageCached(src);
+      });
+    }
+    onLoad?.(e);
+  }
+
+  const common = {
+    alt,
+    className,
+    loading: resolvedLoading,
+    decoding: fromCache ? "sync" : "async",
+    draggable: false,
+    onLoad: handleLoad,
+    ...(resolvedFetchPriority ? { fetchPriority: resolvedFetchPriority } : {}),
+    ...(resolvedSrcSet ? { srcSet: resolvedSrcSet, sizes: resolvedSizes } : {}),
+    ...rest,
+  };
 
   if (fill) {
     return (
       <img
         src={displaySrc || src}
-        alt={alt}
-        className={className}
-        loading={resolvedLoading}
-        decoding={fromCache ? "sync" : "async"}
-        draggable={false}
+        {...common}
         style={{ width: "100%", height: "100%", objectFit: "cover", ...style }}
-        {...rest}
       />
     );
   }
@@ -65,15 +94,10 @@ export default function MediaImage({
   return (
     <img
       src={displaySrc || src}
-      alt={alt}
-      className={className}
       width={width}
       height={height}
-      loading={resolvedLoading}
-      decoding={fromCache ? "sync" : "async"}
-      draggable={false}
+      {...common}
       style={style}
-      {...rest}
     />
   );
 }
