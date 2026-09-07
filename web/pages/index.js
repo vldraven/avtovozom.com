@@ -20,7 +20,7 @@ import RequestConfirmModal from "../components/RequestConfirmModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
 import { carSpecMetaBits, carListingTitle, carTotalRub } from "../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
-import { LIST_PHOTO_LIMIT, MEDIA_WIDTH, mediaSrc } from "../lib/media";
+import { LIST_PHOTO_LIMIT, mediaSrc } from "../lib/media";
 import { peekScrollRestoreTarget, isListingBackNavigation, saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
 import { organizationAndWebSiteJsonLd, jsonLdScriptProps } from "../lib/schema";
