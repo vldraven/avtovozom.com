@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
+import { mediaSrc } from "../lib/media";
 
 function BrandLogoItem({ brand, eager, tile }) {
   return (
@@ -9,8 +9,9 @@ function BrandLogoItem({ brand, eager, tile }) {
       className={tile ? "brand-logo-marquee__tile" : "brand-logo-marquee__item"}
       title={brand.name}
     >
+      {/* Оригинал, не /media-img: логотипы часто PNG с прозрачностью — JPEG-resize ломает их. */}
       <img
-        src={mediaSrc(brand.logo_storage_url, MEDIA_WIDTH.thumb)}
+        src={mediaSrc(brand.logo_storage_url)}
         alt=""
         width={tile ? 48 : 48}
         height={tile ? 48 : 48}

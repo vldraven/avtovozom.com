@@ -186,9 +186,8 @@ def save_brand_logo(brand_id: int, data: bytes) -> str | None:
     fname = f"logo{ext}"
     path = brand_dir / fname
     path.write_bytes(data)
-    url = f"/media/brands/{brand_id}/{fname}"
-    warm_media_variants([url], widths=(160,))
-    return url
+    # Без warm /media-img: логотипы отдаём оригиналом (часто PNG с альфой).
+    return f"/media/brands/{brand_id}/{fname}"
 
 
 _CHAT_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
