@@ -1674,7 +1674,7 @@ export default function Home({ initialData = null }) {
                       title={b.name}
                     >
                       <img
-                        src={mediaSrc(b.logo_storage_url, MEDIA_WIDTH.thumb)}
+                        src={mediaSrc(b.logo_storage_url)}
                         alt=""
                         width={40}
                         height={40}
