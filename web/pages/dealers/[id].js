@@ -7,14 +7,10 @@ import { listingCarHref } from "../../lib/carRoutes";
 import { saveListingReturnPath } from "../../lib/listingNavigation";
 import { MEDIA_WIDTH, mediaSrc } from "../../lib/media";
 import { absoluteUrl } from "../../lib/siteUrl";
+import CarTurnkeyPrice from "../../components/CarTurnkeyPrice";
 import SiteHeader from "../../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-function formatRub(n) {
-  if (n == null || Number.isNaN(Number(n))) return "—";
-  return `${Math.round(Number(n)).toLocaleString("ru-RU")} ₽`;
-}
 
 export default function DealerPublicPage() {
   const router = useRouter();
@@ -118,12 +114,6 @@ export default function DealerPublicPage() {
                 <ul className="dealer-public-grid">
                   {data.cars.map((c) => {
                     const ph = [...(c.photos || [])].sort((a, b) => a.sort_order - b.sort_order)[0];
-                    const totalRub =
-                      c.price_breakdown?.total_rub != null
-                        ? c.price_breakdown.total_rub
-                        : c.estimated_total_rub != null
-                          ? c.estimated_total_rub
-                          : null;
                     return (
                       <li key={c.id} className="dealer-public-card">
                         <Link
@@ -146,9 +136,7 @@ export default function DealerPublicPage() {
                               {c.brand} {c.model} · {c.year}
                             </div>
                             <div className="dealer-public-card__price">
-                              {totalRub != null
-                                ? `${formatRub(totalRub)} (РФ)`
-                                : `${Math.round(c.price_cny)} ¥`}
+                              <CarTurnkeyPrice car={c} variant="dealer" />
                             </div>
                           </div>
                         </Link>

@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import CatalogCardMedia from "../components/CatalogCardMedia";
+import CarTurnkeyPrice from "../components/CarTurnkeyPrice";
 import HeaderFavoritesLink from "../components/HeaderFavoritesLink";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import HeaderProfileLink from "../components/HeaderProfileLink";
@@ -285,8 +286,6 @@ export default function FavoritesPage() {
               <section className="catalog-section">
                 <div className="catalog-grid">
                   {cars.map((car) => {
-                    const totalRub =
-                      car.estimated_total_rub != null ? car.estimated_total_rub : null;
                     const inactive = car.is_active === false;
                     return (
                       <article
@@ -316,21 +315,7 @@ export default function FavoritesPage() {
                               {" "}
                               · {car.year}
                             </p>
-                            <p className="catalog-card__price">
-                              {totalRub != null ? (
-                                <>
-                                  <strong className="catalog-price-rub">
-                                    {Math.round(totalRub).toLocaleString("ru-RU")} ₽
-                                  </strong>
-                                  <span className="text-muted catalog-price-sub">под ключ</span>
-                                </>
-                              ) : (
-                                <>
-                                  {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
-                                  <span className="text-muted catalog-price-cny-note"> CNY</span>
-                                </>
-                              )}
-                            </p>
+                            <CarTurnkeyPrice car={car} variant="catalog" />
                           </div>
                         </Link>
                         <div className="catalog-card__actions catalog-card__actions--favorites">

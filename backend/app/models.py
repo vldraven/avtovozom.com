@@ -228,6 +228,8 @@ class Car(Base):
     # Денормализованный ориентир «под ключ» (₽) + дата курса ЦБ, с которым посчитан.
     estimated_total_rub: Mapped[float | None] = mapped_column(Float, nullable=True)
     estimate_cbr_date: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Ручная акционная цена «под ключ» (₽). Если задана — витрина и фильтры берут её.
+    special_offer_rub: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )

@@ -286,7 +286,8 @@ export default function PublishAvitoPage() {
                 </p>
                 {data.estimated_total_rub != null ? (
                   <p style={{ margin: "0.25rem 0" }}>
-                    Оценка «под ключ»: <strong>{Math.round(data.estimated_total_rub).toLocaleString("ru-RU")} ₽</strong>
+                    Цена «под ключ» для Avito:{" "}
+                    <strong>{Math.round(data.estimated_total_rub).toLocaleString("ru-RU")} ₽</strong>
                   </p>
                 ) : null}
                 <p style={{ margin: "0.5rem 0 0" }}>

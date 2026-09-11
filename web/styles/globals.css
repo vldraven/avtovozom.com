@@ -7850,6 +7850,93 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   font-size: 0.85em;
 }
 
+.car-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.45rem;
+  margin: 0;
+}
+
+.car-price__main {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.car-price__was {
+  text-decoration: line-through;
+  color: var(--color-muted);
+  font-weight: 500;
+  font-size: 0.82em;
+  line-height: 1.2;
+}
+
+.car-price__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+  background: #c2410c;
+  color: #fff !important;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.car-price__suffix {
+  font-weight: 500;
+}
+
+.car-price--detail .car-price__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+}
+
+.car-price--detail .car-price__was {
+  font-size: 1rem;
+}
+
+.car-price--detail .car-price__badge {
+  font-size: 0.75rem;
+  padding: 0.18rem 0.45rem;
+  align-self: center;
+}
+
+.car-price--inline {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.car-price--inline .car-price__was {
+  font-size: 0.9em;
+}
+
+.home-m-card__price.car-price--offer,
+.home-d-card__price.car-price--offer {
+  align-items: baseline;
+}
+
+.home-m-card__price .car-price__badge,
+.home-d-card__price .car-price__badge,
+.catalog-card__price .car-price__badge {
+  color: #fff !important;
+}
+
+.home-m-card__price .car-price__was,
+.home-d-card__price.car-price--offer .car-price__was {
+  display: block;
+  width: 100%;
+}
+
 /* --- Профиль: заявки и списки --- */
 .page-narrow--profile {
   max-width: 720px;

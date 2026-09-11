@@ -8,6 +8,7 @@ import CatalogCardMedia from "../../components/CatalogCardMedia";
 import CatalogFilterSheet from "../../components/CatalogFilterSheet";
 import CatalogFilterSidebar from "../../components/CatalogFilterSidebar";
 import CatalogQuickFilters from "../../components/CatalogQuickFilters";
+import CarTurnkeyPrice from "../../components/CarTurnkeyPrice";
 import HomeCarCard from "../../components/HomeCarCard";
 import SiteHeaderDesktopNav from "../../components/SiteHeaderDesktopNav";
 import CatalogSortDropdown, { CATALOG_SORT_DEFAULT } from "../../components/CatalogSortDropdown";
@@ -1222,12 +1223,6 @@ export default function CatalogTreePage({ initialPayload = null }) {
                     <>
                     <div className="catalog-grid">
                       {cars.map((car, idx) => {
-                        const totalRub =
-                          car.price_breakdown?.total_rub != null
-                            ? car.price_breakdown.total_rub
-                            : car.estimated_total_rub != null
-                              ? car.estimated_total_rub
-                              : null;
                         return (
                         <article
                           key={car.id}
@@ -1264,23 +1259,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                                   ) : null;
                                 })()}
                               </p>
-                              <p className="catalog-card__price">
-                                {totalRub != null ? (
-                                  <>
-                                    <strong className="catalog-price-rub">
-                                      {Math.round(totalRub).toLocaleString("ru-RU")} ₽
-                                    </strong>
-                                    <span className="text-muted catalog-price-sub">
-                                      под ключ
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
-                                    <span className="text-muted catalog-price-cny-note"> CNY</span>
-                                  </>
-                                )}
-                              </p>
+                              <CarTurnkeyPrice car={car} variant="catalog" />
                             </div>
                           </Link>
                           {me?.role !== "dealer" ? (

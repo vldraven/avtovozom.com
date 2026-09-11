@@ -40,7 +40,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import and_, delete, distinct, func, or_, select, text
+from sqlalchemy import and_, case, delete, distinct, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
@@ -501,6 +501,40 @@ def _trim_to_out(trim: CarTrim | None) -> CarTrimOut | None:
     )
 
 
+def _optional_special_offer_rub(raw: str | None) -> float | None:
+    """Пустая строка → сброс акции; иначе положительное число ₽ «под ключ»."""
+    if raw is None:
+        return None
+    s = str(raw).strip().replace(" ", "").replace("\u00a0", "").replace(",", ".")
+    if not s:
+        return None
+    try:
+        value = float(s)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Некорректная цена спецпредложения") from None
+    if value <= 0:
+        return None
+    return value
+
+
+def _effective_turnkey_rub_sql():
+    """COALESCE(special_offer_rub, estimated_total_rub) для фильтров/сортировки."""
+    return func.coalesce(
+        case((Car.special_offer_rub > 0, Car.special_offer_rub), else_=None),
+        Car.estimated_total_rub,
+    )
+
+
+def _display_turnkey_rub(car: Car, estimated: float | None) -> float | None:
+    """Цена «под ключ» для карточки/публикации: акция, иначе расчёт."""
+    special = getattr(car, "special_offer_rub", None)
+    if special is not None and float(special) > 0:
+        return float(special)
+    if estimated is not None:
+        return float(estimated)
+    return None
+
+
 def _attach_list_photos(
     db: Session,
     cars: list[Car],
@@ -621,6 +655,12 @@ def _car_to_out(
         pricing_guide=guide,
         price_breakdown=price_breakdown,
         estimated_total_rub=est,
+        special_offer_rub=(
+            float(car.special_offer_rub)
+            if getattr(car, "special_offer_rub", None) is not None
+            and float(car.special_offer_rub) > 0
+            else None
+        ),
         trim_id=car.trim_id,
         trim=_trim_to_out(getattr(car, "trim", None)) if include_trim else None,
         is_popular=bool(getattr(car, "is_popular", False)),
@@ -979,6 +1019,18 @@ def startup() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_cars_active_estimated_total_rub "
                 "ON cars (estimated_total_rub ASC NULLS LAST, id DESC) "
                 "WHERE is_active IS TRUE AND estimated_total_rub IS NOT NULL"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE cars ADD COLUMN IF NOT EXISTS special_offer_rub DOUBLE PRECISION"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_cars_active_special_offer_rub "
+                "ON cars (special_offer_rub ASC NULLS LAST, id DESC) "
+                "WHERE is_active IS TRUE AND special_offer_rub IS NOT NULL"
             )
         )
         conn.execute(
@@ -1816,7 +1868,7 @@ def _admin_build_listing_compose(car: Car, db: Session):
         slug_maps=slug_maps,
         absolute_url_fn=_absolute_public_asset_url,
         rub_china=rub,
-        estimated_total_rub=est,
+        estimated_total_rub=_display_turnkey_rub(car, est),
     )
 
 
@@ -2658,7 +2710,7 @@ def list_cars(
     if is_popular is True:
         stmt = stmt.where(Car.is_popular.is_(True))
 
-    # Фильтр rub_from/rub_to — по цене «под ключ» (estimated_total_rub), не по CNY.
+    # Фильтр rub_from/rub_to — по цене «под ключ» (акция или estimated_total_rub), не по CNY.
     filter_by_turnkey = (
         (rub_from is not None or rub_to is not None)
         and cny_from is None
@@ -2704,25 +2756,32 @@ def list_cars(
         joinedload(Car.model),
         joinedload(Car.generation),
     )
+    effective_rub = _effective_turnkey_rub_sql()
 
     if filter_by_turnkey and snap is not None:
-        # Денормализованный estimated_total_rub → фильтр/сорт в SQL.
+        # Денормализованный estimated_total_rub / special_offer_rub → фильтр/сорт в SQL.
         ensure_active_estimates_fresh(
             db, snap=snap, settings_row=settings_row, extras=extras_for_est
         )
+        freshness = estimate_freshness_key(snap)
         turnkey_stmt = stmt.where(
-            Car.estimated_total_rub.isnot(None),
-            Car.estimate_cbr_date == estimate_freshness_key(snap),
+            or_(
+                and_(Car.special_offer_rub.isnot(None), Car.special_offer_rub > 0),
+                and_(
+                    Car.estimated_total_rub.isnot(None),
+                    Car.estimate_cbr_date == freshness,
+                ),
+            )
         )
         if rub_from is not None:
-            turnkey_stmt = turnkey_stmt.where(Car.estimated_total_rub >= float(rub_from))
+            turnkey_stmt = turnkey_stmt.where(effective_rub >= float(rub_from))
         if rub_to is not None:
-            turnkey_stmt = turnkey_stmt.where(Car.estimated_total_rub <= float(rub_to))
+            turnkey_stmt = turnkey_stmt.where(effective_rub <= float(rub_to))
         total = db.scalar(select(func.count()).select_from(turnkey_stmt.subquery())) or 0
         if s == "price_asc":
-            order = (Car.estimated_total_rub.asc(), Car.id.desc())
+            order = (effective_rub.asc().nulls_last(), Car.id.desc())
         elif s == "price_desc":
-            order = (Car.estimated_total_rub.desc(), Car.id.desc())
+            order = (effective_rub.desc().nulls_last(), Car.id.desc())
         elif s == "date_asc":
             order = (Car.created_at.asc(), Car.id.asc())
         elif s == "year_desc":
@@ -3096,6 +3155,7 @@ async def _update_car_from_multipart(
     drive_type: str | None,
     location_city: str | None,
     price_cny: float,
+    special_offer_rub: str | None = None,
     registration_date: str | None,
     production_date: str | None,
     body_color_slug: str | None,
@@ -3144,6 +3204,7 @@ async def _update_car_from_multipart(
     car.drive_type = (drive_type or "").strip() or None
     car.location_city = (location_city or "").strip() or None
     car.price_cny = float(price_cny)
+    car.special_offer_rub = _optional_special_offer_rub(special_offer_rub)
     car.registration_date = (registration_date or "").strip() or None
     car.production_date = (production_date or "").strip() or None
     car.body_color_slug = _validated_body_color_slug_form(body_color_slug)
@@ -3699,6 +3760,7 @@ async def staff_create_car(
     drive_type: str | None = Form(None),
     location_city: str | None = Form(None),
     price_cny: float = Form(),
+    special_offer_rub: str | None = Form(None),
     registration_date: str | None = Form(None),
     production_date: str | None = Form(None),
     body_color_slug: str | None = Form(None),
@@ -3755,6 +3817,7 @@ async def staff_create_car(
         location_city=(location_city or "").strip() or None,
         body_color_slug=_validated_body_color_slug_form(body_color_slug),
         price_cny=float(price_cny),
+        special_offer_rub=_optional_special_offer_rub(special_offer_rub),
         registration_date=(registration_date or "").strip() or None,
         production_date=(production_date or "").strip() or None,
         created_by_user_id=current_user.id,
@@ -3856,6 +3919,7 @@ async def staff_update_own_car(
     drive_type: str | None = Form(None),
     location_city: str | None = Form(None),
     price_cny: float = Form(),
+    special_offer_rub: str | None = Form(None),
     registration_date: str | None = Form(None),
     production_date: str | None = Form(None),
     body_color_slug: str | None = Form(None),
@@ -3905,6 +3969,7 @@ async def staff_update_own_car(
         drive_type=drive_type,
         location_city=location_city,
         price_cny=price_cny,
+        special_offer_rub=special_offer_rub,
         registration_date=registration_date,
         production_date=production_date,
         body_color_slug=body_color_slug,
@@ -4406,7 +4471,13 @@ def admin_car_telegram_ai_draft(
             "location_city": car.location_city,
             "price_cny": float(car.price_cny),
             "rub_china_estimate": rub,
-            "estimated_total_rub": est,
+            "estimated_total_rub": _display_turnkey_rub(car, est),
+            "special_offer_rub": (
+                float(car.special_offer_rub)
+                if getattr(car, "special_offer_rub", None) is not None
+                and float(car.special_offer_rub) > 0
+                else None
+            ),
         },
     }
 
@@ -4891,6 +4962,7 @@ async def admin_update_car(
     drive_type: str | None = Form(None),
     location_city: str | None = Form(None),
     price_cny: float = Form(),
+    special_offer_rub: str | None = Form(None),
     registration_date: str | None = Form(None),
     production_date: str | None = Form(None),
     body_color_slug: str | None = Form(None),
@@ -4936,6 +5008,7 @@ async def admin_update_car(
         drive_type=drive_type,
         location_city=location_city,
         price_cny=price_cny,
+        special_offer_rub=special_offer_rub,
         registration_date=registration_date,
         production_date=production_date,
         body_color_slug=body_color_slug,
