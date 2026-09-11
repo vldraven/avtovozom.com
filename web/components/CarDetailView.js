@@ -959,13 +959,7 @@ export default function CarDetailView({
                 <div className="detail-sidebar__hero">
                   <div className="detail-sidebar__hero-main">
                     <div className="detail-sidebar__price-block">
-                      <CarTurnkeyPrice car={car} variant="detail" showSuffix={false} />
-                      {totalRubRf != null ? (
-                        <p className="detail-price__hint detail-price__hint--block">
-                          Под ключ до Москвы, с растаможкой
-                          {offerRub != null ? " · спецпредложение" : ""}
-                        </p>
-                      ) : null}
+                      <CarTurnkeyPrice car={car} variant="detail" />
                     </div>
 
                     <h1 className="detail-title">{car.title}</h1>

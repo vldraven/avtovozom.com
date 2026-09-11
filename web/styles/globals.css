@@ -7893,6 +7893,90 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   font-weight: 500;
 }
 
+.car-price__detail-suffix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.car-price__offer-note {
+  color: inherit;
+}
+
+.car-price-moscow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  vertical-align: baseline;
+}
+
+.car-price-moscow__info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 0;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.car-price-moscow__info:hover,
+.car-price-moscow__info:focus-visible {
+  color: var(--color-ink);
+  outline: none;
+}
+
+.car-price-moscow__info:focus-visible {
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.18);
+}
+
+.home-m-card__price .car-price-moscow__text,
+.home-d-card__price .car-price-moscow__text {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.home-m-card__price .car-price-moscow__info,
+.home-d-card__price .car-price-moscow__info {
+  color: #64748b;
+}
+
+.car-price-moscow__popover {
+  position: fixed;
+  z-index: 80;
+  padding: 0.85rem 0.95rem;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+  color: var(--color-ink);
+}
+
+.car-price-moscow__popover-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.car-price-moscow__popover-body {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #475569;
+  font-weight: 500;
+}
+
 .car-price--detail .car-price__row {
   display: flex;
   flex-wrap: wrap;

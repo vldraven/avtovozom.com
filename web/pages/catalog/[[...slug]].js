@@ -1070,7 +1070,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                         </div>
                       </div>
                       <p className="catalog-list-toolbar__count catalog-list-toolbar__count--desktop">
-                        {pluralizeOffers(total)} · цены указаны под ключ до Москвы, с растаможкой
+                        {pluralizeOffers(total)} · цены — итого в Москве
                       </p>
 
                       <form className="catalog-search" onSubmit={onCatalogSearchSubmit} role="search">

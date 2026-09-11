@@ -494,7 +494,7 @@ export default function CatalogQuickFilters({
           </button>
         </div>
         <p className="catalog-qf__price-hint text-muted">
-          Ориентир по расчётной стоимости под ключ в России.
+          Ориентир по стоимости «итого в Москве».
         </p>
       </PopoverMenu>
     </div>
