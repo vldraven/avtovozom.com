@@ -100,10 +100,14 @@ _PARAM_CARD_SKIP_LABELS = frozenset({"Расположение двигател�
 # Группы Autohome config → русские заголовки
 _GROUP_ZH: dict[str, str] = {
     "被动安全": "Пассивная безопасность",
+    "主动安全": "Активная безопасность",
     "安全": "Безопасность",
     "操控": "Системы помощи",
+    "驾驶操控": "Системы помощи",
     "硬件": "Камеры и парктроники",
+    "驾驶硬件": "Камеры и парктроники",
     "功能": "Функции",
+    "驾驶功能": "Системы помощи",
     "外观/防盗": "Экстерьер и доступ",
     "车外灯光": "Наружное освещение",
     "天窗/玻璃": "Стёкла и люк",
@@ -115,7 +119,7 @@ _GROUP_ZH: dict[str, str] = {
     "座椅配置": "Сиденья",
     "音响/车内灯光": "Аудио и свет в салоне",
     "空调/冰箱": "Климат-контроль",
-    "车内": "Комfort в салоне",
+    "车内": "Комфорт в салоне",
 }
 
 # Точные пары (название, значение) → (подпись, значение на русском)
@@ -754,11 +758,57 @@ def sanitize_config_sections_for_display(
     sections: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Дочистить сохранённые секции попапа: без иероглифов в подписях и значениях."""
-    out: list[dict[str, Any]] = []
+    # Заголовки групп, которые могли остаться китайскими в уже сохранённых спеках.
+    group_title_zh: dict[str, str] = {
+        "被动安全": "Безопасность",
+        "主动安全": "Безопасность",
+        "安全": "Безопасность",
+        "车外灯光": "Обзор",
+        "/玻璃": "Обзор",
+        "天窗/玻璃": "Обзор",
+        "外观/防盗": "Защита от угона",
+        "互联/智能化": "Мультимедиа",
+        "音响/车内灯光": "Мультимедиа",
+        "车内": "Мультимедиа",
+        "车内充电": "Зарядка в салоне",
+        "操控": "Комфорт",
+        "驾驶操控": "Системы помощи",
+        "功能": "Системы помощи",
+        "驾驶功能": "Системы помощи",
+        "硬件": "Системы помощи",
+        "驾驶硬件": "Системы помощи",
+        "外后视镜": "Комфорт",
+        "方向盘/内后视镜": "Салон",
+        "座椅配置": "Салон",
+        "空调/冰箱": "Комфорт",
+    }
+    order = [
+        "Основное",
+        "Безопасность",
+        "Обзор",
+        "Защита от угона",
+        "Мультимедиа",
+        "Системы помощи",
+        "Комфорт",
+        "Салон",
+        "Зарядка в салоне",
+    ]
+    order_idx = {g: i for i, g in enumerate(order)}
+    merged: dict[str, list[dict[str, str]]] = {}
+    seen: set[tuple[str, str, str]] = set()
+
     for sec in sections:
         if not isinstance(sec, dict):
             continue
-        items: list[dict[str, str]] = []
+        raw_group = str(sec.get("group") or "").strip()
+        group = group_title_zh.get(raw_group) or (
+            normalize_spec_heading(_GROUP_ZH[raw_group])
+            if raw_group in _GROUP_ZH
+            else raw_group
+        )
+        if _HAS_CJK.search(group):
+            # Не показываем заголовок с иероглифами: прячем секцию, если перевод неизвестен.
+            continue
         for it in sec.get("items") or []:
             if not isinstance(it, dict):
                 continue
@@ -776,13 +826,18 @@ def sanitize_config_sections_for_display(
             if _HAS_CJK.search(value):
                 value = re.sub(r"[\u4e00-\u9fff]+", "", value)
                 value = re.sub(r"\s+", " ", value).strip(" ,/-")
-            if value and not _HAS_CJK.search(name):
-                items.append({"name": name, "value": value})
-        if items:
-            payload = {k: v for k, v in sec.items() if k != "items"}
-            payload["items"] = items
-            payload["group"] = str(sec.get("group") or "")
-            out.append(payload)
+            if not value or _HAS_CJK.search(name):
+                continue
+            key = (group.casefold(), name.casefold(), value)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.setdefault(group, []).append({"name": name, "value": value})
+
+    out: list[dict[str, Any]] = [
+        {"group": group, "items": items} for group, items in merged.items() if items
+    ]
+    out.sort(key=lambda s: order_idx.get(s["group"], 100))
     return out
 
 
