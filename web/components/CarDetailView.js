@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import Breadcrumbs from "./Breadcrumbs";
 import CarPhotoLightbox from "./CarPhotoLightbox";
+import CarTurnkeyPrice from "./CarTurnkeyPrice";
 import HomeCarCard from "./HomeCarCard";
 import ListingFavoriteButton from "./ListingFavoriteButton";
 import ListingShareActions from "./ListingShareActions";
@@ -12,6 +13,11 @@ import RequestConfirmModal from "./RequestConfirmModal";
 import SiteHeaderDesktopNav from "./SiteHeaderDesktopNav";
 import TrimConfigModal from "./TrimConfigModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
+import {
+  carBaseTotalRub,
+  carSpecialOfferRub,
+  carTotalRub,
+} from "../lib/carCardMeta";
 import { publicCarHref } from "../lib/carRoutes";
 import {
   consumeListingReturnPath,
@@ -721,12 +727,9 @@ export default function CarDetailView({
     ? mediaSrcSet(hero.storage_url, DETAIL_SRCSET_WIDTHS)
     : undefined;
 
-  const totalRubRf =
-    car.price_breakdown?.total_rub != null
-      ? car.price_breakdown.total_rub
-      : car.estimated_total_rub != null
-        ? car.estimated_total_rub
-        : null;
+  const baseTotalRub = carBaseTotalRub(car);
+  const offerRub = carSpecialOfferRub(car);
+  const totalRubRf = carTotalRub(car);
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -956,18 +959,11 @@ export default function CarDetailView({
                 <div className="detail-sidebar__hero">
                   <div className="detail-sidebar__hero-main">
                     <div className="detail-sidebar__price-block">
-                      {totalRubRf != null ? (
-                        <p className="detail-price detail-price--rf">
-                          {formatRubInt(totalRubRf)} ₽
-                        </p>
-                      ) : (
-                        <p className="detail-price">
-                          {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
-                        </p>
-                      )}
+                      <CarTurnkeyPrice car={car} variant="detail" showSuffix={false} />
                       {totalRubRf != null ? (
                         <p className="detail-price__hint detail-price__hint--block">
                           Под ключ до Москвы, с растаможкой
+                          {offerRub != null ? " · спецпредложение" : ""}
                         </p>
                       ) : null}
                     </div>
@@ -1093,14 +1089,28 @@ export default function CarDetailView({
                           </div>
                           <div className="price-breakdown-card__total">
                             <span>Итого</span>
-                            <strong>{formatRubInt(car.price_breakdown.total_rub)} ₽</strong>
+                            {offerRub != null && baseTotalRub != null ? (
+                              <strong className="car-price car-price--inline">
+                                <span className="car-price__was">{formatRubInt(baseTotalRub)} ₽</span>{" "}
+                                <span>{formatRubInt(offerRub)} ₽</span>
+                              </strong>
+                            ) : (
+                              <strong>{formatRubInt(car.price_breakdown.total_rub)} ₽</strong>
+                            )}
                           </div>
                         </div>
                       </>
                     ) : (
                       <div className="detail-breakdown__summary">
                         <span>Итого в Москве</span>
-                        <strong>{formatRubInt(car.price_breakdown.total_rub)} ₽</strong>
+                        {offerRub != null && baseTotalRub != null ? (
+                          <strong className="car-price car-price--inline">
+                            <span className="car-price__was">{formatRubInt(baseTotalRub)} ₽</span>{" "}
+                            <span>{formatRubInt(offerRub)} ₽</span>
+                          </strong>
+                        ) : (
+                          <strong>{formatRubInt(car.price_breakdown.total_rub)} ₽</strong>
+                        )}
                       </div>
                     )}
                   </div>

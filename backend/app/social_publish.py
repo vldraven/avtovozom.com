@@ -83,14 +83,20 @@ def _absolute_public_asset_url(storage_url: str) -> str:
 
 def build_social_compose(db: Session, car: Car) -> ListingMarketingCompose:
     slug_maps = build_catalog_slug_maps(db)
+    special = getattr(car, "special_offer_rub", None)
     est = getattr(car, "estimated_total_rub", None)
+    display_rub = None
+    if special is not None and float(special) > 0:
+        display_rub = float(special)
+    elif est is not None:
+        display_rub = float(est)
     return build_listing_marketing_compose(
         car,
         public_web_origin=_public_web_origin(),
         slug_maps=slug_maps,
         absolute_url_fn=_absolute_public_asset_url,
         rub_china=None,
-        estimated_total_rub=float(est) if est is not None else None,
+        estimated_total_rub=display_rub,
     )
 
 

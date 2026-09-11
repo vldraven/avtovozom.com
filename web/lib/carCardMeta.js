@@ -34,11 +34,41 @@ export function resolveHorsepower(car) {
   return Number.isFinite(hp) && hp > 0 ? hp : null;
 }
 
-export function carTotalRub(car) {
+/** Расчётная цена «под ключ» без акции. */
+export function carBaseTotalRub(car) {
   if (!car) return null;
   if (car.price_breakdown?.total_rub != null) return car.price_breakdown.total_rub;
   if (car.estimated_total_rub != null) return car.estimated_total_rub;
   return null;
+}
+
+/** Ручная цена спецпредложения (₽ под ключ), если задана. */
+export function carSpecialOfferRub(car) {
+  if (!car) return null;
+  const n = Number(car.special_offer_rub);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+/** Эффективная цена «под ключ»: акция или расчёт (для фильтров/шаринга). */
+export function carTotalRub(car) {
+  return carSpecialOfferRub(car) ?? carBaseTotalRub(car);
+}
+
+/** Скидка в % относительно расчёта; null если нет осмысленной скидки. */
+export function carOfferDiscountPercent(car) {
+  const base = carBaseTotalRub(car);
+  const offer = carSpecialOfferRub(car);
+  if (base == null || offer == null) return null;
+  const b = Number(base);
+  const o = Number(offer);
+  if (!Number.isFinite(b) || !Number.isFinite(o) || b <= 0 || o >= b) return null;
+  return Math.max(1, Math.round((1 - o / b) * 100));
+}
+
+export function formatRubInt(n) {
+  if (n == null || Number.isNaN(Number(n))) return null;
+  return Math.round(Number(n)).toLocaleString("ru-RU");
 }
 
 export function carListingTitle(car) {

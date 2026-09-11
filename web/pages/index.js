@@ -6,6 +6,7 @@ import { useRouter } from "next/router";
 import CatalogCardMedia from "../components/CatalogCardMedia";
 import CatalogQuickFilters from "../components/CatalogQuickFilters";
 import BrandLogoMarquee from "../components/BrandLogoMarquee";
+import CarTurnkeyPrice from "../components/CarTurnkeyPrice";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HomeCarCard from "../components/HomeCarCard";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
@@ -18,7 +19,7 @@ import TelegramChannelHeaderLink from "../components/TelegramChannelHeaderLink";
 import TelegramChannelSticky from "../components/TelegramChannelSticky";
 import RequestConfirmModal from "../components/RequestConfirmModal";
 import { fetchAuthMe, getStoredToken, resolveAuthSessionFailure } from "../lib/auth";
-import { carSpecMetaBits, carListingTitle, carTotalRub } from "../lib/carCardMeta";
+import { carSpecMetaBits, carListingTitle } from "../lib/carCardMeta";
 import { listingCarHref, publicCarHref } from "../lib/carRoutes";
 import { LIST_PHOTO_LIMIT, MEDIA_WIDTH, mediaSrc } from "../lib/media";
 import { peekScrollRestoreTarget, isListingBackNavigation, saveListingReturnPath, markScrollRestoreTarget } from "../lib/listingNavigation";
@@ -1902,7 +1903,6 @@ export default function Home({ initialData = null }) {
               ) : (
                 <div className="home-d-carousel" role="list">
                   {desktopArrivals.map((car, idx) => {
-                    const totalRub = carTotalRub(car);
                     const title = carListingTitle(car);
                     const metaBits = carSpecMetaBits(car);
                     return (
@@ -1925,16 +1925,7 @@ export default function Home({ initialData = null }) {
                             imagePriority={idx < 4}
                           />
                           <div className="catalog-card__content home-d-card__body">
-                            <p className="home-d-card__price">
-                              {totalRub != null ? (
-                                <>
-                                  <strong>{Math.round(totalRub).toLocaleString("ru-RU")} ₽</strong>
-                                  <span>под ключ</span>
-                                </>
-                              ) : (
-                                <strong>{Math.round(car.price_cny).toLocaleString("ru-RU")} ¥</strong>
-                              )}
-                            </p>
+                            <CarTurnkeyPrice car={car} variant="home" className="home-d-card__price" />
                             <p className="home-d-card__title">{title}</p>
                             {metaBits.length ? (
                               <p className="home-d-card__meta">{metaBits.join(" · ")}</p>
@@ -2304,12 +2295,6 @@ export default function Home({ initialData = null }) {
         ) : (
         <div className="catalog-grid">
           {cars.map((car) => {
-            const totalRub =
-              car.price_breakdown?.total_rub != null
-                ? car.price_breakdown.total_rub
-                : car.estimated_total_rub != null
-                  ? car.estimated_total_rub
-                  : null;
             return (
             <article key={car.id} className="catalog-card" data-home-car-id={car.id}>
               <Link
@@ -2320,20 +2305,7 @@ export default function Home({ initialData = null }) {
                 <CatalogCardMedia photos={car.photos} carId={car.id} car={car} />
                 <div className="catalog-card__content">
                   <h3 className="catalog-card__title">{car.title}</h3>
-                  <p className="catalog-card__price">
-                    {totalRub != null ? (
-                      <>
-                        <strong className="catalog-price-rub">
-                          {Math.round(totalRub).toLocaleString("ru-RU")} ₽
-                        </strong>
-                        <span className="text-muted catalog-price-sub">под ключ</span>
-                      </>
-                    ) : (
-                      <>
-                        {Math.round(car.price_cny).toLocaleString("ru-RU")} ¥
-                      </>
-                    )}
-                  </p>
+                  <CarTurnkeyPrice car={car} variant="catalog" />
                 </div>
               </Link>
               <div className="catalog-card__actions">

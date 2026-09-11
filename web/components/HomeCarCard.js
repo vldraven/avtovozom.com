@@ -1,7 +1,8 @@
 import Link from "next/link";
 
 import CatalogCardMedia from "./CatalogCardMedia";
-import { carListingTitle, carSpecMetaBits, carTotalRub } from "../lib/carCardMeta";
+import CarTurnkeyPrice from "./CarTurnkeyPrice";
+import { carListingTitle, carSpecMetaBits } from "../lib/carCardMeta";
 import { listingCarHref } from "../lib/carRoutes";
 
 /**
@@ -20,7 +21,6 @@ export default function HomeCarCard({
 }) {
   if (!car) return null;
 
-  const totalRub = carTotalRub(car);
   const title = carListingTitle(car);
   const metaBits = carSpecMetaBits(car);
   const isDesktop = variant === "desktop";
@@ -43,16 +43,11 @@ export default function HomeCarCard({
           imagePriority={imagePriority}
         />
         <div className={isDesktop ? "catalog-card__content home-d-card__body" : "catalog-card__content home-m-card__body"}>
-          <p className={isDesktop ? "home-d-card__price" : "home-m-card__price"}>
-            {totalRub != null ? (
-              <>
-                <strong>{Math.round(totalRub).toLocaleString("ru-RU")} ₽</strong>
-                <span>под ключ</span>
-              </>
-            ) : (
-              <strong>{Math.round(car.price_cny).toLocaleString("ru-RU")} ¥</strong>
-            )}
-          </p>
+          <CarTurnkeyPrice
+            car={car}
+            variant="home"
+            className={isDesktop ? "home-d-card__price" : "home-m-card__price"}
+          />
           <p className={isDesktop ? "home-d-card__title" : "home-m-card__title"}>{title}</p>
           {metaBits.length ? (
             <p className={isDesktop ? "home-d-card__meta" : "home-m-card__meta"}>{metaBits.join(" · ")}</p>

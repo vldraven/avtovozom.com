@@ -34,6 +34,7 @@ export default function StaffNewListingPage() {
   const [driveType, setDriveType] = useState("");
   const [city, setCity] = useState("");
   const [priceCny, setPriceCny] = useState("");
+  const [specialOfferRub, setSpecialOfferRub] = useState("");
   const [registrationDate, setRegistrationDate] = useState("");
   const [productionDate, setProductionDate] = useState("");
   const [bodyColorSlug, setBodyColorSlug] = useState("");
@@ -244,6 +245,7 @@ export default function StaffNewListingPage() {
     fd.append("drive_type", driveType);
     fd.append("location_city", city);
     fd.append("price_cny", priceCny);
+    fd.append("special_offer_rub", specialOfferRub.trim());
     fd.append("registration_date", registrationDate);
     fd.append("production_date", productionDate);
     fd.append("body_color_slug", bodyColorSlug);
@@ -551,6 +553,21 @@ export default function StaffNewListingPage() {
                   value={priceCny}
                   onChange={(e) => setPriceCny(e.target.value)}
                 />
+              </label>
+              <label className="muted" style={{ display: "grid", gap: 4 }}>
+                Цена спецпредложение, ₽ под ключ
+                <input
+                  className="input"
+                  type="number"
+                  step="1"
+                  min="0"
+                  placeholder="пусто = без акции"
+                  value={specialOfferRub}
+                  onChange={(e) => setSpecialOfferRub(e.target.value)}
+                />
+                <span className="muted" style={{ fontSize: "0.85em" }}>
+                  Если заполнить — на сайте зачеркнётся расчётная «под ключ» и покажется эта цена.
+                </span>
               </label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <label className="muted" style={{ display: "grid", gap: 4 }}>

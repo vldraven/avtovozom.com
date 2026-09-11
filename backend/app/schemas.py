@@ -143,6 +143,8 @@ class CarOut(BaseModel):
     """Ориентировочная детализация итоговой цены в РФ."""
     estimated_total_rub: float | None = None
     """Ориентировочный итог в ₽ (как в разборе по строкам) без детализации; для листингов, когда price_breakdown не считаем."""
+    special_offer_rub: float | None = None
+    """Ручная акционная цена «под ключ» в ₽; если задана — показывается вместо estimated_total_rub."""
     trim_id: int | None = None
     """Ссылка на справочник комплектаций; для формы редактирования."""
     trim: CarTrimOut | None = None
