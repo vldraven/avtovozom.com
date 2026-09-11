@@ -7900,10 +7900,6 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   gap: 0.25rem;
 }
 
-.car-price__offer-note {
-  color: inherit;
-}
-
 .car-price-moscow {
   display: inline-flex;
   align-items: center;

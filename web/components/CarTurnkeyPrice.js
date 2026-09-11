@@ -96,7 +96,6 @@ export default function CarTurnkeyPrice({
         {showSuffix ? (
           <p className="detail-price__hint detail-price__hint--block car-price__detail-suffix">
             <CarPriceMoscowLabel />
-            {hasOffer ? <span className="car-price__offer-note"> · спецпредложение</span> : null}
           </p>
         ) : null}
       </div>
