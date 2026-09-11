@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 
 export const PRICE_MOSCOW_HINT_TITLE = "Что входит в стоимость";
 export const PRICE_MOSCOW_HINT_BODY =
-  "Включает все расходы: цена автомобиля в Китае, расходы по Китаю, международная логистика, таможенные платежи и доставка до Москвы.";
+  "Включает все расходы: цену автомобиля в Китае, расходы по Китаю, международную логистику, таможенные платежи и доставку до Москвы.";
+export const PRICE_MOSCOW_HINT_BODY_EXTRA =
+  "Расчет стоимости доставки в другие города РФ по запросу.";
 
 function stopCardNav(e) {
   e.preventDefault();
@@ -17,7 +19,7 @@ function popoverCoordsFor(el) {
   const width = Math.min(300, window.innerWidth - 24);
   let left = r.left + r.width / 2 - width / 2;
   left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
-  const estimatedH = 150;
+  const estimatedH = 190;
   let top = r.bottom + 8;
   if (top + estimatedH > window.innerHeight - 12) {
     top = Math.max(12, r.top - estimatedH - 8);
@@ -135,6 +137,9 @@ export default function CarPriceMoscowLabel({ className = "", textClassName = ""
                 {PRICE_MOSCOW_HINT_TITLE}
               </p>
               <p className="car-price-moscow__popover-body">{PRICE_MOSCOW_HINT_BODY}</p>
+              <p className="car-price-moscow__popover-body car-price-moscow__popover-body--extra">
+                {PRICE_MOSCOW_HINT_BODY_EXTRA}
+              </p>
             </div>,
             document.body
           )

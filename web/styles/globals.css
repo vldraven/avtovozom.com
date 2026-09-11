@@ -7973,6 +7973,10 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   font-weight: 500;
 }
 
+.car-price-moscow__popover-body--extra {
+  margin-top: 0.45rem;
+}
+
 .car-price--detail .car-price__row {
   display: flex;
   flex-wrap: wrap;
