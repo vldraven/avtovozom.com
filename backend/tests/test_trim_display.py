@@ -120,6 +120,46 @@ class TrimDisplayTests(unittest.TestCase):
         self.assertEqual(flat["Двигатель"], "расширенный диапазон 95 л.с.")
         self.assertEqual(flat["Кузов"], "5 дв., 5 мест, лифтбек")
 
+    def test_sanitize_chinese_section_titles(self) -> None:
+        """Прод: китайские заголовки групп в полной комплектации переводятся на выдаче."""
+        stored = [
+            {
+                "group": "主动安全",
+                "items": [{"name": "Антиблокировочная система (ABS)", "value": "●"}],
+            },
+            {
+                "group": "驾驶操控",
+                "items": [{"name": "Переключатель режима движения", "value": "стандартный"}],
+            },
+            {
+                "group": "驾驶硬件",
+                "items": [{"name": "Ультразвуковые датчики", "value": "12"}],
+            },
+            {
+                "group": "驾驶功能",
+                "items": [{"name": "Круиз-контроль", "value": "Адаптивный"}],
+            },
+            {
+                "group": "车内充电",
+                "items": [{"name": "USB Type-C", "value": "2"}],
+            },
+            {
+                "group": "Безопасность",
+                "items": [{"name": "Подушки безопасности", "value": "●"}],
+            },
+        ]
+        out = sanitize_config_sections_for_display(stored)
+        groups = [sec["group"] for sec in out]
+        self.assertEqual(
+            groups,
+            ["Безопасность", "Системы помощи", "Зарядка в салоне"],
+        )
+        for group in groups:
+            self.assertNotRegex(group, r"[\u4e00-\u9fff]")
+        safety_names = {it["name"] for sec in out if sec["group"] == "Безопасность" for it in sec["items"]}
+        self.assertIn("Антиблокировочная система (ABS)", safety_names)
+        self.assertIn("Подушки безопасности", safety_names)
+
     def test_sanitize_stored_overview_and_airbags(self) -> None:
         """Прод: сохранённые секции с иероглифами дочищаются на выдаче."""
         stored = [
