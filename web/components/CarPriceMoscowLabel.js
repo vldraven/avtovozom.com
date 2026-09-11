@@ -10,6 +10,21 @@ function stopCardNav(e) {
   e.stopPropagation();
 }
 
+function popoverCoordsFor(el) {
+  if (!el || typeof window === "undefined") return null;
+  const r = el.getBoundingClientRect();
+  if (r.width < 1 || r.height < 1) return null;
+  const width = Math.min(300, window.innerWidth - 24);
+  let left = r.left + r.width / 2 - width / 2;
+  left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
+  const estimatedH = 150;
+  let top = r.bottom + 8;
+  if (top + estimatedH > window.innerHeight - 12) {
+    top = Math.max(12, r.top - estimatedH - 8);
+  }
+  return { top, left, width };
+}
+
 /**
  * Подпись «итого в Москве» + ⓘ с пояснением.
  * Безопасно внутри <Link>: клик не уводит на карточку.
@@ -26,18 +41,8 @@ export default function CarPriceMoscowLabel({ className = "", textClassName = ""
     if (!open) return undefined;
 
     const place = () => {
-      const el = btnRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const width = Math.min(300, window.innerWidth - 24);
-      let left = r.left + r.width / 2 - width / 2;
-      left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
-      let top = r.bottom + 8;
-      const estimatedH = 140;
-      if (top + estimatedH > window.innerHeight - 12) {
-        top = Math.max(12, r.top - estimatedH - 8);
-      }
-      setCoords({ top, left, width });
+      const next = popoverCoordsFor(btnRef.current);
+      if (next) setCoords(next);
     };
 
     place();
@@ -46,9 +51,13 @@ export default function CarPriceMoscowLabel({ className = "", textClassName = ""
       const t = e.target;
       if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
       setOpen(false);
+      setCoords(null);
     };
     const onKey = (e) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        setCoords(null);
+      }
     };
     const onReposition = () => place();
 
@@ -66,7 +75,16 @@ export default function CarPriceMoscowLabel({ className = "", textClassName = ""
 
   const toggle = (e) => {
     stopCardNav(e);
-    setOpen((v) => !v);
+    const nextCoords = popoverCoordsFor(btnRef.current);
+    if (!nextCoords) return;
+    setOpen((wasOpen) => {
+      if (wasOpen) {
+        setCoords(null);
+        return false;
+      }
+      setCoords(nextCoords);
+      return true;
+    });
   };
 
   return (
