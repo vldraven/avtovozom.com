@@ -105,7 +105,7 @@ export default function CatalogFilterFields({
       ) : null}
 
       <div className="catalog-filter-sheet__field">
-        <p className="catalog-filter-sheet__label">Цена под ключ, ₽</p>
+        <p className="catalog-filter-sheet__label">Итого в Москве, ₽</p>
         <div className="catalog-filter-sheet__range">
           <input
             className="input catalog-filter-sheet__price-input"

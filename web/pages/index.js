@@ -1805,7 +1805,7 @@ export default function Home({ initialData = null }) {
                 <div className="home-d-filters__field">
                   <SiteSelectDropdown
                     className="site-dropdown--block"
-                    label="Цена под ключ"
+                    label="Итого в Москве"
                     placeholder="Любая"
                     value={heroRubTo}
                     onChange={(v) => setHeroRubTo(v || "")}

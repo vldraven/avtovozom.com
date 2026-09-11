@@ -1,3 +1,4 @@
+import CarPriceMoscowLabel from "./CarPriceMoscowLabel";
 import {
   carBaseTotalRub,
   carOfferDiscountPercent,
@@ -6,7 +7,7 @@ import {
 } from "../lib/carCardMeta";
 
 /**
- * Цена «под ключ»: при спецпредложении — зачёркнутая база + акция + бейдж.
+ * Цена «итого в Москве»: при спецпредложении — зачёркнутая база + акция + бейдж.
  * variant: "catalog" | "home" | "detail" | "dealer"
  */
 export default function CarTurnkeyPrice({
@@ -24,6 +25,14 @@ export default function CarTurnkeyPrice({
   const hasOffer = offer != null;
   const display = hasOffer ? offer : base;
   const showStrike = hasOffer && base != null && Math.round(Number(base)) !== Math.round(Number(offer));
+
+  const suffix =
+    showSuffix && display != null ? (
+      <CarPriceMoscowLabel
+        className="car-price__suffix"
+        textClassName={variant === "catalog" ? "text-muted catalog-price-sub" : undefined}
+      />
+    ) : null;
 
   if (display == null) {
     if (!cnyFallback || car.price_cny == null) return null;
@@ -71,7 +80,7 @@ export default function CarTurnkeyPrice({
       <p className={rootCls}>
         {was}
         {nowWithBadge}
-        {showSuffix ? <span className="car-price__suffix">под ключ</span> : null}
+        {suffix}
       </p>
     );
   }
@@ -84,6 +93,11 @@ export default function CarTurnkeyPrice({
           <p className="detail-price detail-price--rf car-price__now">{rubLabel}</p>
           {badge}
         </div>
+        {showSuffix ? (
+          <p className="detail-price__hint detail-price__hint--block car-price__detail-suffix">
+            <CarPriceMoscowLabel />
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -93,7 +107,7 @@ export default function CarTurnkeyPrice({
       <span className={rootCls}>
         {was}
         {nowWithBadge}
-        {showSuffix ? <span className="car-price__suffix"> (РФ)</span> : null}
+        {suffix}
       </span>
     );
   }
@@ -105,7 +119,7 @@ export default function CarTurnkeyPrice({
         <strong className="catalog-price-rub car-price__now">{rubLabel}</strong>
         {badge}
       </span>
-      {showSuffix ? <span className="text-muted catalog-price-sub car-price__suffix">под ключ</span> : null}
+      {suffix}
     </p>
   );
 }
