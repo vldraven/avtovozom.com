@@ -36,7 +36,26 @@ def _database_url() -> str:
 
 DATABASE_URL = _database_url()
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+# Под нагрузкой (SSR + /media-img + polling) дефолтный pool_size=5 быстро упирается
+# в QueuePool timeout — сайт «висит» на /cars и главной. Запас + recycle зависших коннектов.
+def _pool_int(key: str, default: int) -> int:
+    raw = _env_part(key, "")
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=_pool_int("DB_POOL_SIZE", 15),
+    max_overflow=_pool_int("DB_MAX_OVERFLOW", 30),
+    pool_timeout=_pool_int("DB_POOL_TIMEOUT", 30),
+    pool_recycle=_pool_int("DB_POOL_RECYCLE", 1800),
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 

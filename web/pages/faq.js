@@ -11,7 +11,7 @@ import {
   normalizeFaqSection,
 } from "../lib/faqSections";
 import { jsonLdScriptProps } from "../lib/schema";
-import { getServerApiBase } from "../lib/serverApiUrl";
+import { getServerApiBase, serverFetch } from "../lib/serverApiUrl";
 import { absoluteUrl } from "../lib/siteUrl";
 
 /**
@@ -21,7 +21,7 @@ import { absoluteUrl } from "../lib/siteUrl";
 export async function getServerSideProps() {
   const api = getServerApiBase();
   try {
-    const res = await fetch(`${api}/faq`, {
+    const res = await serverFetch(`${api}/faq`, {
       headers: { Accept: "application/json" },
     });
     if (res.ok) {

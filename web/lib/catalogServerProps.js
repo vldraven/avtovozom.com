@@ -8,7 +8,7 @@ import {
   segmentsFromSlugParam,
 } from "./catalogResolve";
 import { catalogFilterKeyFromQuery, parseFiltersFromQuery } from "./catalogFilters";
-import { getServerApiBase } from "./serverApiUrl";
+import { getServerApiBase, serverFetch } from "./serverApiUrl";
 import { trimCatalogTreeForSsr } from "./catalogTreeSsr";
 
 const VALID_SORTS = new Set([
@@ -31,7 +31,7 @@ export async function fetchCatalogPageProps({ params, query }) {
     const api = getServerApiBase();
     let initialCar = null;
     try {
-      const carRes = await fetch(`${api}/cars/${carId}`, {
+      const carRes = await serverFetch(`${api}/cars/${carId}`, {
         headers: { Accept: "application/json" },
       });
       if (carRes.ok) {
@@ -66,7 +66,7 @@ export async function fetchCatalogPageProps({ params, query }) {
   const api = getServerApiBase();
   let tree = [];
   try {
-    const treeRes = await fetch(`${api}/catalog/tree`, {
+    const treeRes = await serverFetch(`${api}/catalog/tree`, {
       headers: { Accept: "application/json" },
     });
     if (treeRes.ok) tree = await treeRes.json();
@@ -102,7 +102,7 @@ export async function fetchCatalogPageProps({ params, query }) {
   const carsQuery = buildCatalogCarsQuery(resolved, listSort, ssrLimit, filterQuery, textQuery);
   if (carsQuery) {
     try {
-      const carsRes = await fetch(`${api}/cars?${carsQuery.toString()}`, {
+      const carsRes = await serverFetch(`${api}/cars?${carsQuery.toString()}`, {
         headers: { Accept: "application/json" },
       });
       if (carsRes.ok) {
