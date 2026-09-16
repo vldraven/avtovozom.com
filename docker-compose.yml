@@ -62,12 +62,23 @@ services:
       context: ./backend
     container_name: avtovozom_parser
     command: python -m app.parser_worker
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg2://avtovozom:avtovozom@postgres:5432/avtovozom
       PARSER_POLL_SECONDS: "10"
       # IndexNow: воркер пингует Яндекс/Bing при добавлении/восстановлении объявления парсером
       PUBLIC_WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:3000}
       INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID:-}
+      YANDEX_WEBMASTER_TOKEN: ${YANDEX_WEBMASTER_TOKEN:-}
+      YANDEX_WEBMASTER_HOST_ID: ${YANDEX_WEBMASTER_HOST_ID:-}
+      YANDEX_WEBMASTER_USER_ID: ${YANDEX_WEBMASTER_USER_ID:-}
+      SEO_JOBS_ENABLED: ${SEO_JOBS_ENABLED:-1}
+      SEO_JOBS_HOUR_MSK: ${SEO_JOBS_HOUR_MSK:-7}
+      SEO_RECRAWL_MAX: ${SEO_RECRAWL_MAX:-15}
       CHE168_MAX_LINKS_PER_MODEL: "40"
       CHE168_NEW_PER_RUN: "0"
       MEDIA_ROOT: /app/media

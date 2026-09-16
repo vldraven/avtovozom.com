@@ -97,6 +97,15 @@ def notify_platform_chat_message(
     _send_admin_message("\n".join(lines))
 
 
+def notify_seo_report(text: str) -> bool:
+    """Еженедельный SEO-отчёт в тот же админский чат, что и заявки. False — нет токена/чата."""
+    if not _bot_token() or not _admin_chat_id():
+        logger.info("SEO report: TELEGRAM_BOT_TOKEN/TELEGRAM_ADMIN_CHAT_ID не заданы")
+        return False
+    _send_admin_message(text, disable_preview=True)
+    return True
+
+
 def notify_guest_chat_started(
     *,
     chat_id: int,
