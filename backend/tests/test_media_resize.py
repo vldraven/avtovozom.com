@@ -16,6 +16,7 @@ from app.media_resize import (
     cache_path_for,
     resize_local_image,
     resolve_local_media_path,
+    warm_cache_file,
     warm_media_variants,
 )
 
@@ -80,6 +81,8 @@ class MediaResizeTests(unittest.TestCase):
         warm_media_variants(["/media/cars/3/0.jpg"], widths=(160, 640))
         self.assertTrue(cache_path_for(src, 160).is_file())
         self.assertTrue(cache_path_for(src, 640).is_file())
+        self.assertEqual(warm_cache_file(src, 640), cache_path_for(src, 640))
+        self.assertIsNone(warm_cache_file(src, 320))
 
 
 if __name__ == "__main__":

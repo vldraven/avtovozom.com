@@ -33,7 +33,7 @@ import {
   setCatalogMetaCache,
 } from "../lib/catalogMetaCache";
 import { absoluteUrl } from "../lib/siteUrl";
-import { getServerApiBase } from "../lib/serverApiUrl";
+import { getServerApiBase, serverFetch } from "../lib/serverApiUrl";
 import { trimCatalogTreeForSsr } from "../lib/catalogTreeSsr";
 import {
   appendFiltersToSearchParams,
@@ -2412,10 +2412,10 @@ export async function getServerSideProps({ query }) {
   let tree = [];
   try {
     const [bRes, cRes, pRes, tRes] = await Promise.all([
-      fetch(`${api}/catalog/brands`, { headers: { Accept: "application/json" } }),
-      fetch(`${api}/cars?${params.toString()}`, { headers: { Accept: "application/json" } }),
-      fetch(`${api}/cars?${popularParams.toString()}`, { headers: { Accept: "application/json" } }),
-      fetch(`${api}/catalog/tree`, { headers: { Accept: "application/json" } }),
+      serverFetch(`${api}/catalog/brands`, { headers: { Accept: "application/json" } }),
+      serverFetch(`${api}/cars?${params.toString()}`, { headers: { Accept: "application/json" } }),
+      serverFetch(`${api}/cars?${popularParams.toString()}`, { headers: { Accept: "application/json" } }),
+      serverFetch(`${api}/catalog/tree`, { headers: { Accept: "application/json" } }),
     ]);
     if (bRes.ok) brands = await bRes.json();
     if (cRes.ok) {

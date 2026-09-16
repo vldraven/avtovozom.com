@@ -56,6 +56,19 @@ def cache_path_for(src: Path, width: int) -> Path:
     return root / _CACHE_DIRNAME / f"w{int(width)}" / rel.with_suffix(".jpg")
 
 
+def warm_cache_file(src: Path, width: int) -> Path | None:
+    """Путь к готовому кэшу, если он свежее оригинала; иначе None."""
+    if width not in ALLOWED_WIDTHS:
+        return None
+    cached = cache_path_for(src, width)
+    try:
+        if cached.is_file() and cached.stat().st_mtime >= src.stat().st_mtime:
+            return cached
+    except OSError:
+        return None
+    return None
+
+
 def resize_local_image(src: Path, width: int) -> tuple[bytes, str]:
     """
     Возвращает (jpeg_bytes, media_type). Если оригинал уже не шире width — не апскейлит,

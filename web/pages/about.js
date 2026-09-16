@@ -6,7 +6,7 @@ import MaxIcon from "../components/MaxIcon";
 import { COMPANY, phoneHref } from "../lib/companyInfo";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { absoluteUrl } from "../lib/siteUrl";
-import { getServerApiBase } from "../lib/serverApiUrl";
+import { getServerApiBase, serverFetch } from "../lib/serverApiUrl";
 
 const CANONICAL_PATH = "/about";
 const TITLE = "О компании Автовозом — подбор и доставка авто из Китая";
@@ -52,7 +52,10 @@ export async function getStaticProps() {
   let listingsCount = 0;
   try {
     const api = getServerApiBase();
-    const res = await fetch(`${api}/cars?limit=1`, { headers: { Accept: "application/json" } });
+    const res = await serverFetch(`${api}/cars?limit=1`, {
+      headers: { Accept: "application/json" },
+      timeoutMs: 5_000,
+    });
     if (res.ok) {
       const d = await res.json();
       listingsCount = Number(d.total) || 0;

@@ -18,6 +18,7 @@ from .admin_request_chat import (
     resolve_request_client_user,
 )
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -38,7 +39,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import and_, case, delete, distinct, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
@@ -668,6 +669,8 @@ def _car_to_out(
     )
 
 
+_MEDIA_RESIZE_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="media-resize")
+
 _MAX_PROXY_IMAGE_BYTES = 15 * 1024 * 1024
 _PROXY_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -729,16 +732,24 @@ def media_proxy(url: str = Query(..., max_length=4096)):
 
 
 @app.get("/media-img")
-def media_img(
+async def media_img(
     path: str = Query(..., max_length=1024, description="Локальный путь /media/..."),
     w: int = Query(..., ge=1, le=2000, description="Целевая ширина (белый список)"),
 ):
     """
     Уменьшенная копия локального файла из MEDIA_ROOT.
     Дисковый кэш: MEDIA_ROOT/.cache/w{W}/…
-    Для карточек каталога и thumbs — вместо отдачи 1024px оригинала.
+    Cache-hit отдаём FileResponse без занятия общего threadpool;
+    cold resize — в отдельном пуле (max 2), чтобы не блокировать /cars и SSR.
     """
-    from .media_resize import ALLOWED_WIDTHS, resize_local_image, resolve_local_media_path
+    import asyncio
+
+    from .media_resize import (
+        ALLOWED_WIDTHS,
+        resize_local_image,
+        resolve_local_media_path,
+        warm_cache_file,
+    )
 
     if w not in ALLOWED_WIDTHS:
         raise HTTPException(
@@ -749,15 +760,23 @@ def media_img(
     src = resolve_local_media_path(raw)
     if src is None:
         raise HTTPException(status_code=404, detail="Media not found")
+
+    cache_headers = {"Cache-Control": "public, max-age=2592000"}
+    cached = warm_cache_file(src, w)
+    if cached is not None:
+        return FileResponse(cached, media_type="image/jpeg", headers=cache_headers)
+
+    loop = asyncio.get_running_loop()
     try:
-        body, media_type = resize_local_image(src, w)
+        body, media_type = await asyncio.wait_for(
+            loop.run_in_executor(_MEDIA_RESIZE_EXECUTOR, resize_local_image, src, w),
+            timeout=20.0,
+        )
+    except asyncio.TimeoutError as e:
+        raise HTTPException(status_code=504, detail="Resize timed out") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Resize failed: {e!s}") from e
-    return Response(
-        content=body,
-        media_type=media_type,
-        headers={"Cache-Control": "public, max-age=2592000"},
-    )
+    return Response(content=body, media_type=media_type, headers=cache_headers)
 
 
 @app.middleware("http")

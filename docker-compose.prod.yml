@@ -62,6 +62,10 @@ services:
       CHE168_PARSE_DETAIL_TIMEOUT_SEC: ${CHE168_PARSE_DETAIL_TIMEOUT_SEC:-300}
       CHE168_PW_GOTO_TIMEOUT_MS: ${CHE168_PW_GOTO_TIMEOUT_MS:-120000}
       MEDIA_ROOT: /app/media
+      # Запас под SSR + картинки + polling; иначе QueuePool timeout валит /cars и главную.
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-15}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-30}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-1800}
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,6 +123,8 @@ services:
       NEXT_PUBLIC_YANDEX_METRIKA_ID: ${NEXT_PUBLIC_YANDEX_METRIKA_ID:-}
       NEXT_PUBLIC_YANDEX_VERIFICATION: ${NEXT_PUBLIC_YANDEX_VERIFICATION:-}
       NEXT_PUBLIC_GOOGLE_VERIFICATION: ${NEXT_PUBLIC_GOOGLE_VERIFICATION:-}
+      # SSR должен ходить в backend по Docker-сети, не через публичный Caddy (иначе 300s 504).
+      SERVER_API_URL: ${SERVER_API_URL:-http://backend:8000}
       # IndexNow: тот же ключ, что у backend — web раздаёт /indexnow-key.txt (читается в рантайме SSR)
       INDEXNOW_KEY: ${INDEXNOW_KEY:-}
     depends_on:

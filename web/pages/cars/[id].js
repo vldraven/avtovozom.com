@@ -2,7 +2,7 @@ import { useRouter } from "next/router";
 
 import { publicCarHref } from "../../lib/carRoutes";
 import CarDetailView from "../../components/CarDetailView";
-import { getServerApiBase } from "../../lib/serverApiUrl";
+import { getServerApiBase, serverFetch } from "../../lib/serverApiUrl";
 
 export async function getServerSideProps({ params }) {
   const carId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -11,7 +11,7 @@ export async function getServerSideProps({ params }) {
   }
   const api = getServerApiBase();
   try {
-    const res = await fetch(`${api}/cars/${carId}`, {
+    const res = await serverFetch(`${api}/cars/${carId}`, {
       headers: { Accept: "application/json" },
     });
     if (!res.ok) return { notFound: true };
