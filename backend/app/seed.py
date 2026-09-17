@@ -1,5 +1,7 @@
+import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 
 from sqlalchemy import func, select, update
@@ -19,6 +21,55 @@ _MODEL_CATALOG_THRESHOLD = 80  # при меньшем числе моделей
 
 _DEFAULT_GENERATION_NAME = "Поколение не указано"
 _DEFAULT_GENERATION_SLUG = "ne-ukazano"
+_GENERATIONS_REF_APPLIED_KEY = "generations_reference_sha256"
+_GENERATIONS_REF_PATH = Path(__file__).resolve().parent / "data" / "generations_reference.json"
+
+
+def _maybe_apply_generations_reference(db: Session) -> None:
+    """
+    Справочник поколений из JSON — не на каждый рестарт.
+    DELETE+INSERT по моделям на старте даёт FK-шум и лишнюю нагрузку после ребута.
+    Применяем только если файл изменился (sha256 в app_settings) или форс-флаг.
+    """
+    force = (os.getenv("APPLY_GENERATIONS_REFERENCE_ON_STARTUP") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if not _GENERATIONS_REF_PATH.is_file():
+        return
+    try:
+        digest = hashlib.sha256(_GENERATIONS_REF_PATH.read_bytes()).hexdigest()
+    except OSError as e:
+        log.warning("generations reference: cannot read file: %s", e)
+        return
+
+    applied = ""
+    try:
+        from .app_settings import get_setting, set_setting
+
+        applied = (get_setting(db, _GENERATIONS_REF_APPLIED_KEY) or "").strip()
+    except Exception:
+        get_setting = None  # type: ignore[assignment]
+        set_setting = None  # type: ignore[assignment]
+
+    if not force and applied == digest:
+        return
+
+    try:
+        from .apply_generations_reference import apply_generations_reference_file
+
+        apply_generations_reference_file(db)
+    except Exception as e:
+        log.warning("Справочник поколений (JSON) не применён: %s", e)
+        return
+
+    try:
+        if set_setting is not None:
+            set_setting(db, _GENERATIONS_REF_APPLIED_KEY, digest)
+            db.commit()
+    except Exception as e:
+        log.warning("generations reference: applied but could not persist sha256: %s", e)
 
 
 def _ensure_default_generations_and_backfill(db: Session) -> None:
@@ -227,12 +278,7 @@ def seed_initial_data(db: Session) -> None:
     ensure_whitelist(honda_civic, True)
 
     db.commit()
-    try:
-        from .apply_generations_reference import apply_generations_reference_file
-
-        apply_generations_reference_file(db)
-    except Exception as e:
-        log.warning("Справочник поколений (JSON) не применён: %s", e)
+    _maybe_apply_generations_reference(db)
     _ensure_default_generations_and_backfill(db)
     seed_faq_items(db)
     seed_avito_field_mappings(db)

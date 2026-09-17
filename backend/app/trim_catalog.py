@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,27 @@ from .trim_spec_storage import (
 )
 
 log = logging.getLogger(__name__)
+
+# Полный проход по всем car_trims на старте API забивает CPU (перевод/parse JSON) и
+# после ребута VPS оставлял backend «живым», но глухим к /health (~100% CPU, 502 у Caddy).
+_DEFAULT_STARTUP_TRIM_MIGRATE_LIMIT = 25
+_DEFAULT_STARTUP_TRIM_MIGRATE_SCAN_CAP = 400
+
+
+def _startup_trim_migrate_limits() -> tuple[int, int]:
+    def _pos(name: str, default: int) -> int:
+        raw = (os.getenv(name) or "").strip()
+        if not raw:
+            return default
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return default
+
+    return (
+        _pos("STARTUP_TRIM_MIGRATE_LIMIT", _DEFAULT_STARTUP_TRIM_MIGRATE_LIMIT),
+        _pos("STARTUP_TRIM_MIGRATE_SCAN_CAP", _DEFAULT_STARTUP_TRIM_MIGRATE_SCAN_CAP),
+    )
 
 
 def normalize_trim_sections_for_display(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -242,17 +264,65 @@ def refresh_all_trims_from_autohome(
     }
 
 
-def migrate_legacy_trim_specs(db: Session) -> int:
-    """Неполный spec_sections или legacy без kind → пересборка из source_spec_json."""
+def migrate_legacy_trim_specs(
+    db: Session,
+    *,
+    limit: int | None = None,
+    scan_cap: int | None = None,
+) -> int:
+    """
+    Неполный spec_sections или legacy без kind → пересборка из source_spec_json.
+
+    На старте FastAPI намеренно ограничен: иначе полный скан всех комплектаций
+    может держать процесс на ~100% CPU десятки минут и ломать /health.
+    """
+    if limit is None or scan_cap is None:
+        env_limit, env_scan = _startup_trim_migrate_limits()
+        if limit is None:
+            limit = env_limit
+        if scan_cap is None:
+            scan_cap = env_scan
+    if limit <= 0:
+        return 0
+
     updated = 0
-    for trim in db.execute(select(CarTrim)).scalars().all():
-        doc = parse_trim_spec_document(trim.spec_sections or trim.spec_json_ru or "")
+    scanned = 0
+    # Только строки, где есть исходник для пересборки — не тащим весь справочник в память.
+    q = (
+        select(CarTrim)
+        .where(
+            or_(
+                CarTrim.source_spec_json.isnot(None),
+                CarTrim.spec_json.isnot(None),
+            )
+        )
+        .order_by(CarTrim.id.asc())
+    )
+    for trim in db.execute(q).scalars().yield_per(50):
+        scanned += 1
+        if scanned > scan_cap:
+            break
+        raw = trim.spec_sections or trim.spec_json_ru or ""
+        # Уже крупные документы с param_sections почти наверняка rich — не гоняем rebuild.
+        if isinstance(raw, str) and '"param_sections"' in raw and len(raw) >= 4000:
+            continue
+        doc = parse_trim_spec_document(raw)
         if doc and is_rich_trim_spec(doc):
             continue
         if rebuild_trim_spec_from_source(trim):
             updated += 1
+            if updated >= limit:
+                break
     if updated:
         db.commit()
+    if updated or scanned:
+        log.info(
+            "migrate_legacy_trim_specs: updated=%s scanned=%s limit=%s scan_cap=%s",
+            updated,
+            scanned,
+            limit,
+            scan_cap,
+        )
     return updated
 
 

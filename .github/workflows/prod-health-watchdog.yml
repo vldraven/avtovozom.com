@@ -1,0 +1,87 @@
+# Внешний watchdog: если публичный /health или главная не отвечают — рестарт compose + Caddy.
+# Дополняет docker healthcheck/autoheal на самом VPS (на случай зависания до маркировки unhealthy).
+name: Prod health watchdog
+
+on:
+  schedule:
+    # каждые 15 минут
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe public health
+        id: probe
+        run: |
+          set +e
+          api_code=$(curl -sS -o /tmp/api_health.json -w '%{http_code}' --connect-timeout 10 --max-time 25 \
+            https://api.avtovozom.com/health || echo 000)
+          home_code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 45 \
+            https://avtovozom.com/ || echo 000)
+          echo "api_code=$api_code" >> "$GITHUB_OUTPUT"
+          echo "home_code=$home_code" >> "$GITHUB_OUTPUT"
+          echo "api=$api_code home=$home_code"
+          if [[ "$api_code" == "200" && "$home_code" == "200" ]]; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restart on failure
+        if: steps.probe.outputs.healthy != 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          echo "Unhealthy: api=${{ steps.probe.outputs.api_code }} home=${{ steps.probe.outputs.home_code }} — restarting"
+          test -n "${DEPLOY_HOST:-}" && test -n "${DEPLOY_USER:-}" && test -n "${DEPLOY_PATH:-}" && test -n "${SSH_KEY:-}" || {
+            echo "Missing secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PATH, DEPLOY_SSH_KEY"
+            exit 1
+          }
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH=(ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}")
+          "${SSH[@]}" "cd '${DEPLOY_PATH}' && (
+            echo '=== before ==='
+            docker compose -f docker-compose.prod.yml ps || true
+            docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null || true
+            echo '=== restart ==='
+            docker compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml restart backend web || docker compose -f docker-compose.prod.yml restart
+            sleep 8
+            echo '=== after ==='
+            docker compose -f docker-compose.prod.yml ps || true
+            curl -fsS http://127.0.0.1:8000/health || true
+            curl -fsS -o /dev/null -w 'web:%{http_code}\n' http://127.0.0.1:3000/ || true
+            if [[ -x '${DEPLOY_PATH}/scripts/prod-fix-caddy.sh' ]]; then
+              bash '${DEPLOY_PATH}/scripts/prod-fix-caddy.sh' '${DEPLOY_PATH}'
+            elif command -v systemctl >/dev/null 2>&1; then
+              systemctl restart caddy || sudo systemctl restart caddy || true
+            fi
+          )"
+
+      - name: Fail job if still unhealthy after restart
+        if: steps.probe.outputs.healthy != 'true'
+        run: |
+          set +e
+          sleep 15
+          api_code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 25 \
+            https://api.avtovozom.com/health || echo 000)
+          home_code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 45 \
+            https://avtovozom.com/ || echo 000)
+          echo "post-restart api=$api_code home=$home_code"
+          if [[ "$api_code" != "200" || "$home_code" != "200" ]]; then
+            echo "Site still unhealthy after restart"
+            exit 1
+          fi

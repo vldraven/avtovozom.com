@@ -73,6 +73,17 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./media:/app/media
+    # Если процесс «жив» но глух (RST / 100% CPU) — autoheal перезапустит контейнер.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\"",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   parser:
     build:
@@ -131,6 +142,28 @@ services:
       - backend
     ports:
       - "127.0.0.1:3000:3000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://127.0.0.1:3000/',r=>process.exit(r.statusCode&&r.statusCode<500?0:1)).on('error',()=>process.exit(1))\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Перезапуск unhealthy-контейнеров (compose сам по healthcheck не рестартит).
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    container_name: avtovozom_autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: all
+      AUTOHEAL_INTERVAL: "20"
+      AUTOHEAL_START_PERIOD: "90"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   postgres_data:
