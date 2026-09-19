@@ -341,7 +341,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// После sendPhoto / sendMediaGroup сохраняем поля для follow-up текста.\nfunction fromData() {\n  try { return $('Данные для поста').first()?.json || {}; } catch (e) { return {}; }\n}\nfunction fromAlbum() {\n  try { return $('Сборка альбома').first()?.json || {}; } catch (e) { return {}; }\n}\nconst data = fromData();\nconst album = fromAlbum();\nconst input = $input.first()?.json || {};\nconst textFull = String(album.textFull || data.textFull || '').trim();\nconst needsFollowUpText = Boolean(\n  album.needsFollowUpText ?? data.needsFollowUpText ?? false\n);\nconst chatId = String(album.chatId || album.chat_id || data.chatId || '').trim();\nreturn [{\n  json: {\n    ...input,\n    chatId,\n    textFull,\n    needsFollowUpText,\n    mediaOk: true,\n  },\n}];\n"
+        "jsCode": "// После sendPhoto / sendMediaGroup — поля для follow-up текста.\nfunction fromData() {\n  try { return $('Данные для поста').first()?.json || {}; } catch (e) { return {}; }\n}\nfunction fromAlbum() {\n  try { return $('Сборка альбома').first()?.json || {}; } catch (e) { return {}; }\n}\nfunction fromSettings() {\n  try { return $('Настройки Telegram').first()?.json || {}; } catch (e) { return {}; }\n}\nconst data = fromData();\nconst album = fromAlbum();\nconst settings = fromSettings();\nconst input = $input.first()?.json || {};\nconst textFull = String(album.textFull || data.textFull || '').trim();\nconst needsFollowUpText = Boolean(album.needsFollowUpText ?? data.needsFollowUpText ?? false);\nconst chatId = String(album.chatId || album.chat_id || data.chatId || settings.telegramChatId || '').trim();\nconst botToken = String(album.botToken || data.botToken || settings.telegramBotToken || '').trim();\nreturn [{\n  json: {\n    ...input,\n    chatId,\n    botToken,\n    textFull,\n    needsFollowUpText,\n    mediaOk: true,\n  },\n}];\n"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbpost",
       "name": "После медиа",
@@ -392,19 +392,17 @@
     },
     {
       "parameters": {
-        "resource": "message",
-        "operation": "sendMessage",
-        "chatId": "={{ String($json.chatId || '').trim() }}",
-        "text": "={{ $json.textFull }}"
+        "jsCode": "const chatId = String($json.chatId || '').trim();\nconst botToken = String($json.botToken || '').trim();\nconst textFull = String($json.textFull || '').trim();\nif (!chatId) throw new Error('Нет chatId для follow-up текста');\nif (!botToken || botToken.includes('REPLACE')) throw new Error('Нет botToken для follow-up текста');\nif (!textFull) throw new Error('Пустой textFull');\n\nconst LIMIT = 4000;\nfunction splitText(text) {\n  if (text.length <= LIMIT) return [text];\n  const parts = [];\n  let rest = text;\n  while (rest.length > LIMIT) {\n    let cut = rest.lastIndexOf('\\n\\n', LIMIT);\n    if (cut < LIMIT * 0.4) cut = rest.lastIndexOf('\\n', LIMIT);\n    if (cut < LIMIT * 0.4) cut = LIMIT;\n    parts.push(rest.slice(0, cut).trimEnd());\n    rest = rest.slice(cut).trimStart();\n  }\n  if (rest) parts.push(rest);\n  return parts;\n}\n\nconst chunks = splitText(textFull);\nconst messageIds = [];\nfor (const text of chunks) {\n  const res = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.telegram.org/bot' + botToken + '/sendMessage',\n    headers: { 'Content-Type': 'application/json' },\n    body: {\n      chat_id: chatId,\n      text,\n      disable_web_page_preview: false,\n    },\n    json: true,\n  });\n  if (!res || res.ok === false) {\n    throw new Error('sendMessage failed: ' + JSON.stringify(res).slice(0, 300));\n  }\n  if (res.result && res.result.message_id != null) messageIds.push(res.result.message_id);\n}\n\nreturn [{ json: { ok: true, parts: chunks.length, messageIds, chatId } }];\n"
       },
-      "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbftxt",
-      "name": "Telegram: текст после медиа",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
+      "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbfsend",
+      "name": "Telegram: follow-up текст",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         2420,
         480
-      ]
+      ],
+      "notes": "Полный текст дайджеста отдельным sendMessage (куски ≤4000). Без обрезки caption."
     }
   ],
   "connections": {
@@ -590,7 +588,7 @@
       "main": [
         [
           {
-            "node": "Telegram: текст после медиа",
+            "node": "Telegram: follow-up текст",
             "type": "main",
             "index": 0
           }
@@ -604,7 +602,7 @@
         ]
       ]
     },
-    "Telegram: текст после медиа": {
+    "Telegram: follow-up текст": {
       "main": [
         [
           {

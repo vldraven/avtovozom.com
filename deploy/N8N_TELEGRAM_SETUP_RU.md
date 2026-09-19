@@ -5,7 +5,7 @@
 - [n8n-telegram-ai-draft.workflow.json](n8n-telegram-ai-draft.workflow.json)
 - [n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)
 
-Автовыбор лотов и апрув в личке: [N8N_SOCIAL_AGENT_RU.md](N8N_SOCIAL_AGENT_RU.md) — тот же AI-draft и publish webhook, отдельный бот для оператора.
+Автовыбор лотов и апрув в личке: [N8N_SOCIAL_AGENT_RU.md](N8N_SOCIAL_AGENT_RU.md).
 Дайджест новых поступлений (админка + TG/MAX): [N8N_SOCIAL_DIGEST_RU.md](N8N_SOCIAL_DIGEST_RU.md).
 
 Под ваш бэкенд уже заведены **два webhook** (`ai-draft` и `publish`). Этот документ описывает:
@@ -126,8 +126,8 @@ Workflow вызывает **AI Agent** + **OpenAI Chat Model** (credential **Ope
 В импортируемом **[n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)** — заполните узел **«Настройки Telegram»**; credential Telegram — у **Telegram: текст** и **Telegram: одно фото**; альбом: **Сборка альбома** → **HTTP: sendMediaGroup**.
 
 - **0 фото:** только текст — `sendMessage`
-- **1 фото:** `sendPhoto` с подписью; если текст **> 1024** символов — фото без длинной подписи + полный текст отдельным `sendMessage`
-- **2–10:** HTTP `sendMediaGroup`; при длинном тексте — альбом без caption + полный текст следом (лимит подписи Telegram ~1024; дайджесты сюда попадают)
+- **1 фото:** `sendPhoto` с подписью; если текст **> 1024** символов — фото без длинной подписи + полный текст отдельным `sendMessage` (при необходимости несколькими сообщениями до ~4096 каждое)
+- **2–10:** HTTP `sendMediaGroup`; при длинном тексте (дайджесты) — альбом **без** caption + полный текст следом через `sendMessage` (лимит подписи к фото ~1024; обычное сообщение — до 4096)
 
 Успешный ответ бэкенду (браузер/админка): JSON с **`"ok": true`** (можно добавить своё поле `telegram_message_id`).
 
