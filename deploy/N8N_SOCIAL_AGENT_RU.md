@@ -6,6 +6,8 @@
 
 Ручной флоу `/staff/publish-telegram/[id]` **не меняется**. Публикация в канал по-прежнему через [n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json). Агент после вашего ✅ вызывает backend `POST /agent/v1/social/publish`.
 
+Дайджест новых поступлений (период + лимит + TG/MAX): [N8N_SOCIAL_DIGEST_RU.md](N8N_SOCIAL_DIGEST_RU.md), админка `/staff/publish-digest`.
+
 **Отдельный Telegram-бот.** Не используйте sourcing-бота и не вешайте второй Trigger на тот же токен — оба workflow будут получать одни и те же апдейты.
 
 ---

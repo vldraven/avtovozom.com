@@ -6,6 +6,7 @@
 - [n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)
 
 Автовыбор лотов и апрув в личке: [N8N_SOCIAL_AGENT_RU.md](N8N_SOCIAL_AGENT_RU.md) — тот же AI-draft и publish webhook, отдельный бот для оператора.
+Дайджест новых поступлений (админка + TG/MAX): [N8N_SOCIAL_DIGEST_RU.md](N8N_SOCIAL_DIGEST_RU.md).
 
 Под ваш бэкенд уже заведены **два webhook** (`ai-draft` и `publish`). Этот документ описывает:
 

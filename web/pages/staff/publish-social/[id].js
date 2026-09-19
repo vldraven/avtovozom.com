@@ -445,7 +445,8 @@ export default function PublishSocialPage() {
           </p>
           <h1 className="section-title">Пост в соцсети</h1>
           <p className="muted" style={{ marginTop: "-0.5rem", marginBottom: "1.25rem" }}>
-            Один текст и фото → Telegram, VK и/или MAX. Генерация текста — как для Telegram (n8n).
+            Один текст и фото → Telegram, VK и/или MAX. Генерация текста — как для Telegram (n8n).{" "}
+            <Link href="/staff/publish-digest">Дайджест новых поступлений</Link>
           </p>
 
           {!me ? (
