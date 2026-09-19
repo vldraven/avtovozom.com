@@ -4928,13 +4928,12 @@ def admin_car_max_publish(
 def admin_social_digest_compose(
     date_from: str | None = Query(default=None, description="YYYY-MM-DD МСК"),
     date_to: str | None = Query(default=None, description="YYYY-MM-DD МСК"),
-    limit: int = Query(default=8, ge=1, le=10),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ):
     from .social_digest import compose_digest
 
-    data = compose_digest(db, date_from=date_from, date_to=date_to, limit=limit)
+    data = compose_digest(db, date_from=date_from, date_to=date_to)
     return SocialDigestComposeOut(**data)
 
 
@@ -4946,11 +4945,15 @@ def admin_social_digest_ai_draft(
 ):
     from .social_digest import compose_digest, request_digest_ai_draft
 
+    if not payload.car_ids:
+        return SocialDigestAiDraftOut(
+            ok=False,
+            detail="Выберите объявления для текста дайджеста",
+        )
     compose = compose_digest(
         db,
         date_from=payload.date_from,
         date_to=payload.date_to,
-        limit=payload.limit,
         car_ids=payload.car_ids,
     )
     if not compose["items"]:
@@ -4988,7 +4991,6 @@ def admin_social_digest_publish(
             db,
             date_from=None,
             date_to=None,
-            limit=len(payload.car_ids),
             car_ids=payload.car_ids,
         )
         photo_urls = list(compose.get("cover_photo_urls") or [])

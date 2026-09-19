@@ -267,14 +267,12 @@ def social_publish(
 class SocialDigestComposeIn(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
-    limit: int = Field(default=8, ge=1, le=10)
     car_ids: list[int] | None = None
 
 
 class SocialDigestAiIn(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
-    limit: int = Field(default=8, ge=1, le=10)
     car_ids: list[int] | None = None
     revision: str | None = Field(default=None, max_length=4000)
 
@@ -290,13 +288,12 @@ class SocialDigestPublishAgentIn(BaseModel):
 def social_digest_compose(
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
-    limit: int = Query(default=8, ge=1, le=10),
     db: Session = Depends(get_db),
     _: None = Depends(verify_agent_secret),
 ) -> dict[str, Any]:
     from .social_digest import compose_digest
 
-    return compose_digest(db, date_from=date_from, date_to=date_to, limit=limit)
+    return compose_digest(db, date_from=date_from, date_to=date_to)
 
 
 @router.post("/digest/ai-draft")
@@ -307,11 +304,12 @@ def social_digest_ai_draft(
 ) -> dict[str, Any]:
     from .social_digest import compose_digest, request_digest_ai_draft
 
+    if not payload.car_ids:
+        return {"ok": False, "detail": "Выберите объявления для текста дайджеста"}
     compose = compose_digest(
         db,
         date_from=payload.date_from,
         date_to=payload.date_to,
-        limit=payload.limit,
         car_ids=payload.car_ids,
     )
     if not compose["items"]:
@@ -341,7 +339,6 @@ def social_digest_publish(
             db,
             date_from=None,
             date_to=None,
-            limit=len(payload.car_ids),
             car_ids=payload.car_ids,
         )
         photo_urls = list(compose.get("cover_photo_urls") or [])
