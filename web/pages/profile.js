@@ -837,6 +837,9 @@ export default function ProfilePage() {
                     <Link href="/staff/import-candidates" className="btn btn-secondary btn-inline">
                       Кандидаты агента
                     </Link>
+                    <Link href="/staff/publish-digest" className="btn btn-secondary btn-inline">
+                      Дайджест в соцсети
+                    </Link>
                   </div>
                 </section>
               )}

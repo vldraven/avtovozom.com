@@ -262,3 +262,92 @@ def social_publish(
 
     upsert_telegram_publication(db, car.id, status="published", text=payload.text)
     return SocialPublishOut(ok=True, status="published", n8n=n8n_dict)
+
+
+class SocialDigestComposeIn(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+    limit: int = Field(default=8, ge=1, le=10)
+    car_ids: list[int] | None = None
+
+
+class SocialDigestAiIn(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+    limit: int = Field(default=8, ge=1, le=10)
+    car_ids: list[int] | None = None
+    revision: str | None = Field(default=None, max_length=4000)
+
+
+class SocialDigestPublishAgentIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=12000)
+    car_ids: list[int] = Field(default_factory=list)
+    channel_tg: bool = True
+    channel_max: bool = True
+
+
+@router.get("/digest")
+def social_digest_compose(
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+    limit: int = Query(default=8, ge=1, le=10),
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_secret),
+) -> dict[str, Any]:
+    from .social_digest import compose_digest
+
+    return compose_digest(db, date_from=date_from, date_to=date_to, limit=limit)
+
+
+@router.post("/digest/ai-draft")
+def social_digest_ai_draft(
+    payload: SocialDigestAiIn,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_secret),
+) -> dict[str, Any]:
+    from .social_digest import compose_digest, request_digest_ai_draft
+
+    compose = compose_digest(
+        db,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
+        limit=payload.limit,
+        car_ids=payload.car_ids,
+    )
+    if not compose["items"]:
+        return {"ok": False, "detail": "Нет объявлений за период", "compose": compose}
+    ok, text, err = request_digest_ai_draft(compose=compose, revision=payload.revision)
+    if not ok:
+        return {
+            "ok": False,
+            "detail": err,
+            "text": compose.get("skeleton_text"),
+            "compose": compose,
+        }
+    return {"ok": True, "text": text, "compose": compose}
+
+
+@router.post("/digest/publish")
+def social_digest_publish(
+    payload: SocialDigestPublishAgentIn,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_agent_secret),
+) -> dict[str, Any]:
+    from .social_digest import compose_digest, publish_digest
+
+    photo_urls: list[str] = []
+    if payload.car_ids:
+        compose = compose_digest(
+            db,
+            date_from=None,
+            date_to=None,
+            limit=len(payload.car_ids),
+            car_ids=payload.car_ids,
+        )
+        photo_urls = list(compose.get("cover_photo_urls") or [])
+    return publish_digest(
+        text=payload.text,
+        photo_urls=photo_urls,
+        channel_tg=payload.channel_tg,
+        channel_max=payload.channel_max,
+    )

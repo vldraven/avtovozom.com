@@ -936,6 +936,68 @@ class MaxPublishOut(BaseModel):
     publication_status: str | None = None
 
 
+class SocialDigestItemOut(BaseModel):
+    car_id: int
+    title: str
+    brand: str
+    model: str
+    year: int
+    mileage_km: int | None = None
+    engine_volume_cc: int | None = None
+    horsepower: int | None = None
+    fuel_type: str | None = None
+    transmission: str | None = None
+    estimated_total_rub: float | None = None
+    price_label: str = ""
+    specs_line: str = ""
+    listing_web_url: str = ""
+    cover_photo_id: int | None = None
+    cover_storage_url: str = ""
+    cover_absolute_url: str = ""
+    created_at_msk: str = ""
+    blurb: str = ""
+
+
+class SocialDigestComposeOut(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+    period_label: str = ""
+    limit: int = 8
+    count: int = 0
+    items: list[SocialDigestItemOut] = Field(default_factory=list)
+    skeleton_text: str = ""
+    cover_photo_urls: list[str] = Field(default_factory=list)
+    max_cars: int = 10
+
+
+class SocialDigestAiDraftIn(BaseModel):
+    date_from: str | None = None
+    date_to: str | None = None
+    limit: int = Field(default=8, ge=1, le=10)
+    car_ids: list[int] | None = None
+    revision: str | None = Field(default=None, max_length=4000)
+
+
+class SocialDigestAiDraftOut(BaseModel):
+    ok: bool
+    text: str | None = None
+    detail: str | None = None
+    compose: SocialDigestComposeOut | None = None
+
+
+class SocialDigestPublishIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=12000)
+    car_ids: list[int] = Field(default_factory=list)
+    channel_tg: bool = True
+    channel_max: bool = True
+
+
+class SocialDigestPublishOut(BaseModel):
+    ok: bool
+    detail: str | None = None
+    parts: list[str] = Field(default_factory=list)
+
+
 class AvitoStatusOut(BaseModel):
     ok: bool
     detail: str | None = None

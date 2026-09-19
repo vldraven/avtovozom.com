@@ -248,6 +248,11 @@ from .schemas import (
     MaxIntegrationStatusOut,
     MaxPublishIn,
     MaxPublishOut,
+    SocialDigestAiDraftIn,
+    SocialDigestAiDraftOut,
+    SocialDigestComposeOut,
+    SocialDigestPublishIn,
+    SocialDigestPublishOut,
     VkOAuthStartIn,
     VkOAuthStartOut,
     VkUserTokenIn,
@@ -4917,6 +4922,83 @@ def admin_car_max_publish(
         max_url=meta.get("max_url"),
         publication_status=meta.get("publication_status"),
     )
+
+
+@app.get("/admin/social/digest/compose", response_model=SocialDigestComposeOut)
+def admin_social_digest_compose(
+    date_from: str | None = Query(default=None, description="YYYY-MM-DD МСК"),
+    date_to: str | None = Query(default=None, description="YYYY-MM-DD МСК"),
+    limit: int = Query(default=8, ge=1, le=10),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    from .social_digest import compose_digest
+
+    data = compose_digest(db, date_from=date_from, date_to=date_to, limit=limit)
+    return SocialDigestComposeOut(**data)
+
+
+@app.post("/admin/social/digest/ai-draft", response_model=SocialDigestAiDraftOut)
+def admin_social_digest_ai_draft(
+    payload: SocialDigestAiDraftIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    from .social_digest import compose_digest, request_digest_ai_draft
+
+    compose = compose_digest(
+        db,
+        date_from=payload.date_from,
+        date_to=payload.date_to,
+        limit=payload.limit,
+        car_ids=payload.car_ids,
+    )
+    if not compose["items"]:
+        return SocialDigestAiDraftOut(
+            ok=False,
+            detail="Нет объявлений за выбранный период",
+            compose=SocialDigestComposeOut(**compose),
+        )
+    ok, text, err = request_digest_ai_draft(compose=compose, revision=payload.revision)
+    if not ok:
+        return SocialDigestAiDraftOut(
+            ok=False,
+            detail=err or "Не удалось сгенерировать текст",
+            compose=SocialDigestComposeOut(**compose),
+            text=compose.get("skeleton_text"),
+        )
+    return SocialDigestAiDraftOut(
+        ok=True,
+        text=text,
+        compose=SocialDigestComposeOut(**compose),
+    )
+
+
+@app.post("/admin/social/digest/publish", response_model=SocialDigestPublishOut)
+def admin_social_digest_publish(
+    payload: SocialDigestPublishIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin")),
+):
+    from .social_digest import compose_digest, publish_digest
+
+    photo_urls: list[str] = []
+    if payload.car_ids:
+        compose = compose_digest(
+            db,
+            date_from=None,
+            date_to=None,
+            limit=len(payload.car_ids),
+            car_ids=payload.car_ids,
+        )
+        photo_urls = list(compose.get("cover_photo_urls") or [])
+    result = publish_digest(
+        text=payload.text,
+        photo_urls=photo_urls,
+        channel_tg=payload.channel_tg,
+        channel_max=payload.channel_max,
+    )
+    return SocialDigestPublishOut(**result)
 
 
 @app.get("/integrations/avito/feed.xml")

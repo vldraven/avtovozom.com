@@ -61,6 +61,7 @@ Admin: `GET/PATCH /admin/search-profiles`, `GET /admin/import-candidates`.
 Импорт / актуальный workflow: [n8n-sourcing-agent.workflow.json](n8n-sourcing-agent.workflow.json)
 
 Соцсети (очередь лотов + апрув, текст/канал — существующие webhook): [N8N_SOCIAL_AGENT_RU.md](N8N_SOCIAL_AGENT_RU.md), [n8n-social-agent.workflow.json](n8n-social-agent.workflow.json).
+Дайджест новых поступлений: [N8N_SOCIAL_DIGEST_RU.md](N8N_SOCIAL_DIGEST_RU.md).
 
 Схема как у **Telegram консультант**: `Telegram Trigger` → `Настройки` → `AI Agent` + `toolCode` к `/agent/v1/*` + ответ в TG.  
 Дополнительно: cron **16:00/17:00 Europe/Moscow** → тот же агент с промптом `/run`.

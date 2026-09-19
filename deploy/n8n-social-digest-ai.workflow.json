@@ -1,0 +1,157 @@
+{
+  "name": "Avtovozom — Дайджест новых авто (ИИ)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "avtovozom-digest-ai",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "digest-ai-webhook-01",
+      "name": "Webhook Digest AI",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "digest-ai-webhook-01"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ ($json.headers && ($json.headers['x-n8n-webhook-secret'] ?? $json.headers['X-N8N-Webhook-Secret'])) || '' }}",
+              "operator": { "type": "string", "operation": "equals" },
+              "rightValue": "={{ $env.AVTOVOZOM_DIGEST_AI_WEBHOOK_SECRET || $env.AVTOVOZOM_AI_WEBHOOK_SECRET || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "digest-ai-if-02",
+      "name": "Секрет OK",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'Forbidden' }) }}",
+        "options": { "responseCode": 403 }
+      },
+      "id": "digest-ai-forbid-03",
+      "name": "Respond Forbidden",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [740, 160]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d1",
+              "name": "systemPrompt",
+              "value": "Ты редактор Telegram/MAX-канала avtovozom.com (доставка авто из Китая).\nСобери ОДИН пост-дайджест по JSON со списком новых объявлений.\n\nСтруктура:\n1) Короткое вступление (описание подборки).\n2) Для каждого авто: заголовок с эмодзи + цена из facts; строка характеристик; 1–2 предложения про модель; URL listing_web_url; пустая строка.\n3) Короткое заключение с @avtovozombot.\n\nНе выдумывай цены/год/пробег/л.с. Не вставляй фото. Без «Ответ модели». Соблюдай style_hint.",
+              "type": "string"
+            },
+            {
+              "id": "d2",
+              "name": "userContent",
+              "value": "={{ (() => { const body = ($json.body) || {}; const hint = (body.style_hint || '').trim(); let text = 'Собери финальный текст дайджеста (переносы строк). Период: ' + (body.period_label || '') + '.\\n'; if (hint) text += '\\nstyle_hint:\\n' + hint + '\\n'; if (body.skeleton_text) text += '\\nКаркас (можно улучшить, но сохрани все ссылки и факты):\\n' + body.skeleton_text + '\\n'; text += '\\nJSON:\\n' + JSON.stringify({ cars: body.cars || [], period_label: body.period_label }, null, 2); return text; })() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "digest-ai-prompt-04",
+      "name": "Промпт",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [740, 420]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.userContent }}",
+        "options": {
+          "systemMessage": "={{ $json.systemPrompt }}"
+        }
+      },
+      "id": "digest-ai-agent-08",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [980, 420]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5.5",
+          "mode": "list",
+          "cachedResultName": "gpt-5.5"
+        },
+        "responsesApiEnabled": true,
+        "options": {}
+      },
+      "id": "digest-ai-model-09",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [980, 620],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String(items[0].json.output ?? '').trim();\nif (!raw) {\n  const err = items[0].json?.error?.message || items[0].json?.message || 'Пустой ответ AI Agent';\n  throw new Error(String(err).slice(0, 400));\n}\nreturn [{ json: { text: raw } }];"
+      },
+      "id": "digest-ai-code-06",
+      "name": "Из ответа в text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1210, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ text: $json.text }) }}",
+        "options": {}
+      },
+      "id": "digest-ai-respond-07",
+      "name": "Respond текст",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [1440, 420]
+    }
+  ],
+  "connections": {
+    "Webhook Digest AI": {
+      "main": [[{ "node": "Секрет OK", "type": "main", "index": 0 }]]
+    },
+    "Секрет OK": {
+      "main": [
+        [{ "node": "Промпт", "type": "main", "index": 0 }],
+        [{ "node": "Respond Forbidden", "type": "main", "index": 0 }]
+      ]
+    },
+    "Промпт": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "AI Agent": { "main": [[{ "node": "Из ответа в text", "type": "main", "index": 0 }]] },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "Из ответа в text": { "main": [[{ "node": "Respond текст", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null
+}
