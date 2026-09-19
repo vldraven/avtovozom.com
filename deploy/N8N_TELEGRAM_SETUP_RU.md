@@ -126,8 +126,8 @@ Workflow вызывает **AI Agent** + **OpenAI Chat Model** (credential **Ope
 В импортируемом **[n8n-telegram-publish.workflow.json](n8n-telegram-publish.workflow.json)** — заполните узел **«Настройки Telegram»**; credential Telegram — у **Telegram: текст** и **Telegram: одно фото**; альбом: **Сборка альбома** → **HTTP: sendMediaGroup**.
 
 - **0 фото:** только текст — `sendMessage`
-- **1 фото:** `sendPhoto` с подписью (обрезка под лимит Telegram ~1024)
-- **2–10:** HTTP `sendMediaGroup` (узлы **Сборка альбома** + **HTTP: sendMediaGroup**)
+- **1 фото:** `sendPhoto` с подписью; если текст **> 1024** символов — фото без длинной подписи + полный текст отдельным `sendMessage`
+- **2–10:** HTTP `sendMediaGroup`; при длинном тексте — альбом без caption + полный текст следом (лимит подписи Telegram ~1024; дайджесты сюда попадают)
 
 Успешный ответ бэкенду (браузер/админка): JSON с **`"ok": true`** (можно добавить своё поле `telegram_message_id`).
 

@@ -12,17 +12,25 @@
       "name": "Webhook Publish",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [260, 480],
+      "position": [
+        260,
+        480
+      ],
       "webhookId": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb1"
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": false },
+          "options": {
+            "caseSensitive": false
+          },
           "conditions": [
             {
               "leftValue": "={{ ($json.headers && ($json.headers['x-n8n-webhook-secret'] ?? $json.headers['X-N8N-Webhook-Secret'])) || '' }}",
-              "operator": { "type": "string", "operation": "equals" },
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
               "rightValue": "={{ $env.AVTOVOZOM_PUBLISH_WEBHOOK_SECRET || '' }}"
             }
           ]
@@ -33,19 +41,27 @@
       "name": "Секрет OK",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [500, 480]
+      "position": [
+        500,
+        480
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ ok: false, error: 'Forbidden' }) }}",
-        "options": { "responseCode": 403 }
+        "options": {
+          "responseCode": 403
+        }
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb3",
       "name": "Respond Forbidden",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [740, 280]
+      "position": [
+        740,
+        280
+      ]
     },
     {
       "parameters": {
@@ -73,29 +89,41 @@
       "name": "Настройки Telegram",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [740, 520],
+      "position": [
+        740,
+        520
+      ],
       "notes": "Укажите ID канала (@name или -100…) и токен бота (для альбома 2+ фото). Тот же токен, что в credential Telegram у нод «Telegram: текст/одно фото»."
     },
     {
       "parameters": {
-        "jsCode": "function parseBody(json) {\n  if (!json || typeof json !== 'object') return {};\n  let b = json.body;\n  if (typeof b === 'string') {\n    try { b = JSON.parse(b); } catch (e) { b = null; }\n  }\n  if (b && typeof b === 'object' && !Array.isArray(b)) return b;\n  if (json.photo_urls || json.text || json.event) return json;\n  return {};\n}\n\nfunction extractUrls(b) {\n  const arr = Array.isArray(b.photo_urls)\n    ? b.photo_urls\n    : (Array.isArray(b.photoUrls) ? b.photoUrls : []);\n  return arr\n    .map((u) => String(u || '').trim())\n    .filter((u) => u.startsWith('http'))\n    .slice(0, 10);\n}\n\nfunction pickPayload() {\n  const input = $input.first().json;\n  let body = parseBody(input);\n  if (extractUrls(body).length || body.text) return { input, body };\n  try {\n    const wh = $('Webhook Publish').first().json;\n    body = parseBody(wh);\n  } catch (e) {}\n  return { input, body };\n}\n\nconst { input, body } = pickPayload();\nconst photoUrls = extractUrls(body);\nconst textFull = String(body.text || '').trim();\nconst caption = textFull.length <= 980 ? textFull : textFull.slice(0, 979) + '…';\n\nreturn [{\n  json: {\n    chatId: String(input.telegramChatId || '').trim(),\n    botToken: String(input.telegramBotToken || '').trim(),\n    textFull,\n    caption,\n    photoUrls,\n    photoCount: photoUrls.length,\n  },\n}];\n"
+        "jsCode": "function parseBody(json) {\n  if (!json || typeof json !== 'object') return {};\n  let b = json.body;\n  if (typeof b === 'string') {\n    try { b = JSON.parse(b); } catch (e) { b = null; }\n  }\n  if (b && typeof b === 'object' && !Array.isArray(b)) return b;\n  if (json.photo_urls || json.text || json.event) return json;\n  return {};\n}\n\nfunction extractUrls(b) {\n  const arr = Array.isArray(b.photo_urls)\n    ? b.photo_urls\n    : (Array.isArray(b.photoUrls) ? b.photoUrls : []);\n  return arr\n    .map((u) => String(u || '').trim())\n    .filter((u) => u.startsWith('http'))\n    .slice(0, 10);\n}\n\nfunction pickPayload() {\n  const input = $input.first().json;\n  let body = parseBody(input);\n  if (extractUrls(body).length || body.text) return { input, body };\n  try {\n    const wh = $('Webhook Publish').first().json;\n    body = parseBody(wh);\n  } catch (e) {}\n  return { input, body };\n}\n\nconst CAPTION_LIMIT = 1024;\nconst { input, body } = pickPayload();\nconst photoUrls = extractUrls(body);\nconst textFull = String(body.text || '').trim();\n// Подпись к фото/альбому — макс ~1024. Длинный дайджест уходит отдельным sendMessage.\nconst needsFollowUpText = photoUrls.length > 0 && textFull.length > CAPTION_LIMIT;\nconst caption = needsFollowUpText ? '' : textFull;\n\nreturn [{\n  json: {\n    chatId: String(input.telegramChatId || '').trim(),\n    botToken: String(input.telegramBotToken || '').trim(),\n    textFull,\n    caption,\n    needsFollowUpText,\n    photoUrls,\n    photoCount: photoUrls.length,\n  },\n}];\n"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb4",
       "name": "Данные для поста",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [740, 520],
+      "position": [
+        740,
+        520
+      ],
       "notes": "Парсит webhook body (в т.ч. если body — JSON-строка). photoUrls и photoCount всегда согласованы."
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "combineOperation": "all" },
+          "options": {
+            "combineOperation": "all"
+          },
           "conditions": [
             {
               "leftValue": "={{ String($json.chatId || '').trim() }}",
               "rightValue": "",
-              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
             }
           ]
         },
@@ -105,30 +133,43 @@
       "name": "Канал задан?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [960, 520]
+      "position": [
+        960,
+        520
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ ok: false, error: 'Не задан chat ID: укажите telegramChatId в узле «Настройки Telegram».' }) }}",
-        "options": { "responseCode": 400 }
+        "options": {
+          "responseCode": 400
+        }
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb4c",
       "name": "Respond нет канала",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [1180, 360]
+      "position": [
+        1180,
+        360
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "combineOperation": "all" },
+          "options": {
+            "combineOperation": "all"
+          },
           "conditions": [
             {
               "id": "photo",
               "leftValue": "={{ Array.isArray($json.photoUrls) ? $json.photoUrls.length : Number($json.photoCount ?? 0) }}",
               "rightValue": 0,
-              "operator": { "type": "number", "operation": "larger" }
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
             }
           ]
         },
@@ -138,17 +179,25 @@
       "name": "Есть фото?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1180, 580]
+      "position": [
+        1180,
+        580
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "combineOperation": "all" },
+          "options": {
+            "combineOperation": "all"
+          },
           "conditions": [
             {
               "leftValue": "={{ String($json.textFull || '').length }}",
               "rightValue": 0,
-              "operator": { "type": "number", "operation": "larger" }
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
             }
           ]
         },
@@ -158,19 +207,27 @@
       "name": "Есть текст?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1460, 440]
+      "position": [
+        1460,
+        440
+      ]
     },
     {
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ ok: false, error: 'Нет ни текста, ни фото.' }) }}",
-        "options": { "responseCode": 400 }
+        "options": {
+          "responseCode": 400
+        }
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb5err",
       "name": "Respond пустой пост",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [1720, 320]
+      "position": [
+        1720,
+        320
+      ]
     },
     {
       "parameters": {
@@ -183,17 +240,25 @@
       "name": "Telegram: текст",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1740, 440]
+      "position": [
+        1740,
+        440
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "combineOperation": "all" },
+          "options": {
+            "combineOperation": "all"
+          },
           "conditions": [
             {
               "leftValue": "={{ Array.isArray($json.photoUrls) ? $json.photoUrls.length : Number($json.photoCount ?? 0) }}",
               "rightValue": 1,
-              "operator": { "type": "number", "operation": "larger" }
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
             }
           ]
         },
@@ -203,7 +268,10 @@
       "name": "Два и более фото?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1460, 620]
+      "position": [
+        1460,
+        620
+      ]
     },
     {
       "parameters": {
@@ -212,24 +280,30 @@
         "chatId": "={{ String($json.chatId || '').trim() }}",
         "file": "={{ (() => { const n = Number($json.photoCount ?? 0); if (n !== 1) return ''; const r = $json.photoUrls; const a = Array.isArray(r) ? r : (r && typeof r === 'object' ? Object.values(r) : []); const u = String(a[0] || '').trim(); return u.startsWith('http') ? u : ''; })() }}",
         "additionalFields": {
-          "caption": "={{ String($json.textFull || '').length <= 1024 ? ($json.textFull || '') : ($json.caption || '') }}"
+          "caption": "={{ $json.caption || '' }}"
         }
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbb8pho",
       "name": "Telegram: одно фото",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
-      "position": [1740, 560]
+      "position": [
+        1740,
+        560
+      ]
     },
     {
       "parameters": {
-        "jsCode": "function normalizeUrl(u) {\n  const s = String(u || '').trim();\n  return s.startsWith('http') ? s : '';\n}\n\nfunction addUrls(out, seen, list) {\n  if (!Array.isArray(list)) return;\n  for (const u of list) {\n    const s = normalizeUrl(u);\n    if (s && !seen.has(s)) {\n      seen.add(s);\n      out.push(s);\n    }\n  }\n}\n\nfunction urlsFromJson(json) {\n  if (!json || typeof json !== 'object') return [];\n  const out = [];\n  const seen = new Set();\n  addUrls(out, seen, json.photoUrls);\n  addUrls(out, seen, json.photo_urls);\n  const body = json.body;\n  if (body && typeof body === 'object') {\n    addUrls(out, seen, body.photo_urls);\n    addUrls(out, seen, body.photoUrls);\n  }\n  if (json.photoUrls && typeof json.photoUrls === 'object' && !Array.isArray(json.photoUrls)) {\n    addUrls(out, seen, Object.values(json.photoUrls));\n  }\n  return out.slice(0, 10);\n}\n\nfunction pickRow() {\n  const inputJson = $input.first()?.json;\n  if (inputJson) return inputJson;\n  for (const name of ['Данные для поста', 'Данные для поста1']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j) return j;\n    } catch (e) {}\n  }\n  try {\n    const wh = $('Webhook Publish').first()?.json;\n    if (wh) return wh.body && typeof wh.body === 'object' ? { ...wh.body, body: wh.body } : wh;\n  } catch (e) {}\n  return {};\n}\n\nfunction pickSettings() {\n  try {\n    return $('Настройки Telegram').first()?.json || {};\n  } catch (e) {\n    return {};\n  }\n}\n\nconst row = pickRow();\nconst settings = pickSettings();\nconst urls = urlsFromJson(row);\nif (urls.length < 2) {\n  const debug = [\n    'photoCount=' + (row.photoCount ?? '?'),\n    'photoUrls=' + JSON.stringify(row.photoUrls ?? null).slice(0, 180),\n    'keys=' + Object.keys(row).join(','),\n  ].join('; ');\n  throw new Error('Для альбома нужно минимум 2 URL, получено ' + urls.length + '. ' + debug);\n}\n\nconst chatId = String(row.chatId || settings.telegramChatId || '').trim();\nif (!chatId) {\n  throw new Error('Не задан chat ID: укажите telegramChatId в узле «Настройки Telegram».');\n}\n\nconst botToken = String(row.botToken || settings.telegramBotToken || '').trim();\nif (!botToken || botToken.includes('REPLACE')) {\n  throw new Error('Не задан bot token: укажите telegramBotToken в узле «Настройки Telegram» (тот же, что в credential).');\n}\n\nconst capRaw = String(row.textFull || row.text || '').trim();\nconst cap = capRaw.length <= 1024 ? capRaw : String(row.caption || '').trim().slice(0, 1024);\n\nconst media = urls.slice(0, 10).map((u, i) => {\n  const item = { type: 'photo', media: u };\n  if (i === 0 && cap) item.caption = cap;\n  return item;\n});\n\nreturn [{ json: { chat_id: chatId, media, botToken } }];\n"
+        "jsCode": "function normalizeUrl(u) {\n  const s = String(u || '').trim();\n  return s.startsWith('http') ? s : '';\n}\n\nfunction addUrls(out, seen, list) {\n  if (!Array.isArray(list)) return;\n  for (const u of list) {\n    const s = normalizeUrl(u);\n    if (s && !seen.has(s)) {\n      seen.add(s);\n      out.push(s);\n    }\n  }\n}\n\nfunction urlsFromJson(json) {\n  if (!json || typeof json !== 'object') return [];\n  const out = [];\n  const seen = new Set();\n  addUrls(out, seen, json.photoUrls);\n  addUrls(out, seen, json.photo_urls);\n  const body = json.body;\n  if (body && typeof body === 'object') {\n    addUrls(out, seen, body.photo_urls);\n    addUrls(out, seen, body.photoUrls);\n  }\n  if (json.photoUrls && typeof json.photoUrls === 'object' && !Array.isArray(json.photoUrls)) {\n    addUrls(out, seen, Object.values(json.photoUrls));\n  }\n  return out.slice(0, 10);\n}\n\nfunction pickRow() {\n  const inputJson = $input.first()?.json;\n  if (inputJson) return inputJson;\n  for (const name of ['Данные для поста', 'Данные для поста1']) {\n    try {\n      const j = $(name).first()?.json;\n      if (j) return j;\n    } catch (e) {}\n  }\n  try {\n    const wh = $('Webhook Publish').first()?.json;\n    if (wh) return wh.body && typeof wh.body === 'object' ? { ...wh.body, body: wh.body } : wh;\n  } catch (e) {}\n  return {};\n}\n\nfunction pickSettings() {\n  try {\n    return $('Настройки Telegram').first()?.json || {};\n  } catch (e) {\n    return {};\n  }\n}\n\nconst row = pickRow();\nconst settings = pickSettings();\nconst urls = urlsFromJson(row);\nif (urls.length < 2) {\n  const debug = [\n    'photoCount=' + (row.photoCount ?? '?'),\n    'photoUrls=' + JSON.stringify(row.photoUrls ?? null).slice(0, 180),\n    'keys=' + Object.keys(row).join(','),\n  ].join('; ');\n  throw new Error('Для альбома нужно минимум 2 URL, получено ' + urls.length + '. ' + debug);\n}\n\nconst chatId = String(row.chatId || settings.telegramChatId || '').trim();\nif (!chatId) {\n  throw new Error('Не задан chat ID: укажите telegramChatId в узле «Настройки Telegram».');\n}\n\nconst botToken = String(row.botToken || settings.telegramBotToken || '').trim();\nif (!botToken || botToken.includes('REPLACE')) {\n  throw new Error('Не задан bot token: укажите telegramBotToken в узле «Настройки Telegram» (тот же, что в credential).');\n}\n\nconst textFull = String(row.textFull || row.text || '').trim();\nconst needsFollowUpText = Boolean(row.needsFollowUpText) || textFull.length > 1024;\n// Длинный текст — не в caption альбома (лимит 1024), а follow-up sendMessage.\nconst cap = needsFollowUpText ? '' : textFull;\n\nconst media = urls.slice(0, 10).map((u, i) => {\n  const item = { type: 'photo', media: u };\n  if (i === 0 && cap) item.caption = cap;\n  return item;\n});\n\nreturn [{\n  json: {\n    chat_id: chatId,\n    media,\n    botToken,\n    chatId,\n    textFull,\n    needsFollowUpText,\n  },\n}];\n"
       },
       "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbbprep",
       "name": "Сборка альбома",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1740, 760],
+      "position": [
+        1740,
+        760
+      ],
       "notes": "JSON для sendMediaGroup. chatId и botToken — из «Настройки Telegram» через «Данные для поста»."
     },
     {
@@ -245,7 +319,10 @@
       "name": "HTTP: sendMediaGroup",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1960, 760]
+      "position": [
+        1960,
+        760
+      ]
     },
     {
       "parameters": {
@@ -257,60 +334,286 @@
       "name": "Respond OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
-      "position": [2260, 560]
+      "position": [
+        2260,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// После sendPhoto / sendMediaGroup сохраняем поля для follow-up текста.\nfunction fromData() {\n  try { return $('Данные для поста').first()?.json || {}; } catch (e) { return {}; }\n}\nfunction fromAlbum() {\n  try { return $('Сборка альбома').first()?.json || {}; } catch (e) { return {}; }\n}\nconst data = fromData();\nconst album = fromAlbum();\nconst input = $input.first()?.json || {};\nconst textFull = String(album.textFull || data.textFull || '').trim();\nconst needsFollowUpText = Boolean(\n  album.needsFollowUpText ?? data.needsFollowUpText ?? false\n);\nconst chatId = String(album.chatId || album.chat_id || data.chatId || '').trim();\nreturn [{\n  json: {\n    ...input,\n    chatId,\n    textFull,\n    needsFollowUpText,\n    mediaOk: true,\n  },\n}];\n"
+      },
+      "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbpost",
+      "name": "После медиа",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        560
+      ],
+      "notes": "Прокидывает needsFollowUpText / textFull после sendPhoto или sendMediaGroup."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "combineOperation": "all"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needsFollowUpText ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ String($json.textFull || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbneed",
+      "name": "Нужен текст отдельно?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ String($json.chatId || '').trim() }}",
+        "text": "={{ $json.textFull }}"
+      },
+      "id": "beb5d3c1-eb9a-4b4c-91d9-bbbbbbbbbbftxt",
+      "name": "Telegram: текст после медиа",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2420,
+        480
+      ]
     }
   ],
   "connections": {
     "Webhook Publish": {
-      "main": [[{ "node": "Секрет OK", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Секрет OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Секрет OK": {
       "main": [
-        [{ "node": "Настройки Telegram", "type": "main", "index": 0 }],
-        [{ "node": "Respond Forbidden", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Настройки Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Forbidden",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Настройки Telegram": {
-      "main": [[{ "node": "Данные для поста", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Данные для поста",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Данные для поста": {
-      "main": [[{ "node": "Канал задан?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Канал задан?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Канал задан?": {
       "main": [
-        [{ "node": "Есть фото?", "type": "main", "index": 0 }],
-        [{ "node": "Respond нет канала", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Есть фото?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond нет канала",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Есть фото?": {
       "main": [
-        [{ "node": "Два и более фото?", "type": "main", "index": 0 }],
-        [{ "node": "Есть текст?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Два и более фото?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Есть текст?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Есть текст?": {
       "main": [
-        [{ "node": "Telegram: текст", "type": "main", "index": 0 }],
-        [{ "node": "Respond пустой пост", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Telegram: текст",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond пустой пост",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Telegram: текст": {
-      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Два и более фото?": {
       "main": [
-        [{ "node": "Сборка альбома", "type": "main", "index": 0 }],
-        [{ "node": "Telegram: одно фото", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Сборка альбома",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: одно фото",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Telegram: одно фото": {
-      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "После медиа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Сборка альбома": {
-      "main": [[{ "node": "HTTP: sendMediaGroup", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "HTTP: sendMediaGroup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HTTP: sendMediaGroup": {
-      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "После медиа",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "После медиа": {
+      "main": [
+        [
+          {
+            "node": "Нужен текст отдельно?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Нужен текст отдельно?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: текст после медиа",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: текст после медиа": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {},
