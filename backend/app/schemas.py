@@ -962,18 +962,17 @@ class SocialDigestComposeOut(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
     period_label: str = ""
-    limit: int = 8
     count: int = 0
     items: list[SocialDigestItemOut] = Field(default_factory=list)
     skeleton_text: str = ""
     cover_photo_urls: list[str] = Field(default_factory=list)
     max_cars: int = 10
+    max_list: int = 200
 
 
 class SocialDigestAiDraftIn(BaseModel):
     date_from: str | None = None
     date_to: str | None = None
-    limit: int = Field(default=8, ge=1, le=10)
     car_ids: list[int] | None = None
     revision: str | None = Field(default=None, max_length=4000)
 

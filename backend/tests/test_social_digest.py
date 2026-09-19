@@ -156,7 +156,7 @@ class SocialDigestTests(unittest.TestCase):
         self.assertIn("https://avtovozom.com/catalog/kia/seltos/689", text)
         self.assertIn("@avtovozombot", text)
 
-    def test_compose_filters_by_period_and_limit(self) -> None:
+    def test_compose_lists_all_in_period(self) -> None:
         now = datetime.utcnow()
         old = self._add_car(created_at=now - timedelta(days=20))
         fresh1 = self._add_car(created_at=now - timedelta(hours=2), year=2023)
@@ -165,17 +165,14 @@ class SocialDigestTests(unittest.TestCase):
 
         today = datetime.utcnow().date().isoformat()
         week_ago = (datetime.utcnow().date() - timedelta(days=6)).isoformat()
-        data = compose_digest(self.db, date_from=week_ago, date_to=today, limit=10)
+        data = compose_digest(self.db, date_from=week_ago, date_to=today)
         ids = {it["car_id"] for it in data["items"]}
         self.assertIn(fresh1.id, ids)
         self.assertIn(fresh2.id, ids)
         self.assertNotIn(old.id, ids)
         self.assertNotIn(inactive.id, ids)
-        self.assertTrue(data["skeleton_text"])
-        self.assertTrue(data["cover_photo_urls"])
-
-        limited = compose_digest(self.db, date_from=week_ago, date_to=today, limit=1)
-        self.assertEqual(limited["count"], 1)
+        self.assertEqual(data["skeleton_text"], "")
+        self.assertGreaterEqual(data["count"], 2)
 
     def test_compose_by_car_ids_order(self) -> None:
         a = self._add_car(year=2022)
@@ -187,13 +184,14 @@ class SocialDigestTests(unittest.TestCase):
             car_ids=[b.id, a.id],
         )
         self.assertEqual([it["car_id"] for it in data["items"]], [b.id, a.id])
+        self.assertTrue(data["skeleton_text"])
 
     def test_agent_digest_endpoints(self) -> None:
         car = self._add_car()
         today = datetime.utcnow().date().isoformat()
         r = self.client.get(
             "/agent/v1/social/digest",
-            params={"date_from": today, "date_to": today, "limit": 5},
+            params={"date_from": today, "date_to": today},
             headers=self.headers,
         )
         self.assertEqual(r.status_code, 200)
@@ -206,7 +204,7 @@ class SocialDigestTests(unittest.TestCase):
             ai = self.client.post(
                 "/agent/v1/social/digest/ai-draft",
                 headers=self.headers,
-                json={"date_from": today, "date_to": today, "limit": 5},
+                json={"date_from": today, "date_to": today, "car_ids": [car.id]},
             )
         self.assertEqual(ai.status_code, 200)
         self.assertTrue(ai.json()["ok"])

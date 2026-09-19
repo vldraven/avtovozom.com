@@ -25,8 +25,10 @@ try:
 except Exception:  # pragma: no cover
     MSK = timezone(timedelta(hours=3))
 
+# Лимит фото/лотов в одном посте (альбом Telegram / MAX).
 MAX_DIGEST_CARS = 10
-DEFAULT_DIGEST_LIMIT = 8
+# Сколько объявлений максимум показать в админке за период (отбор вручную).
+MAX_DIGEST_LIST = 200
 
 DEFAULT_DIGEST_AI_STYLE_HINT = (
     "Ты редактор Telegram/MAX-канала avtovozom.com (доставка авто из Китая).\n"
@@ -133,9 +135,7 @@ def list_new_cars_for_digest(
     *,
     date_from: str | date | None,
     date_to: str | date | None,
-    limit: int = DEFAULT_DIGEST_LIMIT,
 ) -> list[Car]:
-    limit = max(1, min(int(limit or DEFAULT_DIGEST_LIMIT), MAX_DIGEST_CARS))
     start = parse_msk_date(date_from, end_of_day=False)
     end = parse_msk_date(date_to, end_of_day=True)
     if start is None:
@@ -157,7 +157,7 @@ def list_new_cars_for_digest(
         .where(Car.created_at >= start)
         .where(Car.created_at <= end)
         .order_by(Car.created_at.desc(), Car.id.desc())
-        .limit(limit)
+        .limit(MAX_DIGEST_LIST)
     )
     return list(db.execute(q).unique().scalars().all())
 
@@ -264,7 +264,6 @@ def compose_digest(
     *,
     date_from: str | None,
     date_to: str | None,
-    limit: int = DEFAULT_DIGEST_LIMIT,
     car_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     slug_maps = build_catalog_slug_maps(db)
@@ -285,26 +284,28 @@ def compose_digest(
             .all()
         )
         by_id = {c.id: c for c in cars}
+        # Для текста/публикации — не больше альбома; порядок как в запросе.
         ordered = [by_id[i] for i in car_ids if i in by_id][:MAX_DIGEST_CARS]
+        build_skeleton = True
     else:
-        ordered = list_new_cars_for_digest(
-            db, date_from=date_from, date_to=date_to, limit=limit
-        )
+        # Список за период целиком (с защитным потолком) — отбор вручную в админке.
+        ordered = list_new_cars_for_digest(db, date_from=date_from, date_to=date_to)
+        build_skeleton = False
 
     items = [car_to_digest_item(db, c, slug_maps=slug_maps) for c in ordered]
     label = period_label(date_from, date_to)
-    skeleton = build_digest_skeleton(items, period_label=label)
+    skeleton = build_digest_skeleton(items, period_label=label) if build_skeleton else ""
     cover_urls = [it["cover_absolute_url"] for it in items if it.get("cover_absolute_url")]
     return {
         "date_from": (date_from or "").strip() or None,
         "date_to": (date_to or "").strip() or None,
         "period_label": label,
-        "limit": limit,
         "count": len(items),
         "items": items,
         "skeleton_text": skeleton,
         "cover_photo_urls": cover_urls[:MAX_DIGEST_CARS],
         "max_cars": MAX_DIGEST_CARS,
+        "max_list": MAX_DIGEST_LIST,
     }
 
 

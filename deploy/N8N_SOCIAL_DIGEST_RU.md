@@ -1,6 +1,6 @@
 # Дайджест новых поступлений (Telegram / MAX)
 
-Админка: **`/staff/publish-digest`** — период (МСК), лимит (1–10), выбор авто, каркас/ИИ-текст, публикация в TG и/или MAX с обложками.
+Админка: **`/staff/publish-digest`** — период (МСК), список всех новых авто за период, ручной отбор (до 10 в пост), каркас/ИИ-текст, публикация в TG и/или MAX с обложками.
 
 Не помечает лоты как `published` в `car_external_publications` (очередь social agent не блокируется).
 
@@ -15,7 +15,7 @@
 
 | Метод | Путь |
 |-------|------|
-| GET | `/admin/social/digest/compose?date_from=&date_to=&limit=` |
+| GET | `/admin/social/digest/compose?date_from=&date_to=` |
 | POST | `/admin/social/digest/ai-draft` |
 | POST | `/admin/social/digest/publish` |
 

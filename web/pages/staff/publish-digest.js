@@ -52,13 +52,37 @@ function previewHtml(text) {
     .join("<br />");
 }
 
+function buildSkeletonFromItems(items, periodLabel) {
+  if (!items?.length) return "";
+  const lines = [
+    `🆕 Новые поступления на avtovozom.com (${periodLabel})`,
+    "",
+    "Подборка свежих авто из Китая под ключ — с растаможкой и доставкой до Москвы.",
+    "",
+  ];
+  for (const it of items) {
+    lines.push(`🚗 ${it.title} — ${it.price_label}`, "");
+    if (it.specs_line) lines.push(it.specs_line, "");
+    const brand = it.brand || "модель";
+    lines.push(
+      `Компактный обзор: ${brand} в нашей витрине — подробности комплектации и расчёт доставки до вашего города на сайте.`,
+      "",
+      it.listing_web_url || "",
+      ""
+    );
+  }
+  lines.push(
+    "Смотрите весь каталог на сайте или напишите нам: @avtovozombot — подберём авто под бюджет."
+  );
+  return lines.join("\n").trim();
+}
+
 export default function PublishDigestPage() {
   const router = useRouter();
   const [token, setToken] = useState("");
   const [me, setMe] = useState(null);
   const [dateFrom, setDateFrom] = useState(() => daysAgoMskIso(6));
   const [dateTo, setDateTo] = useState(() => todayMskIso());
-  const [limit, setLimit] = useState(8);
   const [compose, setCompose] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [postText, setPostText] = useState("");
@@ -106,7 +130,6 @@ export default function PublishDigestPage() {
       const qs = new URLSearchParams({
         date_from: dateFrom,
         date_to: dateTo,
-        limit: String(limit),
       });
       const res = await fetch(`${API_URL}/admin/social/digest/compose?${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -118,12 +141,11 @@ export default function PublishDigestPage() {
         return;
       }
       setCompose(body);
-      const ids = (body.items || []).map((it) => it.car_id);
-      setSelected(new Set(ids));
-      setPostText(body.skeleton_text || "");
+      setSelected(new Set());
+      setPostText("");
       setMessage(
         body.count
-          ? `Найдено ${body.count} авто за ${body.period_label}`
+          ? `Найдено ${body.count} авто за ${body.period_label} — отметьте нужные для поста (до ${body.max_cars || 10})`
           : `За ${body.period_label} новых объявлений нет`
       );
     } catch {
@@ -131,7 +153,7 @@ export default function PublishDigestPage() {
     } finally {
       setLoadBusy(false);
     }
-  }, [token, dateFrom, dateTo, limit]);
+  }, [token, dateFrom, dateTo]);
 
   useEffect(() => {
     if (!token || !me || !isAdminRole(me.role)) return;
@@ -144,12 +166,27 @@ export default function PublishDigestPage() {
     return compose.items.filter((it) => selected.has(it.car_id));
   }, [compose, selected]);
 
+  const maxPublish = compose?.max_cars || 10;
+
+  function refreshSkeletonFromSelection(nextSelected) {
+    if (!compose?.items?.length) {
+      setPostText("");
+      return;
+    }
+    const items = compose.items.filter((it) => nextSelected.has(it.car_id));
+    setPostText(buildSkeletonFromItems(items, compose.period_label || ""));
+  }
+
   function toggleCar(id) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
-      else if (next.size < 10) next.add(id);
-      else setMessage("Не более 10 авто в одном дайджесте (лимит альбома TG)");
+      else if (next.size < maxPublish) next.add(id);
+      else {
+        setMessage(`Не более ${maxPublish} авто в одном дайджесте (лимит альбома TG)`);
+        return prev;
+      }
+      refreshSkeletonFromSelection(next);
       return next;
     });
   }
@@ -173,7 +210,6 @@ export default function PublishDigestPage() {
         body: JSON.stringify({
           date_from: dateFrom,
           date_to: dateTo,
-          limit,
           car_ids: selectedItems.map((it) => it.car_id),
           revision: revision.trim() || null,
         }),
@@ -185,7 +221,6 @@ export default function PublishDigestPage() {
         return;
       }
       setPostText(body.text || "");
-      if (body.compose) setCompose(body.compose);
       setMessage("Текст дайджеста сгенерирован — отредактируйте при необходимости.");
     } catch {
       setError("Сбой сети или таймаут ИИ");
@@ -256,8 +291,8 @@ export default function PublishDigestPage() {
           </p>
           <h1 className="section-title">Дайджест новых поступлений</h1>
           <p className="muted" style={{ marginTop: "-0.5rem", marginBottom: "1.25rem" }}>
-            Подборка авто за период → текст (каркас или ИИ) → публикация в Telegram и/или MAX с
-            обложками.
+            Все авто за период → отметьте нужные вручную → текст (каркас или ИИ) → публикация в
+            Telegram и/или MAX с обложками.
           </p>
 
           {!me ? (
@@ -289,22 +324,8 @@ export default function PublishDigestPage() {
                       onChange={(e) => setDateTo(e.target.value)}
                     />
                   </label>
-                  <label style={{ display: "grid", gap: 4 }}>
-                    <span className="muted" style={{ fontSize: "0.85rem" }}>
-                      Лимит
-                    </span>
-                    <input
-                      className="input"
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={limit}
-                      onChange={(e) => setLimit(Math.max(1, Math.min(10, Number(e.target.value) || 8)))}
-                      style={{ width: 80 }}
-                    />
-                  </label>
                   <button type="button" className="btn btn-secondary" disabled={loadBusy} onClick={loadCompose}>
-                    {loadBusy ? "Загрузка…" : "Собрать подборку"}
+                    {loadBusy ? "Загрузка…" : "Показать авто"}
                   </button>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
@@ -356,11 +377,16 @@ export default function PublishDigestPage() {
               {compose ? (
                 <div className="panel" style={{ marginBottom: "1rem" }}>
                   <h2 className="panel-heading-sm">
-                    Авто в подборке ({selected.size}/{compose.count})
+                    Авто за период ({selected.size} выбрано / {compose.count}
+                    {compose.max_cars ? `, до ${compose.max_cars} в пост` : ""})
                   </h2>
                   {!compose.items?.length ? (
                     <p className="muted">Пусто — смените период.</p>
                   ) : (
+                    <>
+                      <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
+                        Отметьте объявления для публикации вручную.
+                      </p>
                     <div style={{ display: "grid", gap: 10 }}>
                       {compose.items.map((it) => (
                         <label
@@ -425,6 +451,7 @@ export default function PublishDigestPage() {
                         </label>
                       ))}
                     </div>
+                    </>
                   )}
                 </div>
               ) : null}
