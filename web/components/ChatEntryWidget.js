@@ -92,6 +92,8 @@ export default function ChatEntryWidget() {
   const [guestAwaitingAi, setGuestAwaitingAi] = useState(false);
   const [sending, setSending] = useState(false);
   const threadEndRef = useRef(null);
+  /** Один раз на сессию виджета: на десктопе открыть панель при входе на сайт. */
+  const desktopDefaultOpenDoneRef = useRef(false);
 
   const isGuest = !token;
   const hiddenByPath = chatEntryPathHidden(router.pathname);
@@ -227,7 +229,16 @@ export default function ChatEntryWidget() {
   useEffect(() => {
     const mq = typeof window !== "undefined" ? window.matchMedia(MOBILE_MQ) : null;
     if (!mq) return undefined;
-    const sync = () => setIsMobile(mq.matches);
+    const sync = () => {
+      const mobile = mq.matches;
+      setIsMobile(mobile);
+      // Один раз при первом определении ширины: на десктопе раскрыть панель.
+      // Свернуть по крестику можно; на мобилке стартуем свёрнутыми.
+      if (!desktopDefaultOpenDoneRef.current) {
+        desktopDefaultOpenDoneRef.current = true;
+        if (!mobile) setPhase("open");
+      }
+    };
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
