@@ -285,6 +285,7 @@ from .n8n_bot_integration import (
 )
 from .agent_api import router as agent_api_router
 from .social_agent import router as social_agent_router
+from .blog import router as blog_router
 from .n8n_client import (
     guest_chat_ai_webhook_configured,
     n8n_webhook_post,
@@ -347,6 +348,7 @@ except Exception:  # pragma: no cover - dependency may be absent in local dev un
 app = FastAPI(title="Avtovozom API", version="0.1.0")
 app.include_router(agent_api_router)
 app.include_router(social_agent_router)
+app.include_router(blog_router)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
@@ -807,6 +809,9 @@ def startup() -> None:
                 "ALTER TABLE calculation_requests "
                 "ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)"
             )
+        )
+        conn.execute(
+            text("ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0")
         )
         conn.execute(
             text("ALTER TABLE car_models ADD COLUMN IF NOT EXISTS che168_url VARCHAR(512)")

@@ -13,6 +13,7 @@ import YandexMetrika from "../components/YandexMetrika";
 import { ensureFreshAccessToken } from "../lib/auth";
 import { manrope } from "../lib/fonts";
 import "../styles/globals.css";
+import "../styles/blog.css";
 
 /** Личные кабинеты и админка — не индексируем (дублирует robots.txt Disallow). */
 function useSeoNoIndex() {
@@ -20,7 +21,8 @@ function useSeoNoIndex() {
   const path = router.pathname || "";
   return (
     /^(?:\/auth|\/profile|\/messages|\/favorites|\/reset-password)(?:\/|$)/.test(path) ||
-    path.startsWith("/staff/")
+    path.startsWith("/staff/") ||
+    path.startsWith("/blog/write")
   );
 }
 

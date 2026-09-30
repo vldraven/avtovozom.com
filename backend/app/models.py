@@ -630,3 +630,118 @@ class SourcingApprovalSession(Base):
         onupdate=datetime.utcnow,
         server_default=text("NOW()"),
     )
+
+class BlogSection(Base):
+    """Рубрика блога. Скрытые разделы не попадают в ленту, но посты в них остаются."""
+
+    __tablename__ = "blog_sections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    slug: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(240), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BlogAuthorProfile(Base):
+    __tablename__ = "blog_author_profiles"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    bio: Mapped[str] = mapped_column(String(500), default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    user = relationship("User")
+
+
+class BlogTag(Base):
+    __tablename__ = "blog_tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    slug: Mapped[str] = mapped_column(String(48), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(48), nullable=False)
+
+
+class BlogPost(Base):
+    __tablename__ = "blog_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    section_id: Mapped[int | None] = mapped_column(
+        ForeignKey("blog_sections.id"), nullable=True, index=True
+    )
+    brand_id: Mapped[int | None] = mapped_column(
+        ForeignKey("car_brands.id"), nullable=True, index=True
+    )
+    model_id: Mapped[int | None] = mapped_column(
+        ForeignKey("car_models.id"), nullable=True, index=True
+    )
+    slug: Mapped[str] = mapped_column(String(96), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    excerpt: Mapped[str] = mapped_column(String(400), default="")
+    seo_description: Mapped[str] = mapped_column(String(160), default="")
+    cover_url: Mapped[str] = mapped_column(String(512), default="")
+    body: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    """draft | pending | published | rejected"""
+    rejection_reason: Mapped[str] = mapped_column(String(500), default="")
+    as_editorial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    like_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    comment_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    view_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    author = relationship("User")
+    section = relationship("BlogSection")
+    brand = relationship("CarBrand")
+    model = relationship("CarModel")
+    tags = relationship("BlogTag", secondary="blog_post_tags")
+
+
+class BlogPostTag(Base):
+    __tablename__ = "blog_post_tags"
+
+    post_id: Mapped[int] = mapped_column(ForeignKey("blog_posts.id"), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("blog_tags.id"), primary_key=True)
+
+
+class BlogComment(Base):
+    __tablename__ = "blog_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("blog_posts.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("blog_comments.id"), nullable=True, index=True
+    )
+    body: Mapped[str] = mapped_column(String(2000), nullable=False)
+    like_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    post = relationship("BlogPost")
+
+
+class BlogPostLike(Base):
+    __tablename__ = "blog_post_likes"
+
+    post_id: Mapped[int] = mapped_column(ForeignKey("blog_posts.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BlogCommentLike(Base):
+    __tablename__ = "blog_comment_likes"
+
+    comment_id: Mapped[int] = mapped_column(ForeignKey("blog_comments.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

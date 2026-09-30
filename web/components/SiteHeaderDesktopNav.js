@@ -10,6 +10,7 @@ import { canCreateListings } from "../lib/roles";
 const NAV_LINKS = [
   { key: "catalog", href: "/catalog", label: "Каталог" },
   { key: "calculator", href: "/customs-calculator", label: "Калькулятор" },
+  { key: "blog", href: "/blog", label: "Блог" },
   { key: "faq", href: "/faq", label: "FAQ" },
 ];
 

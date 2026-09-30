@@ -1467,6 +1467,7 @@ export default function Home({ initialData = null }) {
           <nav className="home-d-nav" aria-label="Основная навигация">
             <Link href="/catalog">Каталог</Link>
             <Link href="/customs-calculator">Калькулятор</Link>
+            <Link href="/blog">Блог</Link>
             <Link href="/faq">FAQ</Link>
           </nav>
           <div className="home-d-header__actions">
@@ -1507,6 +1508,9 @@ export default function Home({ initialData = null }) {
               <nav className="site-header-mobile-menu" aria-label="Меню сайта">
                 <Link href="/catalog" className="site-header-mobile-menu__link">
                   Каталог
+                </Link>
+                <Link href="/blog" className="site-header-mobile-menu__link">
+                  Блог
                 </Link>
                 <Link href="/customs-calculator" className="site-header-mobile-menu__link">
                   Калькулятор растаможки

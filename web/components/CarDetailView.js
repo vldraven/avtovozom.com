@@ -8,6 +8,7 @@ import CarPhotoLightbox from "./CarPhotoLightbox";
 import CarTurnkeyPrice from "./CarTurnkeyPrice";
 import HomeCarCard from "./HomeCarCard";
 import ListingFavoriteButton from "./ListingFavoriteButton";
+import CarBlogRelated from "./blog/CarBlogRelated";
 import ListingShareActions from "./ListingShareActions";
 import RequestConfirmModal from "./RequestConfirmModal";
 import SiteHeaderDesktopNav from "./SiteHeaderDesktopNav";
@@ -966,7 +967,7 @@ export default function CarDetailView({
                   </div>
                   <div className="detail-sidebar__hero-actions" aria-label="Избранное и поделиться">
                     <ListingFavoriteButton carId={car.id} car={car} />
-                    <ListingShareActions car={car} totalRubRf={totalRubRf} />
+<ListingShareActions car={car} totalRubRf={totalRubRf} />
                   </div>
                 </div>
 
@@ -1247,6 +1248,12 @@ export default function CarDetailView({
                   <p className="description-text">{car.description}</p>
                 </section>
               ) : null}
+
+              <CarBlogRelated
+                brandId={car.brand_id}
+                modelId={car.model_id}
+                label={[car.brand, car.model].filter(Boolean).join(" ")}
+              />
 
               {(similarError || similarCars.length > 0) && (
                 <section className="car-detail-similar" aria-label="Рекомендуем в этой цене">

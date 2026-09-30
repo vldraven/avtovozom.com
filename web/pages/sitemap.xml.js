@@ -62,6 +62,7 @@ export async function getServerSideProps({ req, res }) {
     "/dostavka-avto-iz-kitaya",
     "/dostavka-avtovozom-iz-kitaya",
     "/faq",
+    "/blog",
     "/request-quote",
   ];
   const urls = staticPaths.map((loc) => ({
@@ -117,6 +118,39 @@ export async function getServerSideProps({ req, res }) {
     }
   } catch {
     /* только статические URL */
+  }
+
+  try {
+    const blogRes = await fetch(`${API_URL}/blog/sitemap`, { headers: { Accept: "application/json" } });
+    if (blogRes.ok) {
+      const blog = await blogRes.json();
+      for (const post of blog.posts || []) {
+        const lastmod = isoDateOnly(post.updated_at);
+        urls.push({
+          loc: `${base}/blog/${post.slug}`,
+          changefreq: "weekly",
+          priority: "0.7",
+          ...(lastmod ? { lastmod } : {}),
+        });
+      }
+      for (const section of blog.sections || []) {
+        urls.push({
+          loc: `${base}/blog?section=${encodeURIComponent(section)}`,
+          changefreq: "weekly",
+          priority: "0.6",
+        });
+      }
+      urls.push({ loc: `${base}/blog/sections`, changefreq: "weekly", priority: "0.6" });
+      for (const author of blog.authors || []) {
+        urls.push({
+          loc: `${base}/blog/authors/${author}`,
+          changefreq: "weekly",
+          priority: "0.5",
+        });
+      }
+    }
+  } catch {
+    /* блог необязателен для sitemap */
   }
 
   const all = [...urls, ...carLocs];

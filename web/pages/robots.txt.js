@@ -10,6 +10,7 @@ export async function getServerSideProps({ req, res }) {
     "/favorites",
     "/reset-password",
     "/staff/",
+    "/blog/write",
   ]
     .map((path) => `Disallow: ${path}`)
     .join("\n");

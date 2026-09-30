@@ -36,6 +36,20 @@ function CatalogIcon() {
   );
 }
 
+function BlogIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path
+        d="M5 4h11l3 3v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M8 11h8M8 15h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function AddListingIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -150,9 +164,10 @@ export default function MobileBottomNav() {
   const isHomeNav = router.pathname === "/";
   const isCatalogNav =
     router.pathname === "/catalog" || router.pathname === "/catalog/[[...slug]]" || router.pathname.startsWith("/cars/");
+  const isBlogNav = router.pathname === "/blog" || router.pathname.startsWith("/blog/");
   const showAdd = Boolean(token && canCreateListings(me?.role));
-  // 5 consumer tabs + optional «+» for dealer/admin (привычный путь)
-  const colCount = 5 + (showAdd ? 1 : 0);
+  // 6 consumer tabs + optional «+» for dealer/admin
+  const colCount = 6 + (showAdd ? 1 : 0);
   const staffListingActive =
     router.pathname === "/staff/new-listing" || router.pathname === "/staff/edit-listing";
   const authNext = router.asPath || "/";
@@ -180,6 +195,17 @@ export default function MobileBottomNav() {
             <CatalogIcon />
           </span>
           <span className="mobile-dock__label">Каталог</span>
+        </Link>
+
+        <Link
+          href="/blog"
+          className={`mobile-dock__item${isBlogNav ? " mobile-dock__item--active" : ""}`}
+          aria-current={isBlogNav ? "page" : undefined}
+        >
+          <span className="mobile-dock__icon">
+            <BlogIcon />
+          </span>
+          <span className="mobile-dock__label">Блог</span>
         </Link>
 
         {token ? (
