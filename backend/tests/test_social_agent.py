@@ -405,7 +405,8 @@ class SocialAgentApiTests(unittest.TestCase):
         args, kwargs = mocked.call_args
         self.assertEqual(kwargs["payload"]["event"], "telegram_ai_draft")
         self.assertIn("короче", kwargs["payload"]["style_hint"])
-        self.assertIn("@avtovozombot", kwargs["payload"]["style_hint"])
+        self.assertIn("https://t.me/avtovozombot", kwargs["payload"]["style_hint"])
+        self.assertIn("https://max.ru/channel_avtovozom", kwargs["payload"]["style_hint"])
         self.assertEqual(len(kwargs["payload"]["selected_photo_absolute_urls"]), 2)
 
 
