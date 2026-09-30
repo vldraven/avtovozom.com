@@ -59,6 +59,8 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [phone, setPhone] = useState("");
+  const [authorBio, setAuthorBio] = useState("");
+  const [authorBioReady, setAuthorBioReady] = useState(false);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -151,6 +153,14 @@ export default function ProfilePage() {
     setDisplayName(data.display_name || "");
     setCompanyName(data.company_name || "");
     setPhone(data.phone || "");
+    const bioRes = await fetch(`${API_URL}/blog/me/profile`, {
+      headers: { Authorization: `Bearer ${access}` },
+    });
+    if (bioRes.ok) {
+      const bioData = await bioRes.json();
+      setAuthorBio(bioData.bio || "");
+      setAuthorBioReady(true);
+    }
     await loadRoleData(access, data.role);
     await refreshPinState();
   }
@@ -251,6 +261,19 @@ export default function ProfilePage() {
     if (!res.ok) {
       setError("Не удалось обновить профиль");
       return;
+    }
+    if (authorBioReady) {
+      const bioRes = await fetch(`${API_URL}/blog/me/profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ bio: authorBio }),
+      });
+      if (!bioRes.ok) {
+        setError("Профиль сохранён, но текст «О себе» записать не удалось");
+        const data = await res.json();
+        setMe(data);
+        return;
+      }
     }
     setMessage("Профиль обновлен");
     const data = await res.json();
@@ -445,6 +468,12 @@ export default function ProfilePage() {
                 ) : null}
                 <Link className="profile-hub-nav__item" href="/favorites">
                   <span>Избранное</span>
+                  <span className="profile-hub-nav__chev" aria-hidden>
+                    ›
+                  </span>
+                </Link>
+                <Link className="profile-hub-nav__item" href="/profile/posts">
+                  <span>Мои публикации</span>
                   <span className="profile-hub-nav__chev" aria-hidden>
                     ›
                   </span>
@@ -686,6 +715,18 @@ export default function ProfilePage() {
                       onChange={(e) => setPhone(e.target.value)}
                     />
                   </label>
+                  <label className="muted form-label">
+                    О себе
+                    <textarea
+                      className="input"
+                      rows={4}
+                      maxLength={500}
+                      placeholder="Коротко для страницы автора в блоге"
+                      value={authorBio}
+                      onChange={(e) => setAuthorBio(e.target.value)}
+                    />
+                    <span className="muted">Этот текст виден на вашей странице автора, а не в каждой статье.</span>
+                  </label>
                   <button type="button" className="btn btn-primary" onClick={saveProfile}>
                     Сохранить профиль
                   </button>
@@ -808,6 +849,14 @@ export default function ProfilePage() {
               )}
 
               {isStaffRole(me.role) && <AdminRequestsWidget token={token} />}
+              {isStaffRole(me.role) && !isAdminRole(me.role) ? (
+                <section className="panel">
+                  <h2 className="section-title panel-heading-sm">Блог</h2>
+                  <Link href="/staff/admin-blog" className="btn btn-secondary btn-inline">
+                    Модерация публикаций
+                  </Link>
+                </section>
+              ) : null}
 
               {isAdminRole(me.role) && (
                 <section className="panel" id="admin-settings">
@@ -827,6 +876,9 @@ export default function ProfilePage() {
                     </Link>
                     <Link href="/staff/admin-faq" className="btn btn-secondary btn-inline">
                       Редактировать FAQ
+                    </Link>
+                    <Link href="/staff/admin-blog" className="btn btn-secondary btn-inline">
+                      Блог: разделы и модерация
                     </Link>
                     <Link href="/staff/import-plan" className="btn btn-secondary btn-inline">
                       План импорта

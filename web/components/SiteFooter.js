@@ -21,6 +21,7 @@ export default function SiteFooter() {
           <div className="site-footer__col">
             <p className="site-footer__col-title">Платформа</p>
             <Link href="/catalog">Каталог</Link>
+            <Link href="/blog">Блог</Link>
             <Link href="/customs-calculator">Калькулятор</Link>
           </div>
           <div className="site-footer__col">

@@ -190,6 +190,50 @@ def save_brand_logo(brand_id: int, data: bytes) -> str | None:
     return f"/media/brands/{brand_id}/{fname}"
 
 
+_BLOG_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+
+
+def save_blog_image(user_id: int, data: bytes) -> str:
+    """Сохраняет обложку или фото в тексте блога. Возвращает путь /media/blog/..."""
+    if len(data) > _BLOG_IMAGE_MAX_BYTES:
+        raise ValueError("Изображение не больше 8 МБ.")
+    if not _looks_like_image(data):
+        raise ValueError("Нужен файл JPG, PNG, WEBP или GIF.")
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        ext = ".png"
+    elif len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        ext = ".webp"
+    elif data[:6] in (b"GIF87a", b"GIF89a"):
+        ext = ".gif"
+    else:
+        ext = ".jpg"
+    root = media_root()
+    folder = root / "blog" / str(user_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    fname = f"{uuid.uuid4().hex}{ext}"
+    (folder / fname).write_bytes(data)
+    return f"/media/blog/{user_id}/{fname}"
+
+
+_CHAT_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
+_CHAT_ALLOWED_EXT = frozenset(
+    {
+        ".pdf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".txt",
+        ".zip",
+        ".heic",
+    }
+)
+
 _CHAT_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
 _CHAT_ALLOWED_EXT = frozenset(
     {
