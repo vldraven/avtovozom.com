@@ -1,0 +1,54 @@
+# One-shot: засеять статьи блога в очередь модерации на проде без пароля.
+# Actions → Prod seed blog moderation → Run workflow
+# Берёт admin/moderator из БД контейнера, пишет pending editorial-посты.
+
+name: Prod seed blog moderation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Seed pending blog posts on prod
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST:-}" && test -n "${DEPLOY_USER:-}" && test -n "${DEPLOY_PATH:-}" && test -n "${SSH_KEY:-}" || {
+            echo "Missing secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PATH, DEPLOY_SSH_KEY"
+            exit 1
+          }
+          test -d scripts/seed_blog_pending/covers
+          test -f scripts/seed_blog_pending/articles.py
+          test -f scripts/seed_blog_pending/run_in_backend.py
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH=(ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new "${DEPLOY_USER}@${DEPLOY_HOST}")
+          RSYNC_RSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
+
+          REMOTE_TMP="/tmp/avtovozom-blog-seed-$$"
+          "${SSH[@]}" "rm -rf '${REMOTE_TMP}' && mkdir -p '${REMOTE_TMP}'"
+          rsync -avz -e "$RSYNC_RSH" \
+            scripts/seed_blog_pending/ \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_TMP}/"
+
+          "${SSH[@]}" "cd '${DEPLOY_PATH}' && set -euo pipefail && \
+            docker compose -f docker-compose.prod.yml cp '${REMOTE_TMP}/covers' backend:/tmp/blog-covers && \
+            docker compose -f docker-compose.prod.yml cp '${REMOTE_TMP}/articles.py' backend:/tmp/blog-articles.py && \
+            docker compose -f docker-compose.prod.yml cp '${REMOTE_TMP}/run_in_backend.py' backend:/tmp/run_blog_seed.py && \
+            docker compose -f docker-compose.prod.yml exec -T \
+              -e BLOG_COVERS_DIR=/tmp/blog-covers \
+              -e BLOG_ARTICLES_PY=/tmp/blog-articles.py \
+              backend python /tmp/run_blog_seed.py && \
+            rm -rf '${REMOTE_TMP}'"
