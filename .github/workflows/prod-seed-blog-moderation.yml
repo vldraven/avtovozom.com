@@ -44,10 +44,15 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_TMP}/"
 
           "${SSH[@]}" "cd '${DEPLOY_PATH}' && set -euo pipefail && \
+            for i in 1 2 3 4 5 6 7 8 9 10; do \
+              docker compose -f docker-compose.prod.yml ps --status running --services | grep -qx backend && break; \
+              echo waiting for backend...; sleep 6; \
+            done; \
             docker compose -f docker-compose.prod.yml cp '${REMOTE_TMP}/covers' backend:/tmp/blog-covers && \
             docker compose -f docker-compose.prod.yml cp '${REMOTE_TMP}/articles.py' backend:/tmp/blog-articles.py && \
             docker compose -f docker-compose.prod.yml cp '${REMOTE_TMP}/run_in_backend.py' backend:/tmp/run_blog_seed.py && \
             docker compose -f docker-compose.prod.yml exec -T \
+              -e PYTHONPATH=/app \
               -e BLOG_COVERS_DIR=/tmp/blog-covers \
               -e BLOG_ARTICLES_PY=/tmp/blog-articles.py \
               backend python /tmp/run_blog_seed.py && \
