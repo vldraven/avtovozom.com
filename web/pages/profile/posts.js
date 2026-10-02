@@ -68,7 +68,14 @@ export default function MyPostsPage() {
     );
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(typeof data.detail === "string" ? data.detail : "Не удалось выполнить действие.");
+      const detail = data.detail;
+      setError(
+        typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((item) => item.msg || JSON.stringify(item)).join(" ")
+            : "Не удалось выполнить действие."
+      );
       return;
     }
     if (action === "delete") setPosts((list) => list.filter((item) => item.id !== post.id));
@@ -141,11 +148,9 @@ export default function MyPostsPage() {
                       Отозвать
                     </button>
                   ) : null}
-                  {post.status !== "pending" ? (
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => act(post, "delete")}>
-                      Удалить
-                    </button>
-                  ) : null}
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => act(post, "delete")}>
+                    Удалить
+                  </button>
                 </div>
               </article>
             ))}
