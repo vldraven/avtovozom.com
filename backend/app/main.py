@@ -113,6 +113,7 @@ from .parser_cancellation import request_cancel
 from .parser_logic import run_parser_job
 from .indexnow import submit_urls as _indexnow_submit_urls
 from .fuel_types import fuel_from_car_trim, normalize_fuel_type_ru
+from .transmission_types import normalize_transmission_ru, transmission_from_trim_sections
 from .translator_ru import translate_to_ru
 from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_source, resolve_trim_for_listing
 from .trim_spec_storage import TrimSpecDocument, load_trim_spec_from_row, save_trim_spec_to_row
@@ -509,6 +510,20 @@ def _trim_to_out(trim: CarTrim | None) -> CarTrimOut | None:
     )
 
 
+def _resolve_transmission_out(car: Car, *, include_trim: bool) -> str | None:
+    """КПП для API: без иероглифов-мусора; при пустом — из комплектации."""
+    t = normalize_transmission_ru(getattr(car, "transmission", None))
+    if t:
+        return t
+    if not include_trim:
+        return None
+    trim = getattr(car, "trim", None)
+    if trim is None:
+        return None
+    doc = load_trim_spec_from_row(trim)
+    return transmission_from_trim_sections(doc.sections, doc.param_sections)
+
+
 def _optional_special_offer_rub(raw: str | None) -> float | None:
     """Пустая строка → сброс акции; иначе положительное число ₽ «под ключ»."""
     if raw is None:
@@ -646,7 +661,7 @@ def _car_to_out(
         engine_volume_cc=normalize_passenger_engine_volume_cc(car.engine_volume_cc),
         horsepower=car.horsepower,
         fuel_type=car.fuel_type,
-        transmission=car.transmission,
+        transmission=_resolve_transmission_out(car, include_trim=include_trim),
         drive_type=getattr(car, "drive_type", None),
         body_color_slug=car.body_color_slug,
         body_color_label=label_for_slug(car.body_color_slug),
@@ -3229,7 +3244,7 @@ async def _update_car_from_multipart(
     car.engine_volume_cc = engine_volume_cc
     car.horsepower = horsepower
     car.fuel_type = (fuel_type or "").strip() or None
-    car.transmission = (transmission or "").strip() or None
+    car.transmission = normalize_transmission_ru(transmission)
     car.drive_type = (drive_type or "").strip() or None
     car.location_city = (location_city or "").strip() or None
     car.price_cny = float(price_cny)
@@ -4136,7 +4151,7 @@ def admin_batch_refresh_from_che168(
         if fuel:
             car.fuel_type = fuel
         if parsed.transmission:
-            car.transmission = translate_to_ru(parsed.transmission) or parsed.transmission
+            car.transmission = normalize_transmission_ru(parsed.transmission)
         if parsed.location_city:
             car.location_city = translate_to_ru(parsed.location_city) or parsed.location_city
         if parsed.price_cny is not None and parsed.price_cny > 0:
