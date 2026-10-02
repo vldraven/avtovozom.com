@@ -26,8 +26,9 @@ from .models import Car, CarGeneration, CarPhoto, CarModel, CarTrim, ModelWhitel
 from .model_resolver import resolve_model_id_for_listing
 from .parser_cancellation import clear_cancel, is_cancel_requested
 from .parser_timeout import ParserJobCancelled, call_with_cancel_poll, call_with_timeout
-from .translator_ru import translate_to_ru
 from .fuel_types import fuel_from_car_trim, normalize_fuel_type_ru
+from .transmission_types import normalize_transmission_ru
+from .translator_ru import translate_to_ru
 from .trim_catalog import pick_generation_id_for_car, resolve_trim_for_listing
 
 
@@ -165,7 +166,7 @@ def _insert_car_from_parsed(
     display_model_name = resolved_row.name if resolved_row else model.name
 
     fuel_ru = normalize_fuel_type_ru(parsed.fuel_type)
-    trans_ru = translate_to_ru(parsed.transmission) if parsed.transmission else None
+    trans_ru = normalize_transmission_ru(parsed.transmission)
     city_ru = translate_to_ru(parsed.location_city) if parsed.location_city else None
 
     # Title: Brand Model Trim на латинице — без перевода на русский
@@ -278,7 +279,7 @@ def _revive_inactive_car_from_parsed(
     display_model_name = resolved_row.name if resolved_row else model.name
 
     fuel_ru = normalize_fuel_type_ru(parsed.fuel_type)
-    trans_ru = translate_to_ru(parsed.transmission) if parsed.transmission else None
+    trans_ru = normalize_transmission_ru(parsed.transmission)
     city_ru = translate_to_ru(parsed.location_city) if parsed.location_city else None
 
     title_en = pick_listing_title(

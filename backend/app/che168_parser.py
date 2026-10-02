@@ -568,7 +568,7 @@ def _parse_fuel_transmission_city(body: str) -> tuple[str | None, str | None, st
     )
     if m:
         trans = m.group(1).strip()
-        if trans and ("保养" in trans or "维修方式" in trans):
+        if trans and ("保养" in trans or "维修方式" in trans or "运转" in trans or "车况" in trans):
             trans = None
     if not trans:
         m = re.search(r"(自动|手动|CVT|AT|DCT|双离合)", body, re.I)
@@ -624,6 +624,8 @@ def _parsed_car_from_global_carinfo(info: dict[str, Any], source_listing_id: str
     fuel_type = str(info.get("fuelname") or "").strip() or None
     transmission = str(info.get("gearbox") or "").strip() or None
     if transmission in ("--", "-", ""):
+        transmission = None
+    if transmission and any(m in transmission for m in ("运转", "车况", "状况良好", "保养", "维修")):
         transmission = None
     if fuel_type in ("--", "-", ""):
         fuel_type = None
