@@ -30,6 +30,7 @@ from .models import (
     BlogCommentLike,
     BlogPost,
     BlogPostLike,
+    BlogPostTag,
     BlogSection,
     BlogTag,
     CarBrand,
@@ -846,8 +847,18 @@ def withdraw_post(post_id: int, db: Session = Depends(get_db), user: User = Depe
 @router.delete("/me/posts/{post_id}")
 def delete_post(post_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     post = _owned_or_404(db, post_id, user)
+    # С «на проверке» снимаем сами, чтобы одна кнопка «Удалить» работала в профиле.
     if post.status == "pending":
-        raise HTTPException(status_code=400, detail="Сначала отзовите публикацию с проверки.")
+        try:
+            post.status = apply_transition(post.status, _role(user), "withdraw")
+        except BlogError as exc:
+            raise HTTPException(status_code=400, detail=exc.message) from exc
+        post.submitted_at = None
+        post.updated_at = datetime.utcnow()
+        db.flush()
+    # Сначала чистим коллекцию в сессии — иначе SQL DELETE тегов + ORM delete поста дают 500.
+    post.tags = []
+    db.flush()
     _delete_post_children(db, post.id)
     db.delete(post)
     db.commit()
@@ -855,13 +866,32 @@ def delete_post(post_id: int, db: Session = Depends(get_db), user: User = Depend
 
 
 def _delete_post_children(db: Session, post_id: int) -> None:
-    comment_ids = [row[0] for row in db.execute(select(BlogComment.id).where(BlogComment.post_id == post_id)).all()]
+    comment_ids = [
+        row[0] for row in db.execute(select(BlogComment.id).where(BlogComment.post_id == post_id)).all()
+    ]
     if comment_ids:
-        db.execute(delete(BlogCommentLike).where(BlogCommentLike.comment_id.in_(comment_ids)))
-        db.execute(delete(BlogComment).where(BlogComment.post_id == post_id))
-    db.execute(delete(BlogPostLike).where(BlogPostLike.post_id == post_id))
-    assoc = BlogPost.tags.property.secondary
-    db.execute(delete(assoc).where(assoc.c.post_id == post_id))
+        db.execute(
+            delete(BlogCommentLike).where(BlogCommentLike.comment_id.in_(comment_ids)),
+            execution_options={"synchronize_session": False},
+        )
+        # Снять self-FK, иначе один DELETE по post_id может упереться в parent_id.
+        db.execute(
+            BlogComment.__table__.update()
+            .where(BlogComment.post_id == post_id)
+            .values(parent_id=None)
+        )
+        db.execute(
+            delete(BlogComment).where(BlogComment.post_id == post_id),
+            execution_options={"synchronize_session": False},
+        )
+    db.execute(
+        delete(BlogPostLike).where(BlogPostLike.post_id == post_id),
+        execution_options={"synchronize_session": False},
+    )
+    db.execute(
+        delete(BlogPostTag).where(BlogPostTag.post_id == post_id),
+        execution_options={"synchronize_session": False},
+    )
 
 
 @router.get("/me/profile")
