@@ -1,0 +1,39 @@
+# One-shot: random like_count 1..10 on published blog posts.
+# Actions → Prod seed blog likes → Run workflow
+name: Prod seed blog likes
+
+on:
+  workflow_dispatch:
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set random likes on published posts
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${DEPLOY_HOST:-}" && test -n "${DEPLOY_USER:-}" && test -n "${DEPLOY_PATH:-}" && test -n "${SSH_KEY:-}" || {
+            echo "Missing secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PATH, DEPLOY_SSH_KEY"
+            exit 1
+          }
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '${DEPLOY_PATH}' && docker compose -f docker-compose.prod.yml exec -T postgres \
+              psql -U avtovozom -d avtovozom -v ON_ERROR_STOP=1 -c \"
+                UPDATE blog_posts
+                SET like_count = 1 + floor(random() * 10)::int
+                WHERE status = 'published';
+                SELECT id, left(title, 60) AS title, like_count, status
+                FROM blog_posts
+                WHERE status = 'published'
+                ORDER BY id;
+              \""
