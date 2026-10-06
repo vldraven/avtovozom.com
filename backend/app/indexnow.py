@@ -31,9 +31,13 @@ def _key() -> str:
     return (os.getenv("INDEXNOW_KEY") or "").strip()
 
 
-def _web_origin() -> str:
+def web_origin() -> str:
     raw = os.getenv("PUBLIC_WEB_ORIGIN") or os.getenv("NEXT_PUBLIC_SITE_URL") or ""
     return raw.strip().rstrip("/")
+
+
+def _web_origin() -> str:
+    return web_origin()
 
 
 def _key_location(origin: str) -> str:
@@ -41,38 +45,53 @@ def _key_location(origin: str) -> str:
     return explicit or f"{origin}/indexnow-key.txt"
 
 
-def submit_urls(urls: list[str]) -> None:
-    """Отправить абсолютные URL в IndexNow. Не блокирует вызывающий код и не бросает исключений."""
+def _payload(urls: list[str]) -> dict | None:
     key = _key()
     origin = _web_origin()
-    # Уникализируем, сохраняя порядок.
     clean = list(dict.fromkeys(u.strip() for u in urls if u and u.strip()))
     if not key or not origin.startswith("http") or not clean:
-        return
+        return None
     host = urllib.parse.urlsplit(origin).netloc
     if not host:
-        return
-    payload = {
+        return None
+    return {
         "host": host,
         "key": key,
         "keyLocation": _key_location(origin),
         "urlList": clean[:_MAX_URLS],
     }
 
+
+def post_urls_blocking(urls: list[str], *, timeout: float = 30.0) -> tuple[int, str]:
+    """Синхронный POST. Возвращает (http_status, краткий комментарий). 0 — не отправляли."""
+    payload = _payload(urls)
+    if not payload:
+        return 0, "skip: нет INDEXNOW_KEY, origin или URL"
+    try:
+        resp = httpx.post(_ENDPOINT, json=payload, timeout=timeout)
+        n = len(payload["urlList"])
+        if resp.status_code >= 400:
+            logger.warning(
+                "IndexNow ответил %s на %d URL: %s",
+                resp.status_code,
+                n,
+                resp.text[:300],
+            )
+            return resp.status_code, resp.text[:300]
+        logger.info("IndexNow принял %d URL (%s)", n, resp.status_code)
+        return resp.status_code, f"ok {n} urls"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("IndexNow: ошибка отправки: %s", exc)
+        return 0, str(exc)
+
+
+def submit_urls(urls: list[str]) -> None:
+    """Отправить абсолютные URL в IndexNow. Не блокирует вызывающий код и не бросает исключений."""
+    if _payload(urls) is None:
+        return
+
     def _worker() -> None:
-        try:
-            resp = httpx.post(_ENDPOINT, json=payload, timeout=_TIMEOUT)
-            if resp.status_code >= 400:
-                logger.warning(
-                    "IndexNow ответил %s на %d URL: %s",
-                    resp.status_code,
-                    len(clean),
-                    resp.text[:300],
-                )
-            else:
-                logger.info("IndexNow принял %d URL (%s)", len(clean), resp.status_code)
-        except Exception as exc:  # noqa: BLE001 — best-effort, не мешаем основному потоку
-            logger.warning("IndexNow: ошибка отправки: %s", exc)
+        post_urls_blocking(urls, timeout=_TIMEOUT)
 
     threading.Thread(target=_worker, name="indexnow", daemon=True).start()
 

@@ -144,6 +144,18 @@ def enqueue_daily_job_if_needed() -> None:
         db.close()
 
 
+def process_seo_jobs() -> None:
+    """IndexNow по каталогу, переобход Вебмастера, еженедельный отчёт. Не роняет воркер."""
+    try:
+        from .seo_jobs import tick
+
+        tick()
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception("seo jobs tick failed")
+
+
 if __name__ == "__main__":
     # Интервал между циклами (опрос очереди и daily-cron) — секунды, не часы.
     poll_seconds = int(os.getenv("PARSER_POLL_SECONDS", "10"))
@@ -157,4 +169,5 @@ if __name__ == "__main__":
         enqueue_daily_job_if_needed()
         process_import_plan_queue()
         process_pending_jobs()
+        process_seo_jobs()
         time.sleep(poll_seconds)
