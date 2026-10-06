@@ -18,6 +18,12 @@ class TransmissionNormalizeTests(unittest.TestCase):
         self.assertIsNone(normalize_transmission_ru("运转良好"))
         self.assertIsNone(normalize_transmission_ru("车况良好"))
 
+    def test_rejects_max_speed(self) -> None:
+        self.assertTrue(is_junk_transmission("200km/h"))
+        self.assertIsNone(normalize_transmission_ru("200km/h"))
+        self.assertIsNone(normalize_transmission_ru("200 км/ч"))
+        self.assertIsNone(normalize_transmission_ru("最高车速200"))
+
     def test_maps_known_gearbox(self) -> None:
         self.assertEqual(normalize_transmission_ru("自动"), "Автомат")
         self.assertEqual(normalize_transmission_ru("AT"), "Автомат")

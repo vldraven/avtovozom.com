@@ -625,7 +625,11 @@ def _parsed_car_from_global_carinfo(info: dict[str, Any], source_listing_id: str
     transmission = str(info.get("gearbox") or "").strip() or None
     if transmission in ("--", "-", ""):
         transmission = None
-    if transmission and any(m in transmission for m in ("运转", "车况", "状况良好", "保养", "维修")):
+    if transmission and (
+        any(m in transmission for m in ("运转", "车况", "状况良好", "保养", "维修", "最高车速", "最高时速"))
+        or ("km/h" in transmission.lower())
+        or ("км/ч" in transmission.lower())
+    ):
         transmission = None
     if fuel_type in ("--", "-", ""):
         fuel_type = None

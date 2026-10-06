@@ -1,6 +1,7 @@
 """Каноническая КПП для карточки: автомат / механика / вариатор / робот DCT.
 
-Отсекает мусор вроде «运转良好» (состояние авто, ошибочно попавшее в gearbox).
+Отсекает мусор вроде «运转良好» (состояние) или «200km/h» (макс. скорость),
+ошибочно попавший в поле gearbox на китайских площадках.
 """
 
 from __future__ import annotations
@@ -26,6 +27,11 @@ _TRANSMISSION_JUNK_MARKERS = (
 
 _PLACEHOLDERS = frozenset({"", "-", "--", "—", "无", "未知", "暂无", "null", "none"})
 
+# Макс. скорость / разгон, иногда попадают в gearbox с китайских карточек.
+_SPEED_JUNK_RE = re.compile(
+    r"(?i)(?:km\s*/\s*h|км\s*/\s*ч|最高车速|最高时速|0\s*[-–]\s*100|加速)"
+)
+
 _RU_DCT_RE = re.compile(
     r"\bDCT\b|двойн\w*\s+сцеплен|преселектив|робот",
     re.IGNORECASE,
@@ -45,6 +51,8 @@ def _cap_first(s: str) -> str:
 def is_junk_transmission(raw: str | None) -> bool:
     s = str(raw or "").strip()
     if not s or s.lower() in _PLACEHOLDERS:
+        return True
+    if _SPEED_JUNK_RE.search(s) and not looks_like_gearbox_value(s):
         return True
     if any(m in s for m in _TRANSMISSION_JUNK_MARKERS) and not looks_like_gearbox_value(s):
         return True
