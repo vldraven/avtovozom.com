@@ -6416,6 +6416,131 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   opacity: 0.75;
 }
 
+.messenger__bubble-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: min(100%, 420px);
+}
+
+.messenger__bubble-row--mine .messenger__bubble-cluster {
+  align-items: flex-end;
+}
+
+.messenger__bubble-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  opacity: 0.72;
+}
+
+.messenger__bubble-row:hover .messenger__bubble-actions,
+.messenger__bubble-row:focus-within .messenger__bubble-actions {
+  opacity: 1;
+}
+
+.messenger__bubble-action {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.messenger__bubble-action:hover:not(:disabled) {
+  color: #0f172a;
+}
+
+.messenger__bubble-action--danger:hover:not(:disabled) {
+  color: #b91c1c;
+}
+
+.messenger__bubble-action:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.messenger__reply-quote {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-left: 3px solid rgba(14, 165, 233, 0.85);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.05);
+  display: grid;
+  gap: 2px;
+}
+
+.messenger__bubble--mine .messenger__reply-quote {
+  background: rgba(255, 255, 255, 0.14);
+  border-left-color: rgba(255, 255, 255, 0.75);
+}
+
+.messenger__reply-quote-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.messenger__reply-quote-text {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.92;
+}
+
+.messenger__composer-reply {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #eef6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.messenger__composer-reply-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.messenger__composer-reply-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #0369a1;
+}
+
+.messenger__composer-reply-text {
+  font-size: 0.84rem;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.messenger__composer-reply-cancel {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.messenger__composer-reply-cancel:hover {
+  color: #0f172a;
+}
+
 .messenger__system-msg {
   align-self: center;
   max-width: min(92%, 520px);

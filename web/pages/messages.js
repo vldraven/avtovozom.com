@@ -143,6 +143,8 @@ export default function MessagesPage() {
   const [listVisible, setListVisible] = useState(true);
   const [chatQuery, setChatQuery] = useState("");
   const [deletingChatId, setDeletingChatId] = useState(null);
+  const [deletingMessageId, setDeletingMessageId] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
   const [guestAwaitingAi, setGuestAwaitingAi] = useState(false);
   const guestAwaitTimerRef = useRef(null);
   const threadEndRef = useRef(null);
@@ -606,10 +608,58 @@ export default function MessagesPage() {
     skipAutoOpenChatRef.current = false;
     setActiveId(c.id);
     setSendErr("");
+    setReplyTo(null);
     if (narrow) setListVisible(false);
     if (!guestMode) {
       router.replace({ pathname: "/messages", query: { chat: c.id } }, undefined, { shallow: true });
       loadThread(c.id);
+    }
+  }
+
+  function quotePreviewForMessage(m) {
+    if (!m) return "";
+    const text = (m.text || "").trim();
+    if (text) return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+    if (m.attachment_original_name) return `📎 ${m.attachment_original_name}`;
+    return "Сообщение";
+  }
+
+  function startReply(m) {
+    if (!m?.id) return;
+    setReplyTo({
+      id: m.id,
+      quote: quotePreviewForMessage(m),
+    });
+    setSendErr("");
+    window.requestAnimationFrame(() => {
+      composerInputRef.current?.focus?.();
+    });
+  }
+
+  async function deleteMessage(m) {
+    if (!token || !activeId || !m?.id || !isStaffRole(me?.role)) return;
+    if (!window.confirm("Удалить это сообщение из чата?")) {
+      return;
+    }
+    setDeletingMessageId(m.id);
+    setSendErr("");
+    try {
+      const res = await fetch(`${API_URL}/chats/${activeId}/messages/${m.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSendErr(typeof body.detail === "string" ? body.detail : "Не удалось удалить сообщение");
+        return;
+      }
+      setMessages((prev) => prev.filter((row) => row.id !== m.id));
+      if (replyTo?.id === m.id) setReplyTo(null);
+      if (token) await loadChats(token);
+    } catch {
+      setSendErr("Сбой связи с API при удалении сообщения");
+    } finally {
+      setDeletingMessageId(null);
     }
   }
 
@@ -700,7 +750,11 @@ export default function MessagesPage() {
       const res = await fetch(`${API_URL}/public/guest-chats/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ guest_token: guestToken || null, text }),
+        body: JSON.stringify({
+          guest_token: guestToken || null,
+          text,
+          reply_to_message_id: replyTo?.id || null,
+        }),
       });
       const errBody = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -710,6 +764,7 @@ export default function MessagesPage() {
       persistGuestToken(errBody.guest_token);
       setDraft("");
       setAttachFile(null);
+      setReplyTo(null);
       setActiveId(errBody.chat_id);
       setGuestAwaitingAi(true);
       await loadGuestThread(errBody.guest_token);
@@ -719,6 +774,7 @@ export default function MessagesPage() {
     const fd = new FormData();
     fd.append("text", draft);
     if (attachFile) fd.append("file", attachFile);
+    if (replyTo?.id) fd.append("reply_to_message_id", String(replyTo.id));
     const res = await fetch(`${API_URL}/chats/${activeId}/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
@@ -731,6 +787,7 @@ export default function MessagesPage() {
     }
     setDraft("");
     setAttachFile(null);
+    setReplyTo(null);
     await loadThread(activeId);
   }
 
@@ -989,46 +1046,74 @@ export default function MessagesPage() {
                           const att = m.attachment_url;
                           const attName = m.attachment_original_name || "файл";
                           const showImg = att && attachmentIsImage(attName);
+                          const canModerate = !guestMode && isStaffRole(me?.role);
                           return (
                             <div
                               key={m.id}
                               className={`messenger__bubble-row${mine ? " messenger__bubble-row--mine" : ""}`}
                             >
-                              <div className={`messenger__bubble${mine ? " messenger__bubble--mine" : ""}`}>
-                                {m.text ? (
-                                  <p className="messenger__bubble-text">
-                                    {renderMessageText(
-                                      m.message_type === "assistant"
-                                        ? sanitizeConsultantReplyText(m.text)
-                                        : m.text
-                                    )}
-                                  </p>
-                                ) : null}
-                                {att ? (
-                                  <div className="messenger__attachment">
-                                    {showImg ? (
-                                      <a href={mediaSrc(att)} target="_blank" rel="noopener noreferrer">
-                                        <img
-                                          className="messenger__attachment-img"
-                                          src={mediaSrc(att)}
-                                          alt={attName}
-                                        />
-                                      </a>
-                                    ) : (
-                                      <a
-                                        className="messenger__attachment-link"
-                                        href={mediaSrc(att)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        📎 {attName}
-                                      </a>
-                                    )}
-                                  </div>
-                                ) : null}
-                                <time className="messenger__bubble-time" dateTime={m.created_at}>
-                                  {formatMsgTime(m.created_at)}
-                                </time>
+                              <div className="messenger__bubble-cluster">
+                                <div className={`messenger__bubble${mine ? " messenger__bubble--mine" : ""}`}>
+                                  {m.reply_quote_text ? (
+                                    <div className="messenger__reply-quote">
+                                      <span className="messenger__reply-quote-label">В ответ</span>
+                                      <span className="messenger__reply-quote-text">{m.reply_quote_text}</span>
+                                    </div>
+                                  ) : null}
+                                  {m.text ? (
+                                    <p className="messenger__bubble-text">
+                                      {renderMessageText(
+                                        m.message_type === "assistant"
+                                          ? sanitizeConsultantReplyText(m.text)
+                                          : m.text
+                                      )}
+                                    </p>
+                                  ) : null}
+                                  {att ? (
+                                    <div className="messenger__attachment">
+                                      {showImg ? (
+                                        <a href={mediaSrc(att)} target="_blank" rel="noopener noreferrer">
+                                          <img
+                                            className="messenger__attachment-img"
+                                            src={mediaSrc(att)}
+                                            alt={attName}
+                                          />
+                                        </a>
+                                      ) : (
+                                        <a
+                                          className="messenger__attachment-link"
+                                          href={mediaSrc(att)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                        >
+                                          📎 {attName}
+                                        </a>
+                                      )}
+                                    </div>
+                                  ) : null}
+                                  <time className="messenger__bubble-time" dateTime={m.created_at}>
+                                    {formatMsgTime(m.created_at)}
+                                  </time>
+                                </div>
+                                <div className="messenger__bubble-actions">
+                                  <button
+                                    type="button"
+                                    className="messenger__bubble-action"
+                                    onClick={() => startReply(m)}
+                                  >
+                                    Ответить
+                                  </button>
+                                  {canModerate ? (
+                                    <button
+                                      type="button"
+                                      className="messenger__bubble-action messenger__bubble-action--danger"
+                                      disabled={deletingMessageId === m.id}
+                                      onClick={() => deleteMessage(m)}
+                                    >
+                                      {deletingMessageId === m.id ? "…" : "Удалить"}
+                                    </button>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
                           );
@@ -1044,6 +1129,22 @@ export default function MessagesPage() {
                       <p className="messenger__composer-hint muted" aria-live="polite">
                         Консультант печатает…
                       </p>
+                    ) : null}
+                    {replyTo ? (
+                      <div className="messenger__composer-reply">
+                        <div className="messenger__composer-reply-body">
+                          <span className="messenger__composer-reply-label">Ответ на сообщение</span>
+                          <span className="messenger__composer-reply-text">{replyTo.quote}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="messenger__composer-reply-cancel"
+                          aria-label="Отменить ответ"
+                          onClick={() => setReplyTo(null)}
+                        >
+                          ×
+                        </button>
+                      </div>
                     ) : null}
                     {attachFile && !guestMode ? (
                       <p className="messenger__attach-picked muted">
