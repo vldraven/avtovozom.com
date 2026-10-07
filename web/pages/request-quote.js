@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
+import PdConsentCheckbox from "../components/PdConsentCheckbox";
 import SiteHeader from "../components/SiteHeader";
 import { saveToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
@@ -76,6 +77,7 @@ export default function RequestQuotePage() {
   /** После verify: если есть JWT — пользователь уже в авторизованной зоне. */
   const [verifyMode, setVerifyMode] = useState(null);
   const [pendingPlatformChatId, setPendingPlatformChatId] = useState(null);
+  const [pdConsent, setPdConsent] = useState(false);
 
   useEffect(() => {
     if (!router.isReady || !carId) return;
@@ -94,6 +96,10 @@ export default function RequestQuotePage() {
     e.preventDefault();
     setError("");
     setMessage("");
+    if (!pdConsent) {
+      setError("Подтвердите согласие с политикой и пользовательским соглашением.");
+      return;
+    }
     setBusy(true);
     try {
       const endpoint = carId ? "/requests/lead" : "/requests/freeform-lead";
@@ -171,9 +177,20 @@ export default function RequestQuotePage() {
     }
   }
 
+  const backHref = nextUrl || (car ? publicCarHref(car) : "/");
+  const authNext = nextUrl || (car ? publicCarHref(car) : "/");
+
   if (!router.isReady) {
     return (
-      <div className="layout">
+      <div className="layout request-quote-layout-root">
+        <SiteHeader tagline="Заявка на подбор">
+          <Link href="/" className="btn btn-ghost btn-sm">
+            ← Назад
+          </Link>
+          <Link href="/auth" className="btn btn-secondary btn-sm">
+            Вход
+          </Link>
+        </SiteHeader>
         <main className="site-main">
           <div className="container">
             <p className="muted">Загрузка…</p>
@@ -182,9 +199,6 @@ export default function RequestQuotePage() {
       </div>
     );
   }
-
-  const backHref = nextUrl || (car ? publicCarHref(car) : "/");
-  const authNext = nextUrl || (car ? publicCarHref(car) : "/");
 
   return (
     <div className="layout request-quote-layout-root">
@@ -313,11 +327,20 @@ export default function RequestQuotePage() {
                   </aside>
 
                   <div className="request-quote-actions">
-                    <button type="submit" className="btn btn-primary request-quote-submit" disabled={busy}>
+                    <PdConsentCheckbox
+                      checked={pdConsent}
+                      onChange={setPdConsent}
+                      id="request-quote-pd-consent"
+                    />
+                    <button
+                      type="submit"
+                      className="btn btn-primary request-quote-submit"
+                      disabled={busy || !pdConsent}
+                    >
                       {busy ? "Отправка…" : "Отправить заявку"}
                     </button>
                     <p className="muted request-quote-footnote">
-                      Нажимая кнопку, вы соглашаетесь с обработкой персональных данных. Уже есть аккаунт?{" "}
+                      Уже есть аккаунт?{" "}
                       <Link href={`/auth?next=${encodeURIComponent(authNext)}`}>Войдите</Link> и отправьте заявку
                       в один клик.
                     </p>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import PdConsentCheckbox from "./PdConsentCheckbox";
 import { formatRuPhoneMask, normalizeRuPhoneDigits, phoneDigitsToApi } from "../lib/ruPhoneMask";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -35,11 +36,17 @@ export default function LeadForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [pdConsent, setPdConsent] = useState(false);
 
   async function onSubmit(e) {
     e.preventDefault();
     setError("");
     setSuccess("");
+
+    if (!pdConsent) {
+      setError("Подтвердите согласие с политикой и пользовательским соглашением.");
+      return;
+    }
 
     const name = fullName.trim();
     const mail = email.trim().toLowerCase();
@@ -144,7 +151,8 @@ export default function LeadForm({
               placeholder="Марка, модель, год, бюджет, сроки…"
             />
           </label>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <PdConsentCheckbox checked={pdConsent} onChange={setPdConsent} id={`${id}-pd-consent`} />
+          <button type="submit" className="btn btn-primary" disabled={busy || !pdConsent}>
             {busy ? "Отправка…" : "Отправить заявку"}
           </button>
         </form>
