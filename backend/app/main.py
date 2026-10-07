@@ -1206,6 +1206,36 @@ def startup() -> None:
         conn.execute(text("ALTER TABLE chat_messages ALTER COLUMN sender_user_id DROP NOT NULL"))
         conn.execute(
             text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS reply_to_message_id INTEGER"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS reply_quote_text VARCHAR(280)"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITHOUT TIME ZONE"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_chat_messages_reply_to_message_id "
+                "ON chat_messages (reply_to_message_id)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_chat_messages_chat_id_deleted_at "
+                "ON chat_messages (chat_id, deleted_at)"
+            )
+        )
+        conn.execute(
+            text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_platform_user "
                 "ON chats (user_id) WHERE chat_type = 'platform'"
             )
@@ -6305,6 +6335,7 @@ def _unread_platform_for_client(db: Session, chat: Chat) -> int:
                 ChatMessage.sender_user_id != chat.user_id,
                 ChatMessage.message_type != "system",
                 ChatMessage.id > lr,
+                _chat_message_not_deleted(),
             )
         ).scalar_one()
     )
@@ -6320,6 +6351,7 @@ def _unread_platform_for_staff(db: Session, chat: Chat) -> int:
                 ChatMessage.chat_id == chat.id,
                 ChatMessage.sender_user_id == chat.user_id,
                 ChatMessage.id > lr,
+                _chat_message_not_deleted(),
             )
         ).scalar_one()
     )
@@ -6337,6 +6369,7 @@ def _unread_guest_for_staff(db: Session, chat: Chat) -> int:
                 ChatMessage.sender_user_id.is_(None),
                 ChatMessage.message_type.notin_(("system", "assistant")),
                 ChatMessage.id > lr,
+                _chat_message_not_deleted(),
             )
         ).scalar_one()
     )
@@ -6353,6 +6386,7 @@ def _unread_guest_for_guest(db: Session, chat: Chat) -> int:
                 ChatMessage.chat_id == chat.id,
                 ChatMessage.message_type != "system",
                 ChatMessage.id > lr,
+                _chat_message_not_deleted(),
                 (
                     (ChatMessage.sender_user_id.is_not(None))
                     | (ChatMessage.message_type == "assistant")
@@ -6371,6 +6405,7 @@ def _guest_chat_has_staff_reply(db: Session, chat_id: int) -> bool:
             .where(
                 ChatMessage.chat_id == chat_id,
                 ChatMessage.sender_user_id.is_not(None),
+                _chat_message_not_deleted(),
             )
         ).scalar_one()
         > 0
@@ -6453,6 +6488,68 @@ def _chat_attachment_message_type(original_name: str) -> str:
     return "file"
 
 
+def _chat_message_not_deleted():
+    return ChatMessage.deleted_at.is_(None)
+
+
+def _chat_message_quote_preview(msg: ChatMessage) -> str:
+    if msg.deleted_at is not None:
+        return "Сообщение удалено"
+    text = (msg.text or "").strip()
+    if text:
+        return text[:180] + ("…" if len(text) > 180 else "")
+    if msg.attachment_original_name:
+        return f"📎 {msg.attachment_original_name}"
+    return "Сообщение"
+
+
+def _chat_message_out(msg: ChatMessage) -> ChatMessageOut:
+    return ChatMessageOut(
+        id=msg.id,
+        chat_id=msg.chat_id,
+        sender_user_id=msg.sender_user_id,
+        message_type=msg.message_type,
+        text=msg.text,
+        attachment_url=msg.attachment_url,
+        attachment_original_name=msg.attachment_original_name,
+        reply_to_message_id=msg.reply_to_message_id,
+        reply_quote_text=msg.reply_quote_text,
+        is_deleted=msg.deleted_at is not None,
+        created_at=msg.created_at,
+    )
+
+
+def _resolve_reply_target(
+    db: Session, chat_id: int, reply_to_message_id: int | None
+) -> tuple[int | None, str | None]:
+    if reply_to_message_id is None:
+        return None, None
+    parent = db.execute(
+        select(ChatMessage).where(
+            ChatMessage.id == int(reply_to_message_id),
+            ChatMessage.chat_id == chat_id,
+            _chat_message_not_deleted(),
+        )
+    ).scalar_one_or_none()
+    if not parent:
+        raise HTTPException(status_code=400, detail="Сообщение для ответа не найдено")
+    return parent.id, _chat_message_quote_preview(parent)
+
+
+def _refresh_chat_last_message_at(db: Session, chat: Chat) -> None:
+    last = (
+        db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.chat_id == chat.id, _chat_message_not_deleted())
+            .order_by(ChatMessage.id.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    chat.last_message_at = last.created_at if last else chat.created_at
+
+
 def _unread_for_chat(
     db: Session, chat_id: int, peer_sender_id: int, last_read_message_id: int | None
 ) -> int:
@@ -6465,6 +6562,7 @@ def _unread_for_chat(
                 ChatMessage.chat_id == chat_id,
                 ChatMessage.sender_user_id == peer_sender_id,
                 ChatMessage.id > lr,
+                _chat_message_not_deleted(),
             )
         ).scalar_one()
     )
@@ -6501,7 +6599,7 @@ def _build_chat_list_items(
     msgs = (
         db.execute(
             select(ChatMessage)
-            .where(ChatMessage.chat_id.in_(chat_ids))
+            .where(ChatMessage.chat_id.in_(chat_ids), _chat_message_not_deleted())
             .order_by(ChatMessage.chat_id.asc(), ChatMessage.id.desc())
         )
         .scalars()
@@ -6690,11 +6788,14 @@ def public_guest_chat_send(
         raise HTTPException(status_code=400, detail="Сообщение слишком длинное")
 
     chat, token, created = _ensure_guest_chat(db, payload.guest_token)
+    reply_id, reply_quote = _resolve_reply_target(db, chat.id, payload.reply_to_message_id)
     msg = ChatMessage(
         chat_id=chat.id,
         sender_user_id=None,
         message_type="text",
         text=text_clean,
+        reply_to_message_id=reply_id,
+        reply_quote_text=reply_quote,
     )
     db.add(msg)
     db.flush()
@@ -6734,7 +6835,7 @@ def public_guest_chat_send(
     return GuestChatSessionOut(
         guest_token=token,
         chat_id=chat.id,
-        message=ChatMessageOut.model_validate(msg),
+        message=_chat_message_out(msg),
     )
 
 
@@ -6749,7 +6850,7 @@ def public_guest_chat_messages(
     messages = (
         db.execute(
             select(ChatMessage)
-            .where(ChatMessage.chat_id == chat.id)
+            .where(ChatMessage.chat_id == chat.id, _chat_message_not_deleted())
             .order_by(ChatMessage.id.desc())
             .offset(offset)
             .limit(min(limit, 200))
@@ -6758,14 +6859,18 @@ def public_guest_chat_messages(
         .all()
     )
     latest_id = (
-        db.execute(select(func.max(ChatMessage.id)).where(ChatMessage.chat_id == chat.id)).scalar_one_or_none()
+        db.execute(
+            select(func.max(ChatMessage.id)).where(
+                ChatMessage.chat_id == chat.id, _chat_message_not_deleted()
+            )
+        ).scalar_one_or_none()
     )
     if latest_id:
         prev = chat.user_last_read_message_id or 0
         if latest_id > prev:
             chat.user_last_read_message_id = latest_id
             db.commit()
-    return list(reversed(messages))
+    return [_chat_message_out(m) for m in reversed(messages)]
 
 
 @app.get("/public/guest-chats/{guest_token}", response_model=ChatListItemOut)
@@ -6777,7 +6882,7 @@ def public_guest_chat_meta(
     last_msg = (
         db.execute(
             select(ChatMessage)
-            .where(ChatMessage.chat_id == chat.id)
+            .where(ChatMessage.chat_id == chat.id, _chat_message_not_deleted())
             .order_by(ChatMessage.id.desc())
             .limit(1)
         )
@@ -6828,7 +6933,7 @@ def chat_messages(
     messages = (
         db.execute(
             select(ChatMessage)
-            .where(ChatMessage.chat_id == chat_id)
+            .where(ChatMessage.chat_id == chat_id, _chat_message_not_deleted())
             .order_by(ChatMessage.id.desc())
             .offset(offset)
             .limit(limit)
@@ -6837,7 +6942,11 @@ def chat_messages(
         .all()
     )
     latest_id = (
-        db.execute(select(func.max(ChatMessage.id)).where(ChatMessage.chat_id == chat_id)).scalar_one_or_none()
+        db.execute(
+            select(func.max(ChatMessage.id)).where(
+                ChatMessage.chat_id == chat_id, _chat_message_not_deleted()
+            )
+        ).scalar_one_or_none()
     )
     if latest_id:
         if chat.chat_type == "platform":
@@ -6866,7 +6975,7 @@ def chat_messages(
         db.commit()
 
     # вернуть в хронологическом порядке
-    return list(reversed(messages))
+    return [_chat_message_out(m) for m in reversed(messages)]
 
 
 @app.post("/chats/{chat_id}/messages", response_model=ChatMessageOut)
@@ -6874,6 +6983,7 @@ async def send_chat_message(
     chat_id: int,
     text: str = Form(""),
     file: UploadFile | None = File(None),
+    reply_to_message_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -6903,6 +7013,7 @@ async def send_chat_message(
     if not text_clean and not att_url:
         raise HTTPException(status_code=400, detail="Добавьте текст или вложение")
 
+    reply_id, reply_quote = _resolve_reply_target(db, chat_id, reply_to_message_id)
     msg = ChatMessage(
         chat_id=chat_id,
         sender_user_id=current_user.id,
@@ -6910,6 +7021,8 @@ async def send_chat_message(
         text=text_clean or None,
         attachment_url=att_url,
         attachment_original_name=att_name,
+        reply_to_message_id=reply_id,
+        reply_quote_text=reply_quote,
     )
     db.add(msg)
     db.flush()
@@ -6963,7 +7076,38 @@ async def send_chat_message(
             )
             db.commit()
 
-    return msg
+    return _chat_message_out(msg)
+
+
+@app.delete("/chats/{chat_id}/messages/{message_id}", response_model=ChatMessageOut)
+def delete_chat_message(
+    chat_id: int,
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "moderator")),
+):
+    """Soft-delete a message. Staff only."""
+    chat = db.execute(select(Chat).where(Chat.id == chat_id)).scalar_one_or_none()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    msg = db.execute(
+        select(ChatMessage).where(
+            ChatMessage.id == message_id,
+            ChatMessage.chat_id == chat_id,
+            _chat_message_not_deleted(),
+        )
+    ).scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    msg.deleted_at = datetime.utcnow()
+    msg.text = None
+    msg.attachment_url = None
+    msg.attachment_original_name = None
+    _refresh_chat_last_message_at(db, chat)
+    db.commit()
+    db.refresh(msg)
+    return _chat_message_out(msg)
 
 
 @app.get("/admin/model-whitelist")

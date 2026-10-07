@@ -263,6 +263,45 @@ class GuestChatApiTests(unittest.TestCase):
             0,
         )
 
+    @patch("app.main.notify_guest_chat_started")
+    @patch("app.main.notify_guest_chat_message")
+    def test_staff_can_delete_message_and_reply(self, mock_msg, mock_started):
+        created = self.client.post(
+            "/public/guest-chats/messages",
+            json={"text": "Исходное сообщение"},
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        chat_id = created.json()["chat_id"]
+        parent_id = created.json()["message"]["id"]
+        headers = self._admin_headers()
+
+        reply = self.client.post(
+            f"/chats/{chat_id}/messages",
+            headers=headers,
+            data={"text": "Ответ админа", "reply_to_message_id": str(parent_id)},
+        )
+        self.assertEqual(reply.status_code, 200, reply.text)
+        body = reply.json()
+        self.assertEqual(body["reply_to_message_id"], parent_id)
+        self.assertIn("Исходное", body["reply_quote_text"] or "")
+        reply_id = body["id"]
+
+        denied = self.client.delete(f"/chats/{chat_id}/messages/{reply_id}")
+        self.assertEqual(denied.status_code, 401)
+
+        deleted = self.client.delete(
+            f"/chats/{chat_id}/messages/{reply_id}",
+            headers=headers,
+        )
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertTrue(deleted.json().get("is_deleted"))
+
+        thread = self.client.get(f"/chats/{chat_id}/messages", headers=headers)
+        self.assertEqual(thread.status_code, 200)
+        ids = [m["id"] for m in thread.json()]
+        self.assertIn(parent_id, ids)
+        self.assertNotIn(reply_id, ids)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1142,6 +1142,9 @@ class ChatMessageOut(BaseModel):
     text: str | None
     attachment_url: str | None = None
     attachment_original_name: str | None = None
+    reply_to_message_id: int | None = None
+    reply_quote_text: str | None = None
+    is_deleted: bool = False
     created_at: datetime
 
     class Config:
@@ -1151,6 +1154,7 @@ class ChatMessageOut(BaseModel):
 class GuestChatSendIn(BaseModel):
     guest_token: str | None = None
     text: str = ""
+    reply_to_message_id: int | None = None
 
 
 class GuestChatSessionOut(BaseModel):

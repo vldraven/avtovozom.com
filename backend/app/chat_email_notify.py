@@ -59,6 +59,7 @@ def _unread_for_client(db: Session, chat: Chat) -> int:
                 ChatMessage.sender_user_id != chat.user_id,
                 ChatMessage.message_type != "system",
                 ChatMessage.id > lr,
+                ChatMessage.deleted_at.is_(None),
             )
         ).scalar_one()
     )

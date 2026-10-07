@@ -374,6 +374,9 @@ class ChatMessage(Base):
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     attachment_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     attachment_original_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reply_to_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    reply_quote_text: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
