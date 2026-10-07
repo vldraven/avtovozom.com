@@ -509,12 +509,14 @@ class CustomsCalcEtcContext(BaseModel):
 
 
 class CustomsCalcSummary(BaseModel):
-    """Краткая разбивка для витрины: оформление, пошлина, утилизация, итого."""
+    """Краткая разбивка для витрины: цена авто, оформление, пошлина, утилизация, итого."""
 
+    car_price_rub: float = Field(..., description="Стоимость авто в ₽ по курсу расчёта (таможенная стоимость)")
     clearance_fee_rub: float = Field(..., description="Таможенное оформление (сбор), ₽")
     duty_rub: float = Field(..., description="Таможенная пошлина (для юрлица при необходимости включает акциз и НДС в одной сумме)")
     utilization_fee_rub: float = Field(..., description="Утилизационный сбор, ₽")
-    total_rub: float = Field(..., description="Итого к уплате (оценка), ₽")
+    payments_rub: float = Field(..., description="Сумма таможенных платежей без стоимости авто, ₽")
+    total_rub: float = Field(..., description="Итого: стоимость авто + таможенные платежи, ₽")
 
 
 class CustomsCalcEstimateOut(BaseModel):

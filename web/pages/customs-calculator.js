@@ -113,13 +113,30 @@ function Segmented({ label, value, options, onChange, ariaLabel, fullWidth = tru
   );
 }
 
+function resultGrandTotal(summary) {
+  if (summary.car_price_rub != null && summary.total_rub != null) {
+    return Number(summary.total_rub);
+  }
+  const payments =
+    summary.payments_rub != null
+      ? Number(summary.payments_rub)
+      : Number(summary.clearance_fee_rub || 0) +
+        Number(summary.duty_rub || 0) +
+        Number(summary.utilization_fee_rub || 0);
+  if (summary.car_price_rub != null) {
+    return Number(summary.car_price_rub) + payments;
+  }
+  return Number(summary.total_rub);
+}
+
 function ResultCard({ summary, isCompany, disclaimer }) {
   if (!summary) return null;
   return (
     <section className="customs-calc-result customs-calc-result--ink" aria-live="polite">
-      <p className="customs-calc-result__eyebrow">Платежи при ввозе</p>
+      <p className="customs-calc-result__eyebrow">Оценка ввоза</p>
       <dl className="customs-calc-result__list">
         {[
+          ["Стоимость авто", summary.car_price_rub],
           ["Таможенное оформление", summary.clearance_fee_rub],
           [isCompany ? "Пошлина, акциз и НДС (оценка)" : "Таможенная пошлина", summary.duty_rub],
           ["Утилизационный сбор", summary.utilization_fee_rub],
@@ -131,7 +148,7 @@ function ResultCard({ summary, isCompany, disclaimer }) {
         ))}
         <div className="customs-calc-result__row customs-calc-result__row--total">
           <dt>Итого</dt>
-          <dd>{formatRub(summary.total_rub)}</dd>
+          <dd>{formatRub(resultGrandTotal(summary))}</dd>
         </div>
       </dl>
       {disclaimer ? (
@@ -445,10 +462,10 @@ export default function CustomsCalculatorPage() {
               </div>
             ) : (
               <div className="customs-calc-placeholder customs-calc-only-desktop panel">
-                <p className="customs-calc-placeholder__eyebrow">Платежи при ввозе</p>
+                <p className="customs-calc-placeholder__eyebrow">Оценка ввоза</p>
                 <p className="muted">
-                  Заполните параметры и нажмите «Рассчитать» — здесь появится оценка пошлин и
-                  утильсбора.
+                  Заполните параметры и нажмите «Рассчитать» — здесь появятся стоимость авто,
+                  пошлины и утильсбор.
                 </p>
               </div>
             )}
