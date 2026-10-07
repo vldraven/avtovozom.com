@@ -454,21 +454,29 @@ def run_estimate(
         primary = "etc" if payload.owner_type == "individual" else "ctp"
 
         if primary == "etc":
+            car_price = float(etc.get("Customs value (RUB)") or 0)
+            payments = float(etc.get("Total Pay (RUB)") or 0)
             summary = CustomsCalcSummary(
+                car_price_rub=car_price,
                 clearance_fee_rub=float(etc.get("Clearance Fee (RUB)") or 0),
                 duty_rub=float(etc.get("Duty (RUB)") or 0),
                 utilization_fee_rub=float(etc.get("Utilization Fee (RUB)") or 0),
-                total_rub=float(etc.get("Total Pay (RUB)") or 0),
+                payments_rub=payments,
+                total_rub=car_price + payments,
             )
         else:
             duty_only = float(ctp.get("Duty (RUB)") or 0)
             excise = float(ctp.get("Excise (RUB)") or 0)
             vat = float(ctp.get("VAT (RUB)") or 0)
+            car_price = float(ctp.get("Price (RUB)") or 0)
+            payments = float(ctp.get("Total Pay (RUB)") or 0)
             summary = CustomsCalcSummary(
+                car_price_rub=car_price,
                 clearance_fee_rub=float(ctp.get("Clearance Fee (RUB)") or 0),
                 duty_rub=duty_only + excise + vat,
                 utilization_fee_rub=float(ctp.get("Util Fee (RUB)") or 0),
-                total_rub=float(ctp.get("Total Pay (RUB)") or 0),
+                payments_rub=payments,
+                total_rub=car_price + payments,
             )
 
         return CustomsCalcEstimateOut(
