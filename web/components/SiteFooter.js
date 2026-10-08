@@ -34,6 +34,8 @@ export default function SiteFooter() {
             <p className="site-footer__col-title">Компания</p>
             <Link href="/about">О компании</Link>
             <Link href="/contacts">Контакты</Link>
+            <Link href="/privacy">Политика ПДн</Link>
+            <Link href="/terms">Соглашение</Link>
             <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
             <a href={TELEGRAM_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
               Telegram

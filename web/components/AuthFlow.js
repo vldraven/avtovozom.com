@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import PdConsentCheckbox from "./PdConsentCheckbox";
 import PinSetupPanel from "./PinSetupPanel";
 import SiteLogo from "./SiteLogo";
 import { saveToken } from "../lib/auth";
@@ -130,6 +131,7 @@ export default function AuthFlow({
   const [pinSetupRequired, setPinSetupRequired] = useState(false);
   const [resendAt, setResendAt] = useState(0);
   const [resendLeft, setResendLeft] = useState(0);
+  const [pdConsent, setPdConsent] = useState(false);
 
   useEffect(() => {
     setMode(initialMode);
@@ -228,6 +230,10 @@ export default function AuthFlow({
   }
 
   async function startRegister({ resend = false } = {}) {
+    if (!pdConsent) {
+      setError("Подтвердите согласие с политикой и пользовательским соглашением.");
+      return;
+    }
     setBusy(true);
     setError("");
     setMessage("");
@@ -555,10 +561,11 @@ export default function AuthFlow({
                 onChange={(e) => setRegName(e.target.value)}
               />
             </label>
+            <PdConsentCheckbox checked={pdConsent} onChange={setPdConsent} id="auth-pd-consent" />
             <button
               type="button"
               className="btn btn-primary auth-submit-wide"
-              disabled={busy}
+              disabled={busy || !pdConsent}
               onClick={() => startRegister()}
             >
               Отправить код на email

@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import "../lib/suppressExtensionErrors";
 import AppLockGate from "../components/AppLockGate";
 import ChatEntryWidget from "../components/ChatEntryWidget";
+import CookieConsentBanner from "../components/CookieConsentBanner";
 import MobileBottomNav from "../components/MobileBottomNav";
 import PwaInstallPrompt from "../components/PwaInstallPrompt";
 import PwaServiceWorker from "../components/PwaServiceWorker";
@@ -150,6 +151,7 @@ export default function App({ Component, pageProps }) {
         <ChatEntryWidget />
         <PwaInstallPrompt />
         <PwaServiceWorker />
+        <CookieConsentBanner />
         <YandexMetrika />
       </div>
     </>

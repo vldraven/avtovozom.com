@@ -1,4 +1,7 @@
 import Script from "next/script";
+import { useEffect, useState } from "react";
+
+import { getCookieConsent } from "../lib/cookieConsent";
 
 /**
  * Номер счётчика из кабинета Метрики (только цифры).
@@ -13,8 +16,20 @@ function getCounterId() {
 
 export default function YandexMetrika() {
   const counterId = getCounterId();
+  const [allowed, setAllowed] = useState(false);
 
-  if (!counterId) return null;
+  useEffect(() => {
+    const sync = () => setAllowed(getCookieConsent() === "accepted");
+    sync();
+    window.addEventListener("avtovozom:cookie-consent", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("avtovozom:cookie-consent", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+
+  if (!counterId || !allowed) return null;
 
   const inline = `
 (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
