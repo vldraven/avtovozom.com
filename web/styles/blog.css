@@ -123,7 +123,7 @@
 
 .blog-feature__cover {
   display: block;
-  height: 190px;
+  height: 280px;
   background: #e2e8f0;
 }
 
@@ -964,7 +964,7 @@
   }
 
   .blog-feature__cover {
-    height: 280px;
+    height: 380px;
   }
 
   .blog-fab {
