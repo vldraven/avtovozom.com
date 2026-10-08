@@ -14577,18 +14577,6 @@ a.contacts-card:hover {
     padding-bottom: calc(14rem + env(safe-area-inset-bottom, 0px));
   }
 }
-    gap: 0.2rem;
-  }
-
-  .detail-price__hint {
-    font-size: 0.875rem;
-    white-space: normal;
-  }
-
-  .seg-control {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 
 /* Legal docs + PD consent + cookies */
 .legal-doc {
