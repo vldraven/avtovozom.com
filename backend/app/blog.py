@@ -545,14 +545,21 @@ def related_posts(
     model_id: int | None = None,
     limit: int = Query(3, ge=1, le=6),
 ):
+    """Related posts for a car card: latest items + total matching count."""
     if not brand_id and not model_id:
-        return []
+        return {"items": [], "total": 0}
     filters = []
     if model_id:
         filters.append(BlogPost.model_id == model_id)
     if brand_id:
         filters.append(BlogPost.brand_id == brand_id)
     visible = select(BlogSection.id).where(BlogSection.is_hidden.is_(False))
+    base = [
+        BlogPost.status == "published",
+        BlogPost.section_id.in_(visible),
+        or_(*filters),
+    ]
+    total = int(db.execute(select(func.count()).select_from(BlogPost).where(*base)).scalar() or 0)
     whens = []
     if model_id:
         whens.append((BlogPost.model_id == model_id, 2))
@@ -561,12 +568,12 @@ def related_posts(
     score = case(*whens, else_=0)
     stmt = (
         _post_query()
-        .where(BlogPost.status == "published", BlogPost.section_id.in_(visible), or_(*filters))
+        .where(*base)
         .order_by(score.desc(), BlogPost.published_at.desc())
         .limit(limit)
     )
     posts = db.execute(stmt).unique().scalars().all()
-    return _cards(db, posts, viewer)
+    return {"items": _cards(db, posts, viewer), "total": total}
 
 
 @router.get("/sitemap")

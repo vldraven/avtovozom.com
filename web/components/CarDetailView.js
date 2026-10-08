@@ -1253,12 +1253,6 @@ export default function CarDetailView({
                 </section>
               ) : null}
 
-              <CarBlogRelated
-                brandId={car.brand_id}
-                modelId={car.model_id}
-                label={[car.brand, car.model].filter(Boolean).join(" ")}
-              />
-
               {(similarError || similarCars.length > 0) && (
                 <section className="car-detail-similar" aria-label="Рекомендуем в этой цене">
                   <div className="car-detail-similar__head">
@@ -1282,6 +1276,12 @@ export default function CarDetailView({
                   ) : null}
                 </section>
               )}
+
+              <CarBlogRelated
+                brandId={car.brand_id}
+                modelId={car.model_id}
+                label={[car.brand, car.model].filter(Boolean).join(" ")}
+              />
 
               {me?.role !== "dealer" ? (
                 <section className="detail-seller-card detail-seller-card--mobile" aria-label="Продавец">

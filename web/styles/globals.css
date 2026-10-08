@@ -2015,39 +2015,6 @@ a:hover {
     box-shadow: none;
   }
 
-  /* Blog related: same flat list rhythm as other car-card blocks, not nested blog cards. */
-  .detail-main .blog-car-related .blog-car-related__list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
-
-  .detail-main .blog-car-related .blog-compact {
-    padding: 12px 0;
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    border-bottom: 1px solid var(--color-border);
-    box-shadow: none;
-  }
-
-  .detail-main .blog-car-related .blog-compact:first-child {
-    padding-top: 0;
-  }
-
-  .detail-main .blog-car-related .blog-compact:last-child {
-    padding-bottom: 0;
-    border-bottom: none;
-  }
-
-  .detail-main .blog-car-related .blog-compact h3 {
-    font-size: 0.9375rem;
-    font-weight: 700;
-  }
-
-  .detail-main .blog-car-related .blog-compact__meta {
-    font-size: 0.75rem;
-  }
 }
 
 .detail-calc-cny {

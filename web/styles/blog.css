@@ -614,8 +614,7 @@
 .blog-comments,
 .blog-related,
 .blog-tag-cloud,
-.blog-author,
-.blog-car-related {
+.blog-author {
   margin-top: 28px;
 }
 
@@ -740,19 +739,12 @@
 }
 
 .blog-editor__bar-actions,
-.blog-mine__actions,
-.blog-car-related__head {
+.blog-mine__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
-}
-
-.blog-car-related__list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
 .blog-editor__bar {
@@ -905,12 +897,167 @@
   margin-top: 0;
 }
 
-.blog-car-related .blog-car-related__head {
-  margin-bottom: 16px;
+.blog-car-related__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
-.blog-car-related .blog-car-related__head .detail-panel__title {
-  margin-bottom: 0;
+.blog-car-related__heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.blog-car-related__all {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #0284c7;
+  text-decoration: none;
+}
+
+.blog-car-related__all:hover,
+.blog-car-related__all-desktop:hover {
+  text-decoration: underline;
+}
+
+.blog-car-related__card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.blog-car-related__main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.blog-car-related__cover {
+  flex: 0 0 76px;
+  width: 76px;
+  height: 60px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.blog-car-related__cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.blog-car-related__body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.blog-car-related__kicker {
+  margin: 0;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0284c7;
+  line-height: 1.3;
+}
+
+.blog-car-related__kicker--desktop {
+  display: none;
+}
+
+.blog-car-related__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-ink);
+}
+
+.blog-car-related__byline,
+.blog-car-related__all-desktop {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .panel.blog-car-related,
+  .blog-car-related {
+    margin-top: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+
+  .blog-car-related__head {
+    display: none;
+  }
+
+  .blog-car-related__card {
+    gap: 18px;
+    padding: 16px 20px;
+    background: #fff;
+    border-color: #e2e8f0;
+  }
+
+  .blog-car-related__main {
+    gap: 18px;
+  }
+
+  .blog-car-related__cover {
+    flex-basis: 120px;
+    width: 120px;
+    height: 80px;
+  }
+
+  .blog-car-related__kicker--mobile {
+    display: none;
+  }
+
+  .blog-car-related__kicker--desktop {
+    display: block;
+    font-size: 0.75rem;
+    margin-bottom: 1px;
+  }
+
+  .blog-car-related__title {
+    font-size: 1.0625rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .blog-car-related__byline {
+    display: block;
+    margin: 0;
+    font-size: 0.8125rem;
+    color: #94a3b8;
+  }
+
+  .blog-car-related__all-desktop {
+    display: inline;
+    flex: none;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #0284c7;
+    text-decoration: none;
+    white-space: nowrap;
+  }
 }
 
 @media (min-width: 1024px) {
