@@ -14666,7 +14666,8 @@ a.contacts-card:hover {
   left: 1rem;
   right: 1rem;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  z-index: 80;
+  /* Above mobile dock (1200); below PWA install sheet (2200). */
+  z-index: 1300;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -14695,6 +14696,15 @@ a.contacts-card:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* Mobile: sit above the bottom tab bar, same offset as chat-entry. */
+@media (max-width: 768px) {
+  .app-chrome:has(.mobile-bottom-nav) .cookie-consent {
+    bottom: calc(
+      3.55rem + 0.75rem + env(safe-area-inset-bottom, 0px) + var(--mobile-viewport-offset, 0px)
+    );
+  }
 }
 
 @media (min-width: 769px) {
