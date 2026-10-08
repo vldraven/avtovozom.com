@@ -21,7 +21,9 @@ export function chatEntryPathHidden(pathname) {
     path === "/messages" ||
     path === "/auth" ||
     path === "/reset-password" ||
-    path.startsWith("/staff/")
+    path.startsWith("/staff/") ||
+    path === "/blog" ||
+    path.startsWith("/blog/")
   );
 }
 
