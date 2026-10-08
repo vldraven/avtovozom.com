@@ -96,10 +96,9 @@ export default function ChatEntryWidget() {
   const desktopDefaultOpenDoneRef = useRef(false);
 
   const isGuest = !token;
-  const hiddenByPath = chatEntryPathHidden(router.pathname);
+  const hiddenByPath = chatEntryPathHidden(router.pathname, router.asPath);
   const hiddenByRole = chatEntryRoleHidden(me?.role);
   const hidden = hiddenByPath || hiddenByRole;
-  const onCarDetail = router.pathname.startsWith("/cars/");
   const hasThread = messages.length > 0;
 
   const title = isGuest ? CHAT_ENTRY_TITLE_GUEST : "Чат с Avtovozom";
@@ -434,7 +433,7 @@ export default function ChatEntryWidget() {
 
   return (
     <div
-      className={`chat-entry${isMobile ? " chat-entry--mobile" : " chat-entry--desktop"}${onCarDetail ? " chat-entry--car-detail" : ""} chat-entry--${phase}`}
+      className={`chat-entry${isMobile ? " chat-entry--mobile" : " chat-entry--desktop"} chat-entry--${phase}`}
       aria-live="polite"
     >
       {phase === "collapsed" ? (
