@@ -749,6 +749,12 @@
   justify-content: space-between;
 }
 
+.blog-car-related__list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .blog-editor__bar {
   display: flex;
   flex-wrap: wrap;
@@ -896,7 +902,15 @@
 }
 
 .blog-car-related {
-  margin-top: 8px;
+  margin-top: 0;
+}
+
+.blog-car-related .blog-car-related__head {
+  margin-bottom: 16px;
+}
+
+.blog-car-related .blog-car-related__head .detail-panel__title {
+  margin-bottom: 0;
 }
 
 @media (min-width: 1024px) {
