@@ -129,7 +129,6 @@
 
 .blog-feature__cover img,
 .blog-compact__cover img,
-.blog-article__cover,
 .blog-body__figure img,
 .blog-cover-drop img {
   width: 100%;
@@ -400,11 +399,13 @@
 }
 
 .blog-article__cover {
-  height: auto;
-  max-height: 420px;
+  display: block;
+  width: 100%;
+  height: 420px;
   border-radius: 16px;
   margin: 16px 0;
   object-fit: cover;
+  object-position: center center;
 }
 
 .blog-article__byline {
