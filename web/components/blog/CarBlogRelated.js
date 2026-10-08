@@ -30,12 +30,16 @@ export default function CarBlogRelated({ brandId, modelId, label }) {
 
   if (!items.length) return null;
   return (
-    <section className="blog-car-related" aria-label="Читайте также">
-      <div className="blog-car-related__head">
-        <h2>Читайте также{label ? ` о ${label}` : ""}</h2>
-        <Link href="/blog">Весь блог</Link>
+    <section className="panel detail-panel blog-car-related" aria-label="Читайте также">
+      <div className="blog-car-related__head car-detail-similar__head">
+        <h2 className="detail-panel__title car-detail-similar__title">
+          Читайте также{label ? ` о ${label}` : ""}
+        </h2>
+        <Link href="/blog" className="car-detail-similar__link">
+          Весь блог
+        </Link>
       </div>
-      <div className="blog-feed">
+      <div className="blog-car-related__list">
         {items.map((post) => (
           <BlogCompactCard key={post.id} post={post} />
         ))}
