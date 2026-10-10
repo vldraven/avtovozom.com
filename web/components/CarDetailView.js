@@ -678,6 +678,12 @@ export default function CarDetailView({
     return [{ label: "Главная", href: "/" }, { label: car.title || `Объявление №${car.id}` }];
   }, [car]);
 
+  /* На мобилке без текущего объявления — заголовок сразу под крошками; модель/поколение кликабельны. */
+  const mobileDetailBreadcrumbItems = useMemo(() => {
+    if (detailBreadcrumbItems.length < 2) return detailBreadcrumbItems;
+    return detailBreadcrumbItems.slice(0, -1);
+  }, [detailBreadcrumbItems]);
+
   if (error) {
     return (
       <div className="layout">
@@ -966,6 +972,13 @@ export default function CarDetailView({
                     <div className="detail-sidebar__price-block">
                       <CarTurnkeyPrice car={car} variant="detail" />
                     </div>
+
+                    {mobileDetailBreadcrumbItems.length ? (
+                      <Breadcrumbs
+                        className="breadcrumbs--car-detail breadcrumbs--car-detail-mobile"
+                        items={mobileDetailBreadcrumbItems}
+                      />
+                    ) : null}
 
                     <h1 className="detail-title">{car.title}</h1>
                   </div>
