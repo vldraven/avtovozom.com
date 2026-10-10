@@ -1774,9 +1774,25 @@ a:hover {
   word-break: break-word;
 }
 
+/* Мобильные крошки в сайдбаре (между ценой и названием); на десктопе — в .detail-top */
+.breadcrumbs--car-detail-mobile {
+  display: none;
+}
+
 @media (max-width: 1023px) {
   .detail-top--desktop {
     display: none;
+  }
+
+  .breadcrumbs--car-detail-mobile {
+    display: block;
+    margin: 0.4rem 0 0.55rem;
+  }
+
+  .breadcrumbs--car-detail-mobile .breadcrumbs__list {
+    font-size: 0.75rem;
+    line-height: 1.35;
+    gap: 0.2rem 0.1rem;
   }
 }
 
