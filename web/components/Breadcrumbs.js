@@ -2,7 +2,7 @@ import Link from "next/link";
 
 /**
  * @param {{ label: string, href?: string }[]} items
- * Последний элемент без href считается текущей страницей.
+ * Элемент с href — ссылка; без href — текст (обычно текущая страница).
  */
 export default function Breadcrumbs({ items, className = "" }) {
   if (!items?.length) return null;
@@ -13,7 +13,7 @@ export default function Breadcrumbs({ items, className = "" }) {
           const last = i === items.length - 1;
           return (
             <li key={`${i}-${it.label}`} className="breadcrumbs__item">
-              {it.href && !last ? (
+              {it.href ? (
                 <Link href={it.href} className="breadcrumbs__link">
                   {it.label}
                 </Link>
