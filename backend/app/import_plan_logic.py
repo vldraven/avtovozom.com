@@ -154,10 +154,32 @@ def prepare_items_for_fresh_start(items: list[ImportPlanItem]) -> None:
                 item.message = ""
 
 
+def drop_blank_import_plan_items(db: Session, plan: ImportPlan) -> int:
+    """Удаляет мусорные строки без URL и model_id (блокируют оператора визуально)."""
+    n = 0
+    for item in list(plan.items):
+        if (item.url or "").strip():
+            continue
+        if item.model_id:
+            continue
+        if item.status == "success":
+            continue
+        db.delete(item)
+        n += 1
+    if n:
+        logger.info("import-plan: dropped %s blank rows", n)
+    return n
+
+
 def start_import_plan(db: Session) -> ImportPlan:
     plan = ensure_import_plan(db)
     if plan.status in ("running", "stopping"):
         return plan
+
+    dropped = drop_blank_import_plan_items(db, plan)
+    if dropped:
+        db.flush()
+        plan = ensure_import_plan(db)
 
     repaired = repair_plan_items_missing_catalog(db, list(plan.items))
     if repaired:
