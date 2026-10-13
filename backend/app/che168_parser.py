@@ -1942,6 +1942,17 @@ def parse_che168_listing_cards(
     )
 
 
+
+def _is_listing_captcha_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        "captcha" in msg
+        or "антибот" in msg
+        or "проверк" in msg
+        or "安全验证" in msg
+    )
+
+
 def parse_che168_listing_cards_many(
     series_urls: list[str],
     max_per_series: int,
@@ -1951,7 +1962,13 @@ def parse_che168_listing_cards_many(
     nav_timeout_ms: int | None = None,
     deadline: float | None = None,
 ) -> list[tuple[str, list[ListingCard], str | None]]:
-    """Один браузер на все витрины (с прокси). [(url, cards, error), ...]."""
+    """Один браузер на витрины (с прокси). [(url, cards, error), ...].
+
+    Residential-прокси: один и тот же browser context после ~5 страниц часто
+    получает captcha на все остальные URL. Поэтому ротируем context каждые
+    CHE168_LIST_PW_ROTATE_EVERY витрин и сразу после captcha (новый TCP → часто
+    новый IP у rotating pool).
+    """
     if allow_playwright is None:
         allow_playwright = _allow_playwright_default()
     urls = [str(u).strip() for u in series_urls if str(u).strip()]
@@ -1988,11 +2005,49 @@ def parse_che168_listing_cards_many(
         return out
 
     nav_ms = int(nav_timeout_ms) if nav_timeout_ms is not None else _listing_pw_timeout_ms()
+    rotate_every = max(1, int(os.getenv("CHE168_LIST_PW_ROTATE_EVERY", "4")))
+    captcha_retries = max(0, int(os.getenv("CHE168_LIST_PW_CAPTCHA_ROTATE", "2")))
+
     with sync_playwright() as p:
         browser = None
         context = None
+        page = None
+        since_rotate = 0
+
+        def _close_context() -> None:
+            nonlocal context, page
+            try:
+                if context is not None:
+                    context.close()
+            except Exception:
+                pass
+            context = None
+            page = None
+
+        def _open_context(timeout_ms: int) -> None:
+            nonlocal browser, context, page, since_rotate
+            if browser is None:
+                browser, context, page = _listing_browser_context(p, timeout_ms)
+            else:
+                _close_context()
+                # Новый context на том же browser — новый proxy CONNECT у rotating pool.
+                pw_proxy = playwright_proxy_config()
+                context_kwargs: dict[str, Any] = {
+                    "user_agent": UA,
+                    "locale": "zh-CN",
+                    "extra_http_headers": {"Accept-Language": "zh-CN,zh;q=0.9"},
+                }
+                if pw_proxy:
+                    context_kwargs["proxy"] = pw_proxy
+                    context_kwargs["ignore_https_errors"] = True
+                context = browser.new_context(**context_kwargs)
+                context.set_default_timeout(timeout_ms)
+                page = context.new_page()
+                page.set_default_timeout(timeout_ms)
+            since_rotate = 0
+
         try:
-            browser, context, page = _listing_browser_context(p, nav_ms)
+            _open_context(nav_ms)
             for i, series_url in enumerate(urls):
                 slot_ms = slot_timeout_ms(i, nav_ms)
                 if slot_ms == 0:
@@ -2000,28 +2055,52 @@ def parse_che168_listing_cards_many(
                         (series_url, [], f"budget_exceeded: остановились до {series_url}")
                     )
                     continue
-                try:
-                    cards = _scrape_listing_cards_on_page(
-                        page,
-                        series_url,
-                        max_per_series,
-                        slot_ms,
-                    )
-                    out.append((series_url, cards[:max_per_series], None))
-                except Exception as e:
-                    out.append((series_url, [], str(e)))
+                if page is not None:
+                    try:
+                        page.set_default_timeout(slot_ms)
+                    except Exception:
+                        pass
+
+                attempts = 0
+                while True:
+                    try:
+                        assert page is not None
+                        cards = _scrape_listing_cards_on_page(
+                            page,
+                            series_url,
+                            max_per_series,
+                            slot_ms,
+                        )
+                        out.append((series_url, cards[:max_per_series], None))
+                        since_rotate += 1
+                        if since_rotate >= rotate_every:
+                            _open_context(slot_ms or nav_ms)
+                        break
+                    except Exception as e:
+                        if (
+                            _is_listing_captcha_error(e)
+                            and attempts < captcha_retries
+                        ):
+                            attempts += 1
+                            _open_context(slot_ms or nav_ms)
+                            continue
+                        out.append((series_url, [], str(e)))
+                        if _is_listing_captcha_error(e):
+                            # Следующая витрина — со свежим IP, иначе весь хвост сгорит.
+                            try:
+                                _open_context(slot_ms or nav_ms)
+                            except Exception:
+                                pass
+                        break
         finally:
-            try:
-                if context is not None:
-                    context.close()
-            except Exception:
-                pass
+            _close_context()
             try:
                 if browser is not None:
                     browser.close()
             except Exception:
                 pass
     return out
+
 
 
 def parse_che168_listing_links(

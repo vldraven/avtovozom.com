@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import time
 import uuid
 from datetime import date, datetime, time as dt_time, timedelta, timezone
@@ -38,6 +39,7 @@ from .che168_parser import (
 )
 from .db import get_db
 from .import_plan_logic import (
+    drop_blank_import_plan_items,
     ensure_import_plan,
     request_stop_import_plan,
     start_import_plan,
@@ -162,6 +164,8 @@ class DiscoverOut(BaseModel):
     series_ok: int = 0
     series_failed: int = 0
     series_errors: list[str] = Field(default_factory=list)
+    proxy_configured: bool = False
+    """True если CHE168_PROXY задан (collect/discover идут через Playwright+прокси)."""
 
 
 class EnrichIn(BaseModel):
@@ -246,6 +250,8 @@ class CollectOut(BaseModel):
     series_ok: int = 0
     series_failed: int = 0
     series_errors: list[str] = Field(default_factory=list)
+    proxy_configured: bool = False
+    """True если CHE168_PROXY задан (витрины через Playwright+прокси)."""
     listings: list[CompactListingOut] = Field(default_factory=list)
     """Компактный пул для LLM (до llm_shortlist_limit)."""
     market_research: MarketResearchOut | None = None
@@ -1044,6 +1050,13 @@ def discover(
         raise HTTPException(status_code=400, detail="profile_id is required")
     profile = _get_profile(db, payload.profile_id)
     targets = _series_targets(db, payload, profile)
+    # Дневной shuffle: при раннем стопе/captcha не всегда одни и те же первые 5 моделей.
+    if targets and os.getenv("AGENT_DISCOVER_SHUFFLE", "1").lower() not in (
+        "0",
+        "false",
+        "no",
+    ):
+        random.Random(_msk_today().isoformat()).shuffle(targets)
     if not targets:
         raise HTTPException(
             status_code=400,
@@ -1168,6 +1181,7 @@ def discover(
         series_ok=series_ok,
         series_failed=len(series_errors),
         series_errors=series_errors[:20],
+        proxy_configured=bool(che168_proxy_url()),
     )
 
 
@@ -1327,6 +1341,7 @@ def collect_listings(
     market = market_research_for_profile(
         profile, max_age_days=payload.market_research_max_age_days
     )
+    proxy_on = bool(che168_proxy_url())
     if quota.needed <= 0:
         return CollectOut(
             status="quota_closed",
@@ -1334,6 +1349,7 @@ def collect_listings(
             profile_id=profile.id,
             needed=0,
             already_today=quota.already_today,
+            proxy_configured=proxy_on,
             market_research=market,
         )
 
@@ -1376,6 +1392,7 @@ def collect_listings(
                 series_ok=0,
                 series_failed=1,
                 series_errors=[detail],
+                proxy_configured=proxy_on,
             )
         except Exception as e:
             last_discover = DiscoverOut(
@@ -1385,6 +1402,7 @@ def collect_listings(
                 series_ok=0,
                 series_failed=1,
                 series_errors=[str(e)],
+                proxy_configured=proxy_on,
             )
         if last_discover and (last_discover.created > 0 or last_discover.series_ok > 0):
             break
@@ -1398,6 +1416,11 @@ def collect_listings(
             message=(
                 f"Discover пуст после {attempts} попыток. "
                 "Источник che168 недоступен или series_urls без объявлений."
+                + (
+                    " Прокси задан, но captcha жжёт сессию — проверьте CN residential."
+                    if proxy_on
+                    else " CHE168_PROXY не задан — без CN-прокси витрины почти всегда падают."
+                )
             ),
             profile_id=profile.id,
             needed=quota.needed,
@@ -1407,6 +1430,7 @@ def collect_listings(
             series_ok=last_discover.series_ok,
             series_failed=last_discover.series_failed,
             series_errors=last_discover.series_errors[:20],
+            proxy_configured=proxy_on,
             market_research=market,
         )
 
@@ -1506,6 +1530,14 @@ def collect_listings(
         elapsed,
         last_discover.series_errors[:5],
     )
+    if not proxy_on and last_discover.series_failed > last_discover.series_ok:
+        message += " CHE168_PROXY не задан."
+    elif proxy_on and last_discover.series_failed >= 10:
+        message += (
+            f" proxy=on, series_ok={last_discover.series_ok}/"
+            f"{last_discover.series_ok + last_discover.series_failed}"
+            " (ротация context при captcha включена)."
+        )
     return CollectOut(
         status=status,
         message=message,
@@ -1521,6 +1553,7 @@ def collect_listings(
         series_ok=last_discover.series_ok,
         series_failed=last_discover.series_failed,
         series_errors=last_discover.series_errors[:20],
+        proxy_configured=proxy_on,
         listings=listings,
         market_research=market,
     )
@@ -1619,6 +1652,9 @@ def apply_to_import_plan(
             status_code=409,
             detail="Нельзя менять план во время обхода. Сначала остановите.",
         )
+    if drop_blank_import_plan_items(db, plan):
+        db.flush()
+        plan = ensure_import_plan(db)
 
     q = select(ImportCandidate).where(ImportCandidate.profile_id == profile.id)
     if payload.candidate_ids:

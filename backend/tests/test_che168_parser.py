@@ -321,3 +321,13 @@ class Che168ListCardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ListingCaptchaRotateTests(unittest.TestCase):
+    def test_listing_captcha_error_detection(self):
+        from app.che168_parser import _is_listing_captcha_error
+
+        self.assertTrue(_is_listing_captcha_error(RuntimeError("Браузер попал на captcha che168")))
+        self.assertTrue(_is_listing_captcha_error(RuntimeError("Страница антибот-проверки")))
+        self.assertFalse(_is_listing_captcha_error(RuntimeError("timeout waiting for navigation")))
+
