@@ -15,13 +15,28 @@ export const CHAT_ENTRY_TITLE_AUTH = "Чат с Avtovozom";
 export const CHAT_ENTRY_SUB_GUEST = "Отвечает сразу · ИИ-помощник";
 export const CHAT_ENTRY_SUB_AUTH = "Avtovozom · сделка";
 
-export function chatEntryPathHidden(pathname) {
+/** Карточка авто: /cars/:id или /catalog/:brand/:model/:id — CTA «Написать» уже есть. */
+export function chatEntryIsCarDetail(pathname, asPath) {
+  const pagePath = pathname || "";
+  if (pagePath.startsWith("/cars/") || pagePath === "/cars/[id]") return true;
+
+  const raw = String(asPath || "")
+    .split("?")[0]
+    .split("#")[0];
+  if (raw.startsWith("/cars/")) return true;
+  if (!raw.startsWith("/catalog/")) return false;
+  const parts = raw.replace(/^\/catalog\/?/, "").split("/").filter(Boolean);
+  return parts.length === 3 && /^\d+$/.test(parts[2]);
+}
+
+export function chatEntryPathHidden(pathname, asPath) {
   const path = pathname || "";
   return (
     path === "/messages" ||
     path === "/auth" ||
     path === "/reset-password" ||
-    path.startsWith("/staff/")
+    path.startsWith("/staff/") ||
+    chatEntryIsCarDetail(pathname, asPath)
   );
 }
 
