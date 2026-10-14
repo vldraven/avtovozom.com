@@ -14190,7 +14190,8 @@ a.contacts-card:hover {
 /* —— Global chat entry widget —— */
 .chat-entry {
   position: fixed;
-  z-index: 45;
+  /* Above cookie consent (1300); below site header (1500) and modals (2000). */
+  z-index: 1350;
   pointer-events: none;
 }
 
@@ -14203,6 +14204,13 @@ a.contacts-card:hover {
   bottom: 1.25rem;
   left: auto;
   width: min(22rem, calc(100vw - 2rem));
+}
+
+/* Cookie sits in the same corner as the desktop chat — keep it to the left while open. */
+@media (min-width: 769px) {
+  body.chat-entry-expanded .cookie-consent {
+    right: calc(1.25rem + min(22rem, calc(100vw - 2rem)) + 0.75rem);
+  }
 }
 
 .chat-entry--mobile {

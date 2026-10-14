@@ -25,6 +25,22 @@ import { sanitizeConsultantReplyText } from "../lib/consultantReplyText";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MOBILE_MQ = "(max-width: 768px)";
+const SEND_TIMEOUT_MS = 20000;
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = SEND_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error("Сервер не отвечает. Попробуйте ещё раз.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function ConsultantAvatar({ small = false }) {
   return (
@@ -354,7 +370,7 @@ export default function ChatEntryWidget() {
   );
 
   const sendGuestText = async (text) => {
-    const res = await fetch(`${API_URL}/public/guest-chats/messages`, {
+    const res = await fetchWithTimeout(`${API_URL}/public/guest-chats/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ guest_token: guestToken || getGuestChatToken() || null, text }),
@@ -380,7 +396,7 @@ export default function ChatEntryWidget() {
     }
     const fd = new FormData();
     fd.append("text", text);
-    const res = await fetch(`${API_URL}/chats/${chatId}/messages`, {
+    const res = await fetchWithTimeout(`${API_URL}/chats/${chatId}/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${access}` },
       body: fd,
