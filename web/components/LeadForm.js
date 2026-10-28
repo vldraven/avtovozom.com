@@ -21,18 +21,19 @@ function parseApiDetail(body) {
 }
 
 /**
- * @param {{ title?: string, lead?: string, className?: string, id?: string }} props
+ * @param {{ title?: string, lead?: string, className?: string, id?: string, initialComment?: string }} props
  */
 export default function LeadForm({
   title = "Оставить заявку",
   lead = "Опишите желаемый автомобиль — мы свяжемся и подготовим расчёт под ключ до РФ.",
   className = "",
   id = "lead-form",
+  initialComment = "",
 }) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phoneDigits, setPhoneDigits] = useState("7");
-  const [comment, setComment] = useState("");
+  const [comment, setComment] = useState(initialComment);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");

@@ -22,6 +22,12 @@ import {
 } from "../lib/chatEntryWidget";
 import { getGuestChatToken, guestNeedsAiReply, setGuestChatToken } from "../lib/guestChat";
 import { sanitizeConsultantReplyText } from "../lib/consultantReplyText";
+import {
+  ChatConsultPanel,
+  ChatQuickActions,
+  chatSendErrorMessage,
+  latestOwnMessageText,
+} from "./ChatComposerActions";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MOBILE_MQ = "(max-width: 768px)";
@@ -107,6 +113,8 @@ export default function ChatEntryWidget() {
   const [loadingThread, setLoadingThread] = useState(false);
   const [guestAwaitingAi, setGuestAwaitingAi] = useState(false);
   const [sending, setSending] = useState(false);
+  const [consultOpen, setConsultOpen] = useState(false);
+  const [consultComment, setConsultComment] = useState("");
   const threadEndRef = useRef(null);
   /** Один раз на сессию виджета: на десктопе открыть панель при входе на сайт. */
   const desktopDefaultOpenDoneRef = useRef(false);
@@ -358,7 +366,16 @@ export default function ChatEntryWidget() {
     }
   };
 
-  const closeWidget = () => setPhase("collapsed");
+  const closeWidget = () => {
+    setConsultOpen(false);
+    setPhase("collapsed");
+  };
+
+  const openConsult = () => {
+    const fromThread = latestOwnMessageText(messages, { guest: isGuest, userId: me?.id });
+    setConsultComment(fromThread || draft.trim());
+    setConsultOpen(true);
+  };
 
   const navigateToMessages = useCallback(
     (query = {}) => {
@@ -434,7 +451,7 @@ export default function ChatEntryWidget() {
       setDraft("");
       await reloadThread();
     } catch (err) {
-      setSendErr(err?.message || "Не удалось отправить");
+      setSendErr(chatSendErrorMessage(err));
     } finally {
       setSending(false);
     }
@@ -466,8 +483,12 @@ export default function ChatEntryWidget() {
       {showPanel ? (
         <section
           className={`chat-entry__panel${!isMobile ? " chat-entry__panel--chat" : ""}`}
-          aria-label={hasThread ? "Чат" : "Приглашение в чат"}
+          aria-label={consultOpen ? "Консультация" : hasThread ? "Чат" : "Приглашение в чат"}
         >
+          {consultOpen ? (
+            <ChatConsultPanel initialComment={consultComment} onBack={() => setConsultOpen(false)} />
+          ) : (
+          <>
           <header className="chat-entry__head">
             <Link
               href={messagesHref}
@@ -561,6 +582,7 @@ export default function ChatEntryWidget() {
                 Консультант печатает…
               </p>
             ) : null}
+            <ChatQuickActions onConsult={openConsult} />
             <label className="chat-entry__composer-row">
               <span className="visually-hidden">{hasThread ? "Сообщение" : "Свой вопрос"}</span>
               <input
@@ -580,6 +602,8 @@ export default function ChatEntryWidget() {
               </p>
             ) : null}
           </form>
+          </>
+          )}
         </section>
       ) : null}
     </div>
