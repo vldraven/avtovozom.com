@@ -20,6 +20,7 @@ import { sanitizeConsultantReplyText } from "../lib/consultantReplyText";
 import { mediaSrc } from "../lib/media";
 import { isStaffRole } from "../lib/roles";
 import SiteHeader from "../components/SiteHeader";
+import { ChatConsultPanel, ChatQuickActions, latestOwnMessageText } from "../components/ChatComposerActions";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const GUEST_CHAT_PLACEHOLDER_ID = "guest";
@@ -129,6 +130,8 @@ export default function MessagesPage() {
   const router = useRouter();
   const [token, setToken] = useState("");
   const [guestMode, setGuestMode] = useState(false);
+  const [consultOpen, setConsultOpen] = useState(false);
+  const [consultComment, setConsultComment] = useState("");
   const [guestToken, setGuestTokenState] = useState("");
   const [me, setMe] = useState(null);
   const [chats, setChats] = useState([]);
@@ -606,6 +609,7 @@ export default function MessagesPage() {
 
   function pickChat(c) {
     skipAutoOpenChatRef.current = false;
+    setConsultOpen(false);
     setActiveId(c.id);
     setSendErr("");
     setReplyTo(null);
@@ -677,6 +681,12 @@ export default function MessagesPage() {
     if (!guestMode) {
       router.replace("/messages", undefined, { shallow: true });
     }
+  }
+
+  function openConsult() {
+    const fromThread = latestOwnMessageText(messages, { guest: guestMode, userId: me?.id });
+    setConsultComment(fromThread || draft.trim());
+    setConsultOpen(true);
   }
 
   function backFromGuestChat() {
@@ -793,6 +803,9 @@ export default function MessagesPage() {
 
   const activeChat = chats.find((c) => c.id === activeId);
   const staffCanDeleteGuest = isStaffRole(me?.role);
+  const viewerRole = String(me?.role || "").trim().toLowerCase();
+  const showQuickActions =
+    guestMode || (viewerRole !== "admin" && viewerRole !== "moderator" && viewerRole !== "dealer");
   const filteredChats = chats.filter((c) => {
     const q = chatQuery.trim().toLowerCase();
     if (!q) return true;
@@ -930,6 +943,8 @@ export default function MessagesPage() {
             <section className="messenger__thread panel">
               {!activeId ? (
                 <div className="messenger__thread-placeholder muted">Выберите диалог слева</div>
+              ) : consultOpen ? (
+                <ChatConsultPanel initialComment={consultComment} onBack={() => setConsultOpen(false)} />
               ) : (
                 <>
                   <div className={`messenger__thread-head${guestMode ? " messenger__thread-head--guest" : ""}`}>
@@ -1154,6 +1169,7 @@ export default function MessagesPage() {
                         </button>
                       </p>
                     ) : null}
+                    {showQuickActions ? <ChatQuickActions onConsult={openConsult} /> : null}
                     <div className="messenger__composer-row">
                       <div className="messenger__composer-field">
                         {!guestMode ? (

@@ -6582,9 +6582,122 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
 
 .messenger__composer {
   flex-shrink: 0;
-  padding: 12px 16px 16px;
+  padding: 10px 14px 16px;
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
+}
+
+.chat-quick-actions {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.chat-quick-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-quick-actions__btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  border: 1px solid transparent;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.chat-quick-actions__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chat-quick-actions__btn--primary {
+  background: #0ea5e9;
+  border-color: #0ea5e9;
+  color: #fff;
+}
+
+.chat-quick-actions__btn--primary:hover:not(:disabled) {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #fff;
+}
+
+.chat-quick-actions__btn--link {
+  background: #fff;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.chat-quick-actions__btn--link:hover {
+  background: #f8fafc;
+  color: #0f172a;
+  text-decoration: none;
+}
+
+.chat-consult {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: #f8fafc;
+}
+
+.chat-consult__back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-consult__back-mark {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chat-consult__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 16px 28px;
+}
+
+.chat-consult__form.panel {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-consult__form .section-title {
+  font-size: 22px;
+  letter-spacing: -0.02em;
 }
 
 .messenger__composer-hint {
