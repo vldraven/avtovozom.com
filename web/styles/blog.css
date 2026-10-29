@@ -2,6 +2,16 @@
   padding-bottom: 96px;
 }
 
+/* Dock + chat strip + FAB stack on mobile when the entry widget is present. */
+@media (max-width: 1023px) {
+  .app-chrome:has(.chat-entry--mobile) .site-main--blog {
+    padding-bottom: calc(
+      3.55rem + 4.25rem + 50px + 1.5rem + env(safe-area-inset-bottom, 0px) +
+        var(--mobile-viewport-offset, 0px)
+    );
+  }
+}
+
 .blog-hero {
   margin: 0;
 }
@@ -394,6 +404,30 @@
   font-weight: 800;
   box-shadow: 0 8px 22px rgba(14, 165, 233, 0.4);
   cursor: pointer;
+}
+
+/*
+ * Mobile chat entry is a full-width strip above the dock and covers the FAB.
+ * Stack the write button above the collapsed banner (same dock/safe-area tokens).
+ */
+@media (max-width: 1023px) {
+  .app-chrome:has(.chat-entry--mobile) .blog-fab {
+    bottom: calc(
+      3.55rem + 4.25rem + env(safe-area-inset-bottom, 0px) + var(--mobile-viewport-offset, 0px)
+    );
+    z-index: 1360;
+  }
+
+  /* Tablet: desktop chat pill sits in the same corner as the FAB. */
+  .app-chrome:has(.chat-entry--desktop) .blog-fab {
+    bottom: calc(1.25rem + 4.25rem);
+    z-index: 1360;
+  }
+
+  body.chat-entry-open .blog-fab {
+    visibility: hidden;
+    pointer-events: none;
+  }
 }
 
 .blog-article {
