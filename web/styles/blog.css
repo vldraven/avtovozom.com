@@ -6,7 +6,7 @@
 @media (max-width: 1023px) {
   .app-chrome:has(.chat-entry--mobile) .site-main--blog {
     padding-bottom: calc(
-      3.55rem + 4.25rem + 50px + 1.5rem + env(safe-area-inset-bottom, 0px) +
+      3.55rem + 5rem + 50px + 1.5rem + env(safe-area-inset-bottom, 0px) +
         var(--mobile-viewport-offset, 0px)
     );
   }
@@ -411,16 +411,17 @@
  * Stack the write button above the collapsed banner (same dock/safe-area tokens).
  */
 @media (max-width: 1023px) {
+  /* 5rem ≈ collapsed banner height + gap past its upward box-shadow blur */
   .app-chrome:has(.chat-entry--mobile) .blog-fab {
     bottom: calc(
-      3.55rem + 4.25rem + env(safe-area-inset-bottom, 0px) + var(--mobile-viewport-offset, 0px)
+      3.55rem + 5rem + env(safe-area-inset-bottom, 0px) + var(--mobile-viewport-offset, 0px)
     );
     z-index: 1360;
   }
 
   /* Tablet: desktop chat pill sits in the same corner as the FAB. */
   .app-chrome:has(.chat-entry--desktop) .blog-fab {
-    bottom: calc(1.25rem + 4.25rem);
+    bottom: calc(1.25rem + 5rem);
     z-index: 1360;
   }
 
