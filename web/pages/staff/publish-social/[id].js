@@ -523,6 +523,11 @@ export default function PublishSocialPage() {
                 <p className="muted" style={{ fontSize: "0.85rem", marginTop: 0 }}>
                   {vkTokenHint || "Статус токена…"} Implicit-токен из браузера привязан к IP устройства —
                   API ходит с IP сервера и получает ошибку. Нужен OAuth через сервер.
+                  Если VK сразу вернул обратно без экрана разрешений — отзовите приложение в{" "}
+                  <a href="https://vk.com/settings?act=apps" target="_blank" rel="noopener noreferrer">
+                    настройках VK
+                  </a>{" "}
+                  и нажмите кнопку снова (нужны photos / wall / groups).
                 </p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
                   <button

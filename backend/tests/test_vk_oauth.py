@@ -58,6 +58,24 @@ class VkOAuthHelpersTests(unittest.TestCase):
                 begin_vk_oauth(db, return_to="/staff/publish-social/9")
             self.assertIn("VK_OAUTH_CLIENT_SECRET", str(ctx.exception))
 
+    def test_begin_classic_includes_revoke(self):
+        db = MagicMock()
+        with patch.dict(
+            "os.environ",
+            {
+                "VK_OAUTH_CLIENT_SECRET": "secret",
+                "VK_OAUTH_MODE": "classic",
+                "PUBLIC_API_ORIGIN": "http://localhost:8000",
+            },
+            clear=False,
+        ), patch("app.vk_oauth.set_setting"):
+            out = begin_vk_oauth(db, return_to="/staff/publish-social/9")
+            self.assertIn("oauth.vk.com/authorize", out["authorize_url"])
+            self.assertIn("revoke=1", out["authorize_url"])
+            self.assertIn("photos", out["authorize_url"])
+            self.assertIn("wall", out["authorize_url"])
+            self.assertEqual(out["mode"], "classic")
+
     def test_begin_vkid_stores_pending(self):
         db = MagicMock()
         stored = {}
@@ -76,6 +94,9 @@ class VkOAuthHelpersTests(unittest.TestCase):
         ), patch("app.vk_oauth.set_setting", side_effect=capture):
             out = begin_vk_oauth(db, return_to="/staff/publish-social/9")
             self.assertIn("id.vk.ru/authorize", out["authorize_url"])
+            self.assertIn("photos", out["authorize_url"])
+            self.assertIn("wall", out["authorize_url"])
+            self.assertIn("groups", out["authorize_url"])
             self.assertEqual(out["mode"], "vkid")
             pending = json.loads(stored["vk_oauth_pending"])
             self.assertEqual(pending["return_to"], "/staff/publish-social/9")

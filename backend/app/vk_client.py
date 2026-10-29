@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 import tempfile
@@ -11,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from PIL import Image, ImageOps
 
 from .http_ssl import http_verify
 
@@ -112,31 +114,84 @@ def _api_call(
     return data.get("response")
 
 
-def _guess_suffix(url: str, content_type: str | None) -> str:
-    path = urlparse(url).path.lower()
-    for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
-        if path.endswith(ext):
-            return ext if ext != ".jpeg" else ".jpg"
-    ct = (content_type or "").lower()
-    if "png" in ct:
-        return ".png"
-    if "webp" in ct:
-        return ".webp"
-    if "gif" in ct:
-        return ".gif"
-    return ".jpg"
+def _local_media_path_from_url(url: str) -> Path | None:
+    """Файл на диске backend (/app/media), если URL указывает на /media/…"""
+    from .media_storage import media_root
+
+    raw = (url or "").strip()
+    if not raw:
+        return None
+    path = urlparse(raw).path if raw.startswith(("http://", "https://")) else raw
+    if not path.startswith("/media/"):
+        return None
+    rel = path.removeprefix("/media/").lstrip("/")
+    if not rel or ".." in rel.split("/"):
+        return None
+    local = media_root() / rel
+    return local if local.is_file() else None
+
+
+def _write_jpeg_temp(src: Path | bytes, *, max_side: int = 2560) -> Path:
+    """
+    VK upload server капризен к webp/битым «jpg» (HTML 404).
+    Всегда отдаём валидный JPEG.
+    """
+    if isinstance(src, Path):
+        raw = src.read_bytes()
+    else:
+        raw = src
+    if not raw or len(raw) < 24:
+        raise VkApiError("фото пустое или слишком короткое")
+    head = raw[:256].lstrip().lower()
+    if head.startswith(b"<!DOCTYPE") or head.startswith(b"<html") or b"<html" in head[:64]:
+        raise VkApiError("вместо фото пришёл HTML (проверьте URL /media и PUBLIC_API_ORIGIN)")
+
+    try:
+        with Image.open(io.BytesIO(raw)) as im:
+            im = ImageOps.exif_transpose(im)
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            elif im.mode == "L":
+                im = im.convert("RGB")
+            w, h = im.size
+            longest = max(w, h)
+            if longest > max_side:
+                scale = max_side / float(longest)
+                im = im.resize(
+                    (max(1, round(w * scale)), max(1, round(h * scale))),
+                    Image.Resampling.LANCZOS,
+                )
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=88, optimize=True)
+            jpeg = buf.getvalue()
+    except VkApiError:
+        raise
+    except Exception as exc:
+        raise VkApiError(f"не удалось декодировать фото: {exc}") from exc
+
+    fd, name = tempfile.mkstemp(prefix="vk_photo_", suffix=".jpg")
+    os.close(fd)
+    path = Path(name)
+    path.write_bytes(jpeg)
+    return path
 
 
 def download_photo_to_temp(url: str, *, timeout: float = 60.0) -> Path:
+    """Скачать (или взять с диска) и подготовить JPEG для photos.getWallUploadServer."""
+    local = _local_media_path_from_url(url)
+    if local is not None:
+        return _write_jpeg_temp(local)
+
     with httpx.Client(timeout=timeout, follow_redirects=True, verify=http_verify()) as client:
         resp = client.get(url)
         resp.raise_for_status()
-        suffix = _guess_suffix(url, resp.headers.get("content-type"))
-        fd, name = tempfile.mkstemp(prefix="vk_photo_", suffix=suffix)
-        os.close(fd)
-        path = Path(name)
-        path.write_bytes(resp.content)
-        return path
+        ct = (resp.headers.get("content-type") or "").lower()
+        if "text/html" in ct or "application/json" in ct:
+            raise VkApiError(
+                f"URL фото вернул {ct or 'не-image'} вместо картинки "
+                f"(url={url[:120]})"
+            )
+        return _write_jpeg_temp(resp.content)
 
 
 def get_wall_upload_server(cfg: VkConfig) -> str:
@@ -158,15 +213,22 @@ def get_wall_upload_server(cfg: VkConfig) -> str:
 
 
 def upload_photo_file(upload_url: str, file_path: Path, *, timeout: float = 90.0) -> dict[str, Any]:
-    with httpx.Client(timeout=timeout) as client:
+    filename = file_path.name if file_path.suffix.lower() in {".jpg", ".jpeg"} else "photo.jpg"
+    with httpx.Client(timeout=timeout, verify=http_verify()) as client:
         with file_path.open("rb") as fh:
-            resp = client.post(upload_url, files={"photo": (file_path.name, fh, "image/jpeg")})
+            resp = client.post(
+                upload_url,
+                files={"photo": (filename, fh, "image/jpeg")},
+            )
         resp.raise_for_status()
         data = resp.json()
     if not isinstance(data, dict):
         raise VkApiError("upload server: неожиданный ответ", raw=data)
     if not data.get("photo") or data.get("photo") in ("[]", ""):
-        raise VkApiError("upload server: пустое поле photo (файл отклонён)", raw=data)
+        raise VkApiError(
+            "upload server: пустое поле photo (файл отклонён)",
+            raw=data,
+        )
     return data
 
 

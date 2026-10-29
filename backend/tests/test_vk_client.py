@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import io
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from app.vk_client import VkApiError, VkConfig, wall_post
+from PIL import Image
+
+from app.vk_client import (
+    VkApiError,
+    VkConfig,
+    _local_media_path_from_url,
+    _write_jpeg_temp,
+    wall_post,
+)
 from app.vk_publish import build_default_vk_post_text
 from app.listing_compose import ListingMarketingCompose
 
@@ -55,6 +66,37 @@ class VkClientTests(unittest.TestCase):
         self.assertIn("BMW 3 Series 2022 320Li M", text)
         self.assertIn("https://avtovozom.com/catalog/bmw/3-series/1", text)
         self.assertIn("2 500 000", text)
+
+    def test_write_jpeg_temp_rejects_html(self):
+        with self.assertRaises(VkApiError) as ctx:
+            _write_jpeg_temp(b"<!DOCTYPE html><html><body>404</body></html>")
+        self.assertIn("HTML", str(ctx.exception))
+
+    def test_write_jpeg_temp_reencodes_png(self):
+        buf = io.BytesIO()
+        Image.new("RGB", (32, 24), color=(10, 20, 30)).save(buf, format="PNG")
+        out = _write_jpeg_temp(buf.getvalue())
+        try:
+            self.assertTrue(out.is_file())
+            self.assertEqual(out.suffix, ".jpg")
+            with Image.open(out) as im:
+                self.assertEqual(im.format, "JPEG")
+                self.assertEqual(im.size, (32, 24))
+        finally:
+            out.unlink(missing_ok=True)
+
+    def test_local_media_path_from_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rel = root / "cars" / "1" / "0.jpg"
+            rel.parent.mkdir(parents=True)
+            rel.write_bytes(b"x")
+            with patch("app.media_storage.media_root", return_value=root):
+                self.assertEqual(
+                    _local_media_path_from_url("https://api.avtovozom.com/media/cars/1/0.jpg"),
+                    rel,
+                )
+                self.assertIsNone(_local_media_path_from_url("https://cdn.example/a.jpg"))
 
 
 if __name__ == "__main__":
