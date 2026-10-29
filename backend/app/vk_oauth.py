@@ -30,8 +30,9 @@ VK_CLASSIC_AUTHORIZE = "https://oauth.vk.com/authorize"
 VK_CLASSIC_TOKEN = "https://oauth.vk.com/access_token"
 
 PENDING_KEY = "vk_oauth_pending"
-DEFAULT_SCOPE_ID = "vkid.personal_info photos"
-DEFAULT_SCOPE_CLASSIC = "photos"
+# photos — загрузка; wall — getWallUploadServer/saveWallPhoto; groups — пост в сообщество.
+DEFAULT_SCOPE_ID = "vkid.personal_info photos wall groups"
+DEFAULT_SCOPE_CLASSIC = "photos,wall,groups"
 PENDING_TTL_SEC = 15 * 60
 
 
@@ -113,6 +114,8 @@ def begin_vk_oauth(db: Session, *, return_to: str | None = None) -> dict[str, st
                 "Также добавьте Authorized redirect URI: "
                 f"{redirect_uri}"
             )
+        # revoke=1: иначе VK молча переиспользует старый grant без экрана
+        # разрешений — и новый photos/wall от поддержки в токен не попадёт.
         q = urlencode(
             {
                 "client_id": client_id,
@@ -122,6 +125,7 @@ def begin_vk_oauth(db: Session, *, return_to: str | None = None) -> dict[str, st
                 "response_type": "code",
                 "state": state,
                 "v": "5.199",
+                "revoke": "1",
             }
         )
         authorize_url = f"{VK_CLASSIC_AUTHORIZE}?{q}"
