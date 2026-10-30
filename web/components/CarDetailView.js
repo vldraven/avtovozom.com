@@ -981,8 +981,14 @@ export default function CarDetailView({
                       />
                     ) : null}
 
-                    <h1 className="detail-title">{car.title}</h1>
-                    {car.is_new ? <span className="car-new-badge">Новый</span> : null}
+                    <h1 className={`detail-title${car.is_new ? " detail-title--with-badge" : ""}`}>
+                      {car.is_new ? (
+                        <>
+                          <span className="detail-title__text">{car.title}</span>
+                          <span className="car-new-badge car-new-badge--title">Новый</span>
+                        </>
+                      ) : car.title}
+                    </h1>
                   </div>
                   <div className="detail-sidebar__hero-actions" aria-label="Избранное и поделиться">
                     <ListingFavoriteButton carId={car.id} car={car} />
