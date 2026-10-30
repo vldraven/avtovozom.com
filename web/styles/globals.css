@@ -8819,6 +8819,10 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
 }
 
 .import-plan-toolbar {
+  /* Above the wide table scroller: on iOS, overflow-x:auto under a clipped
+     ancestor can steal taps from siblings painted above the scrollport. */
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -8907,7 +8911,14 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
 }
 
 .import-plan-table-wrap {
+  position: relative;
+  z-index: 0;
+  max-width: 100%;
   overflow-x: auto;
+  /* Explicit Y clip: with only overflow-x set, the other axis becomes auto and
+     WebKit can extend the scrollport hit-target over the toolbar above. */
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 8px);
   background: #fff;
