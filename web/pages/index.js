@@ -205,6 +205,7 @@ export default function Home({ initialData = null }) {
   const [homeFilterDraft, setHomeFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
   const [homeFilterApplied, setHomeFilterApplied] = useState(EMPTY_CATALOG_FILTERS);
   const [newCars, setNewCars] = useState(initialData?.newCars ?? []);
+  const [newCarsTotal, setNewCarsTotal] = useState(initialData?.newCarsTotal ?? 0);
   useEffect(() => {
     const controller = new AbortController();
     fetch(`${API_URL}/cars?is_new=true&sort=date_desc&limit=12&photo_limit=${LIST_PHOTO_LIMIT}`, { signal: controller.signal })
@@ -212,6 +213,7 @@ export default function Home({ initialData = null }) {
       .then((data) => {
         if (!data || controller.signal.aborted) return;
         setNewCars(data.items || []);
+        setNewCarsTotal(Number(data.total) || 0);
       })
       .catch(() => {});
     return () => controller.abort();
@@ -1608,26 +1610,7 @@ export default function Home({ initialData = null }) {
               </div>
             </div>
 
-            <section className="home-m-hero" aria-label="Витрина">
-              <p className="home-m-hero__eyebrow">Автовозом</p>
-              <h1 className="home-m-hero__title">
-                Авто из Китая напрямую от дилеров — легко с Автовозом
-              </h1>
-              <p className="home-m-hero__subtitle">
-                Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном
-                кабинете.
-              </p>
-              <div className="home-m-hero__cta-row">
-                <Link href="/request-quote" className="btn btn-primary home-m-hero__cta">
-                  Рассчитать
-                </Link>
-                <Link href="/catalog" className="btn home-m-hero__cta home-m-hero__cta--ghost">
-                  Каталог
-                </Link>
-              </div>
-            </section>
-
-            <NewCarsShowcase cars={newCars} variant="mobile" onCarClick={saveHomeScrollPosition} />
+            <h1 className="visually-hidden">Автомобили из Китая — Автовозом</h1>
 
             {activeDeal ? (
               <div className="home-deal-card">
@@ -1679,6 +1662,8 @@ export default function Home({ initialData = null }) {
                 <span className="home-quick-tile__label">FAQ</span>
               </Link>
             </div>
+
+            <NewCarsShowcase cars={newCars} total={newCarsTotal} variant="mobile" onCarClick={saveHomeScrollPosition} />
 
             {popularBrands.length > 0 ? (
               <section className="home-m-brands" aria-label="Популярные марки">
@@ -1866,7 +1851,7 @@ export default function Home({ initialData = null }) {
               </div>
             </section>
 
-            <NewCarsShowcase cars={newCars} variant="desktop" onCarClick={saveHomeScrollPosition} />
+            <NewCarsShowcase cars={newCars} total={newCarsTotal} variant="desktop" onCarClick={saveHomeScrollPosition} />
 
             {popularBrands.length > 0 ? (
               <section className="home-d-brands" aria-label="Популярные марки">
@@ -2027,6 +2012,16 @@ export default function Home({ initialData = null }) {
                 </article>
               ))}
             </section>
+            <div className="home-d-consult-row">
+              <Link href="/messages" className="home-d-consult">
+                <span className="home-d-consult__icon" aria-hidden>AV</span>
+                <span className="home-d-consult__text">
+                  <strong>Спросите консультанта</strong>
+                  <span>Отвечает сразу, без регистрации</span>
+                </span>
+                <span aria-hidden>→</span>
+              </Link>
+            </div>
           </div>
 
           <div className="home-only-mobile home-m-staff-gap" />
@@ -2428,6 +2423,7 @@ export async function getServerSideProps({ query }) {
   let cars = [];
   let popularCars = [];
   let newCars = [];
+  let newCarsTotal = 0;
   let total = 0;
   let cbr = null;
   let cbrError = null;
@@ -2455,6 +2451,7 @@ export async function getServerSideProps({ query }) {
     if (nRes?.ok) {
       const n = await nRes.json();
       newCars = n.items || [];
+      newCarsTotal = Number(n.total) || 0;
     }
     if (tRes.ok) {
       const t = await tRes.json();
@@ -2471,6 +2468,7 @@ export async function getServerSideProps({ query }) {
         cars,
         popularCars,
         newCars,
+        newCarsTotal,
         total,
         cbr,
         cbrError,

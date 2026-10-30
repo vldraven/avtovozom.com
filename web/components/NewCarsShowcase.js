@@ -1,20 +1,26 @@
 import Link from "next/link";
 import HomeCarCard from "./HomeCarCard";
 
-/** The same section and card layout as the popular-models showcase. */
-export default function NewCarsShowcase({ cars = [], variant = "mobile", onCarClick }) {
+/** V2 highlight panel, with the shared homepage car cards and horizontal rail. */
+export default function NewCarsShowcase({ cars = [], total = 0, variant = "mobile", onCarClick }) {
   if (!cars.length) return null;
   const desktop = variant === "desktop";
   const sectionClass = desktop ? "home-d-models" : "home-m-models";
 
+  const countLabel = { one: "предложение", few: "предложения", many: "предложений", other: "предложения" }[new Intl.PluralRules("ru").select(total)];
+
   return (
-    <section className={sectionClass} aria-label="Новые автомобили">
+    <section className={`${sectionClass} home-new-cars home-new-cars--${variant}`} aria-label="Новые автомобили">
       <div className={`${sectionClass}__head`}>
-        <h2 className={`${sectionClass}__title`}>Новые автомобили</h2>
+        <div>
+          <h2 className={`${sectionClass}__title`}>Новые автомобили</h2>
+          {desktop && <p className="home-new-cars__subtitle">Без пробега, из Китая под заказ{total > 0 ? ` · ${total} ${countLabel}` : ""}</p>}
+        </div>
         <Link href="/catalog?is_new=true" className={`${sectionClass}__link`}>
-          Все новые
+          В каталог
         </Link>
       </div>
+      {!desktop && <p className="home-new-cars__subtitle">Без пробега, из Китая под заказ</p>}
       <div className={desktop ? "home-d-carousel" : "home-m-models__scroller"} role="list">
         {cars.map((car, index) => (
           <HomeCarCard

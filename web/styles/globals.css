@@ -11023,6 +11023,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   text-decoration: none;
   font-size: 0.8125rem;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .site-footer__col a:hover {
@@ -11226,7 +11227,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   padding: 8px 16px 16px;
   background: #fff;
   border-bottom: 1px solid var(--color-border);
-  margin-bottom: 0;
+  margin-bottom: 16px;
 }
 
 .home-m-top__row {
@@ -12223,6 +12224,83 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   white-space: normal;
 }
 
+/* New automobiles: V2 white band on mobile, inset panel on desktop. */
+.home-new-cars {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.home-new-cars__subtitle {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 15px;
+}
+
+.home-new-cars--mobile {
+  margin: 0 0 16px;
+  padding: 18px 0 18px 16px;
+  border-left: 0;
+  border-right: 0;
+}
+
+.home-new-cars--mobile .home-m-models__head {
+  padding-right: 16px;
+  margin-bottom: 2px;
+  gap: 8px;
+}
+
+.home-new-cars--mobile .home-new-cars__subtitle {
+  margin: 0 16px 12px 0;
+  font-size: 13px;
+}
+
+.home-new-cars--mobile .home-m-models__scroller {
+  padding-right: 16px;
+}
+
+.home-new-cars--mobile .home-m-models__card {
+  flex-basis: 220px;
+  width: 220px;
+}
+
+.home-new-cars--mobile .catalog-card__image-wrap {
+  height: 140px;
+}
+
+.home-d-models.home-new-cars--desktop {
+  margin: 32px 0;
+  padding: 26px 0 26px 28px;
+  border-radius: 16px;
+}
+
+.home-new-cars--desktop .home-d-models__head {
+  align-items: flex-end;
+  padding-right: 28px;
+  margin-bottom: 18px;
+  gap: 20px;
+}
+
+.home-new-cars--desktop .home-d-models__title {
+  font-size: 24px;
+}
+
+.home-new-cars--desktop .home-d-carousel {
+  padding-right: 28px;
+}
+
+.home-new-cars--desktop .home-d-card {
+  flex-basis: 300px;
+}
+
+.home-new-cars--desktop .catalog-card__image-wrap {
+  height: 190px;
+}
+
+.home-new-cars .home-m-models__link,
+.home-new-cars .home-d-models__link {
+  flex-shrink: 0;
+}
+
 /* —— Desktop popular models —— */
 .home-d-models {
   margin: 0 0 1.25rem;
@@ -12409,21 +12487,22 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   margin-bottom: 1.5rem;
 }
 
-/* —— Desktop consult pill —— */
+/* —— In-flow desktop consultant, after benefits —— */
+.home-d-consult-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 2rem;
+}
+
 .home-d-consult {
-  position: fixed;
-  right: 1.5rem;
-  bottom: 1.5rem;
-  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1.1rem 0.75rem 0.75rem;
-  border-radius: 999px;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
   background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
   color: #fff;
   text-decoration: none;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
 }
 
 .home-d-consult:hover {
