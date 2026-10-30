@@ -14303,7 +14303,7 @@ a.contacts-card:hover {
 /* —— Global chat entry widget —— */
 .chat-entry {
   position: fixed;
-  /* Above cookie consent (1300); below site header (1500) and modals (2000). */
+  /* Below cookie consent; secondary prompts are coordinated in App. */
   z-index: 1350;
   pointer-events: none;
 }
@@ -14317,13 +14317,6 @@ a.contacts-card:hover {
   bottom: 1.25rem;
   left: auto;
   width: min(22rem, calc(100vw - 2rem));
-}
-
-/* Cookie sits in the same corner as the desktop chat — keep it to the left while open. */
-@media (min-width: 769px) {
-  body.chat-entry-expanded .cookie-consent {
-    right: calc(1.25rem + min(22rem, calc(100vw - 2rem)) + 0.75rem);
-  }
 }
 
 .chat-entry--mobile {
@@ -14806,8 +14799,8 @@ a.contacts-card:hover {
   left: 1rem;
   right: 1rem;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  /* Above mobile dock (1200); below PWA install sheet (2200). */
-  z-index: 1300;
+  /* Cookie choice takes priority over chat and install prompts. */
+  z-index: 2300;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -14883,19 +14876,3 @@ a.contacts-card:hover {
 .listing-new-toggle input { width: 20px; height: 20px; flex-shrink: 0; accent-color: #15803d; }
 .listing-new-toggle strong, .listing-new-toggle small { display: block; }
 .listing-new-toggle small { margin-top: 4px; color: #64748b; line-height: 1.5; }
-.new-cars-showcase { min-width: 0; margin: 24px 0; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; }
-.new-cars-showcase__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
-.new-cars-showcase h2 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em; }
-.new-cars-showcase p { margin: 5px 0 0; color: #64748b; font-size: 14px; }
-.new-cars-showcase__actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.new-cars-showcase__actions a { font-size: 14px; font-weight: 700; white-space: nowrap; }
-.new-cars-showcase__actions button { width: 40px; height: 40px; border: 1px solid #cbd5e1; border-radius: 50%; background: #fff; color: #0f172a; font-size: 24px; cursor: pointer; }
-.new-cars-showcase__actions button:disabled { color: #94a3b8; background: #f1f5f9; cursor: default; }
-.new-cars-showcase__rail { display: flex; gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin; padding-bottom: 10px; }
-.new-cars-showcase__rail > .catalog-card { flex: 0 0 300px; width: 300px; scroll-snap-align: start; }
-.new-cars-showcase--mobile { padding: 16px; margin: 20px 0; }
-.new-cars-showcase--mobile h2 { font-size: 20px; }
-.new-cars-showcase--mobile .new-cars-showcase__head { align-items: flex-start; gap: 10px; }
-.new-cars-showcase--mobile .new-cars-showcase__actions button { display: none; }
-.new-cars-showcase--mobile .new-cars-showcase__rail { gap: 12px; }
-.new-cars-showcase--mobile .new-cars-showcase__rail > .catalog-card { flex-basis: 260px; width: 260px; }
