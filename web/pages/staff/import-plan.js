@@ -72,11 +72,13 @@ export default function StaffImportPlanPage() {
   const [catalogBusy, setCatalogBusy] = useState(false);
   const [catalogNotice, setCatalogNotice] = useState("");
   const [catalogNoticeIsError, setCatalogNoticeIsError] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   const rows = plan.rows;
   const running = plan.running;
   const banner = plan.banner;
   const error = plan.error;
+  const startBusy = running || starting;
 
   useEffect(() => subscribeImportPlan(setPlan), []);
 
@@ -393,21 +395,25 @@ export default function StaffImportPlanPage() {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={running}
-              onClick={() => startImportPlan(token)}
+              disabled={startBusy}
+              onClick={() => {
+                if (startBusy) return;
+                setStarting(true);
+                void startImportPlan(token).finally(() => setStarting(false));
+              }}
             >
-              {running ? "Идёт импорт…" : "Запустить обход"}
+              {running ? "Идёт импорт…" : starting ? "Запуск…" : "Запустить обход"}
             </button>
             <button type="button" className="btn btn-secondary" disabled={!running} onClick={() => stopImportPlan()}>
               Остановить
             </button>
-            <button type="button" className="btn btn-ghost" disabled={running} onClick={() => addImportPlanRow()}>
+            <button type="button" className="btn btn-ghost" disabled={startBusy} onClick={() => addImportPlanRow()}>
               + Строка
             </button>
             <button
               type="button"
               className="btn btn-ghost"
-              disabled={running}
+              disabled={startBusy}
               onClick={() => clearFinishedImportPlanRows()}
             >
               Убрать успешные
