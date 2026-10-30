@@ -76,6 +76,7 @@ export default function StaffEditListingPage() {
   const [registrationDate, setRegistrationDate] = useState("");
   const [productionDate, setProductionDate] = useState("");
   const [bodyColorSlug, setBodyColorSlug] = useState("");
+  const [isNew, setIsNew] = useState(false);
   const [isPopular, setIsPopular] = useState(false);
   const [bodyColorOptions, setBodyColorOptions] = useState([]);
   const [existingPhotos, setExistingPhotos] = useState([]);
@@ -176,6 +177,7 @@ export default function StaffEditListingPage() {
       setProductionDate(c.production_date || "");
       setBodyColorSlug(c.body_color_slug || "");
       setIsPopular(Boolean(c.is_popular));
+      setIsNew(Boolean(c.is_new));
       const ph = [...(c.photos || [])].sort((a, b) => a.sort_order - b.sort_order);
       setExistingPhotos(ph);
       setPhotoIdsToRemove(new Set());
@@ -363,6 +365,7 @@ export default function StaffEditListingPage() {
     fd.append("registration_date", registrationDate);
     fd.append("production_date", productionDate);
     fd.append("body_color_slug", bodyColorSlug);
+    fd.append("is_new", isNew ? "true" : "false");
     fd.append("is_popular", isPopular ? "1" : "0");
     if (loadedTrimId == null && trimId) {
       fd.append("trim_id", trimId);
@@ -730,6 +733,10 @@ export default function StaffEditListingPage() {
                 <span>
                   Показывать на главной в блоке «Популярные модели»
                 </span>
+              </label>
+              <label className={`listing-new-toggle${isNew ? " listing-new-toggle--checked" : ""}`}>
+                <input type="checkbox" checked={isNew} onChange={(e) => setIsNew(e.target.checked)} />
+                <span><strong>Новый автомобиль</strong><small>Бейдж «Новый», фильтр «Новые» в каталоге и лента на главной</small></span>
               </label>
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Город

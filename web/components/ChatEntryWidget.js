@@ -99,7 +99,7 @@ function formatMsgTime(iso) {
   }
 }
 
-export default function ChatEntryWidget() {
+export default function ChatEntryWidget({ suppressed = false, onOpenChange }) {
   const router = useRouter();
   const [isMobile, setIsMobile] = useState(false);
   const [phase, setPhase] = useState("collapsed");
@@ -116,13 +116,11 @@ export default function ChatEntryWidget() {
   const [consultOpen, setConsultOpen] = useState(false);
   const [consultComment, setConsultComment] = useState("");
   const threadEndRef = useRef(null);
-  /** Один раз на сессию виджета: на десктопе открыть панель при входе на сайт. */
-  const desktopDefaultOpenDoneRef = useRef(false);
 
   const isGuest = !token;
   const hiddenByPath = chatEntryPathHidden(router.pathname, router.asPath);
   const hiddenByRole = chatEntryRoleHidden(me?.role);
-  const hidden = hiddenByPath || hiddenByRole;
+  const hidden = suppressed || hiddenByPath || hiddenByRole;
   const hasThread = messages.length > 0;
 
   const title = isGuest ? CHAT_ENTRY_TITLE_GUEST : "Чат с Avtovozom";
@@ -255,17 +253,19 @@ export default function ChatEntryWidget() {
     const sync = () => {
       const mobile = mq.matches;
       setIsMobile(mobile);
-      // Один раз при первом определении ширины: на десктопе раскрыть панель.
-      // Свернуть по крестику можно; на мобилке стартуем свёрнутыми.
-      if (!desktopDefaultOpenDoneRef.current) {
-        desktopDefaultOpenDoneRef.current = true;
-        if (!mobile) setPhase("open");
-      }
     };
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
+
+  useEffect(() => {
+    onOpenChange?.(!hidden && phase === "open");
+  }, [hidden, phase, onOpenChange]);
+
+  useEffect(() => {
+    if (suppressed) setPhase("collapsed");
+  }, [suppressed]);
 
   useEffect(() => {
     if (hidden) return undefined;

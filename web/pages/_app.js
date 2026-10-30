@@ -1,6 +1,7 @@
 import { useRouter } from "next/router";
 import Head from "next/head";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { getCookieConsent } from "../lib/cookieConsent";
 
 import "../lib/suppressExtensionErrors";
 import AppLockGate from "../components/AppLockGate";
@@ -28,6 +29,21 @@ function useSeoNoIndex() {
 }
 
 export default function App({ Component, pageProps }) {
+  const [cookieConsent, setCookieConsent] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setCookieConsent(getCookieConsent());
+    sync();
+    window.addEventListener("avtovozom:cookie-consent", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("avtovozom:cookie-consent", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+
   const router = useRouter();
   const noindex = useSeoNoIndex();
   const path = router.pathname || "";
@@ -36,6 +52,9 @@ export default function App({ Component, pageProps }) {
     path !== "/auth" &&
     path !== "/reset-password" &&
     path !== "/messages";
+  const installPromptAllowed =
+    !path.startsWith("/staff/") &&
+    !["/messages", "/auth", "/reset-password"].includes(path);
   // /messages: dock на списке чатов; внутри треда скрывает сам MobileBottomNav
   const showMobileBottomNav = path !== "/auth" && path !== "/reset-password";
 
@@ -148,8 +167,8 @@ export default function App({ Component, pageProps }) {
         </AppLockGate>
         {showFooter ? <SiteFooter /> : null}
         {showMobileBottomNav ? <MobileBottomNav /> : null}
-        <ChatEntryWidget />
-        <PwaInstallPrompt />
+        <ChatEntryWidget suppressed={!cookieConsent || installOpen} onOpenChange={setChatOpen} />
+        <PwaInstallPrompt suppressed={!cookieConsent || chatOpen || !installPromptAllowed} onOpenChange={setInstallOpen} />
         <PwaServiceWorker />
         <CookieConsentBanner />
         <YandexMetrika />

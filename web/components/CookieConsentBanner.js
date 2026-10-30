@@ -7,7 +7,14 @@ export default function CookieConsentBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    setVisible(!getCookieConsent());
+    const sync = () => setVisible(!getCookieConsent());
+    sync();
+    window.addEventListener("avtovozom:cookie-consent", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("avtovozom:cookie-consent", sync);
+      window.removeEventListener("storage", sync);
+    };
   }, []);
 
   if (!visible) return null;

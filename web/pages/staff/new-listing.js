@@ -38,6 +38,7 @@ export default function StaffNewListingPage() {
   const [registrationDate, setRegistrationDate] = useState("");
   const [productionDate, setProductionDate] = useState("");
   const [bodyColorSlug, setBodyColorSlug] = useState("");
+  const [isNew, setIsNew] = useState(false);
   const [bodyColorOptions, setBodyColorOptions] = useState([]);
   const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -249,6 +250,7 @@ export default function StaffNewListingPage() {
     fd.append("registration_date", registrationDate);
     fd.append("production_date", productionDate);
     fd.append("body_color_slug", bodyColorSlug);
+    fd.append("is_new", isNew ? "true" : "false");
     for (const f of files) fd.append("photos", f);
 
     setSubmitting(true);
@@ -539,6 +541,10 @@ export default function StaffNewListingPage() {
                   })),
                 ]}
               />
+              <label className={`listing-new-toggle${isNew ? " listing-new-toggle--checked" : ""}`}>
+                <input type="checkbox" checked={isNew} onChange={(e) => setIsNew(e.target.checked)} />
+                <span><strong>Новый автомобиль</strong><small>Бейдж «Новый», фильтр «Новые» в каталоге и лента на главной</small></span>
+              </label>
               <label className="muted" style={{ display: "grid", gap: 4 }}>
                 Город
                 <input className="input" value={city} onChange={(e) => setCity(e.target.value)} />

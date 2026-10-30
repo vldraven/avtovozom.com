@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import CarConditionFilter from "./CarConditionFilter";
 
 import { FUEL_TYPE_OPTIONS, HP_TO_OPTIONS } from "../lib/catalogFilters";
 import SiteSelectDropdown from "./SiteSelectDropdown";
@@ -45,6 +46,10 @@ export default function CatalogFilterFields({
 
   return (
     <>
+      <div className="catalog-filter-sheet__field">
+        <p className="catalog-filter-sheet__label">Состояние</p>
+        <CarConditionFilter value={draft.isNew} onChange={(isNew) => patch({ isNew })} />
+      </div>
       {showBrandModel ? (
         <>
           <div className="catalog-filter-sheet__field">

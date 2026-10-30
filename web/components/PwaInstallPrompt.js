@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getCookieConsent } from "../lib/cookieConsent";
 
 const DISMISSED_KEY = "avt_pwa_install_dismissed_until";
 const DISMISS_MS = 14 * 24 * 60 * 60 * 1000;
@@ -21,19 +22,28 @@ function isIos() {
   return /iphone|ipad|ipod/i.test(navigator.userAgent || "");
 }
 
-export default function PwaInstallPrompt() {
+export default function PwaInstallPrompt({ suppressed = false, onOpenChange }) {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [visible, setVisible] = useState(false);
+  const [ready, setReady] = useState(false);
   const ios = useMemo(() => isIos(), []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !isMobile() || isStandalone()) return undefined;
-    const dismissedUntil = Number(localStorage.getItem(DISMISSED_KEY) || "0");
+    let dismissedUntil = 0;
+    try {
+      dismissedUntil = Number(localStorage.getItem(DISMISSED_KEY) || "0");
+    } catch {
+      /* Storage may be unavailable in private browsing. */
+    }
     if (dismissedUntil > Date.now()) return undefined;
 
-    const timer = setTimeout(() => {
+    // First visit belongs to cookie choice and browsing, not another prompt.
+    const returningVisit = Boolean(getCookieConsent());
+    const timer = returningVisit ? setTimeout(() => {
+      setReady(true);
       if (ios) setVisible(true);
-    }, 1800);
+    }, 30_000) : null;
 
     const onBeforeInstallPrompt = (event) => {
       event.preventDefault();
@@ -54,11 +64,20 @@ export default function PwaInstallPrompt() {
     };
   }, [ios]);
 
-  if (!visible) return null;
+  const shown = visible && ready && !suppressed;
+  useEffect(() => {
+    onOpenChange?.(shown);
+  }, [shown, onOpenChange]);
+
+  if (!shown) return null;
 
   function dismiss() {
-    localStorage.setItem(DISMISSED_KEY, String(Date.now() + DISMISS_MS));
     setVisible(false);
+    try {
+      localStorage.setItem(DISMISSED_KEY, String(Date.now() + DISMISS_MS));
+    } catch {
+      /* Dismiss for this page even when the browser blocks storage. */
+    }
   }
 
   async function confirm() {
