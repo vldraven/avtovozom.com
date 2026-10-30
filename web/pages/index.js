@@ -205,7 +205,6 @@ export default function Home({ initialData = null }) {
   const [homeFilterDraft, setHomeFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
   const [homeFilterApplied, setHomeFilterApplied] = useState(EMPTY_CATALOG_FILTERS);
   const [newCars, setNewCars] = useState(initialData?.newCars ?? []);
-  const [newCarsTotal, setNewCarsTotal] = useState(initialData?.newCarsTotal ?? 0);
   useEffect(() => {
     const controller = new AbortController();
     fetch(`${API_URL}/cars?is_new=true&sort=date_desc&limit=12&photo_limit=${LIST_PHOTO_LIMIT}`, { signal: controller.signal })
@@ -213,7 +212,6 @@ export default function Home({ initialData = null }) {
       .then((data) => {
         if (!data || controller.signal.aborted) return;
         setNewCars(data.items || []);
-        setNewCarsTotal(Number(data.total) || 0);
       })
       .catch(() => {});
     return () => controller.abort();
@@ -1680,7 +1678,7 @@ export default function Home({ initialData = null }) {
               </Link>
             </div>
 
-            <NewCarsShowcase cars={newCars} total={newCarsTotal} variant="mobile" onCarClick={saveHomeScrollPosition} />
+            <NewCarsShowcase cars={newCars} variant="mobile" onCarClick={saveHomeScrollPosition} />
 
             {popularBrands.length > 0 ? (
               <section className="home-m-brands" aria-label="Популярные марки">
@@ -1868,7 +1866,7 @@ export default function Home({ initialData = null }) {
               </div>
             </section>
 
-            <NewCarsShowcase cars={newCars} total={newCarsTotal} variant="desktop" onCarClick={saveHomeScrollPosition} />
+            <NewCarsShowcase cars={newCars} variant="desktop" onCarClick={saveHomeScrollPosition} />
 
             {popularBrands.length > 0 ? (
               <section className="home-d-brands" aria-label="Популярные марки">
@@ -2430,7 +2428,6 @@ export async function getServerSideProps({ query }) {
   let cars = [];
   let popularCars = [];
   let newCars = [];
-  let newCarsTotal = 0;
   let total = 0;
   let cbr = null;
   let cbrError = null;
@@ -2458,7 +2455,6 @@ export async function getServerSideProps({ query }) {
     if (nRes?.ok) {
       const n = await nRes.json();
       newCars = n.items || [];
-      newCarsTotal = Number(n.total) || 0;
     }
     if (tRes.ok) {
       const t = await tRes.json();
@@ -2475,7 +2471,6 @@ export async function getServerSideProps({ query }) {
         cars,
         popularCars,
         newCars,
-        newCarsTotal,
         total,
         cbr,
         cbrError,
