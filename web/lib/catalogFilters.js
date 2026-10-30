@@ -3,6 +3,7 @@
 const CURRENT_YEAR = new Date().getFullYear();
 
 export const CATALOG_FILTER_QUERY_KEYS = [
+  "is_new",
   "year_from",
   "year_to",
   "hp_to",
@@ -65,6 +66,7 @@ export const RUB_TO_PRESETS = [
 ];
 
 export const EMPTY_CATALOG_FILTERS = {
+  isNew: null,
   brandId: null,
   modelId: null,
   generationId: null,
@@ -115,6 +117,8 @@ export function parseFiltersFromQuery(query, { brandId = null, modelId = null, g
     if (!Number.isNaN(n)) mid = n;
   }
   return {
+    isNew: ["true", "false"].includes(firstQueryValue(query?.is_new))
+      ? firstQueryValue(query.is_new) === "true" : null,
     brandId: bid,
     modelId: mid,
     generationId,
@@ -131,6 +135,7 @@ export function parseFiltersFromQuery(query, { brandId = null, modelId = null, g
 export function filtersAreEqual(a, b) {
   if (!a || !b) return false;
   return (
+    a.isNew === b.isNew &&
     a.brandId === b.brandId &&
     a.modelId === b.modelId &&
     a.generationId === b.generationId &&
@@ -147,6 +152,7 @@ export function filtersAreEqual(a, b) {
 export function hasActiveCatalogFilters(filters) {
   if (!filters) return false;
   return Boolean(
+    filters.isNew != null ||
     filters.yearFrom ||
       filters.yearTo ||
       filters.hpTo ||
@@ -161,7 +167,7 @@ export function hasActiveCatalogFilters(filters) {
 export function catalogFilterKeyFromQuery(query) {
   const f = parseFiltersFromQuery(query);
   const rawQ = firstQueryValue(query?.q);
-  return [f.brandId, f.modelId, f.generationId, f.yearFrom, f.yearTo, f.hpTo, f.mileageTo, f.fuelType, f.rubFrom, f.rubTo, rawQ || ""]
+  return [f.isNew, f.brandId, f.modelId, f.generationId, f.yearFrom, f.yearTo, f.hpTo, f.mileageTo, f.fuelType, f.rubFrom, f.rubTo, rawQ || ""]
     .map((x) => (x == null ? "" : String(x)))
     .join("|");
 }
@@ -169,6 +175,7 @@ export function catalogFilterKeyFromQuery(query) {
 /** Добавить фильтры в URLSearchParams для GET /cars. */
 export function appendFiltersToSearchParams(params, filters) {
   if (!params || !filters) return params;
+  if (filters.isNew != null) params.set("is_new", String(filters.isNew));
   if (filters.generationId) params.set("generation_id", String(filters.generationId));
   if (filters.yearFrom) params.set("year_from", String(filters.yearFrom));
   if (filters.yearTo) params.set("year_to", String(filters.yearTo));
@@ -183,6 +190,7 @@ export function appendFiltersToSearchParams(params, filters) {
 /** Объект query для router (без brand/model/q/sort). */
 export function catalogFiltersToQuery(filters, { omitBrandModel = false } = {}) {
   const out = {};
+  if (filters.isNew != null) out.is_new = String(filters.isNew);
   if (!omitBrandModel) {
     if (filters.brandId) out.brand = String(filters.brandId);
     if (filters.modelId) out.model = String(filters.modelId);

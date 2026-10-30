@@ -1,4 +1,5 @@
 import Head from "next/head";
+import CarConditionFilter from "../../components/CarConditionFilter";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -62,6 +63,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 function countActiveCatalogFilters(filters) {
   if (!filters) return 0;
   let n = 0;
+  if (filters.isNew != null) n += 1;
   if (filters.yearFrom) n += 1;
   if (filters.yearTo) n += 1;
   if (filters.hpTo) n += 1;
@@ -190,6 +192,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
     const nextModel = nextBrand?.models?.find((m) => m.id === fd.modelId);
     const nextGeneration = nextModel?.generations?.find((g) => g.id === fd.generationId);
     const filterQuery = catalogFiltersToQuery(fd, { omitBrandModel: true });
+    const textQuery = catalogTextQueryFromRouter(router.query);
+    if (textQuery) filterQuery.q = textQuery;
     if (listSort !== CATALOG_SORT_DEFAULT) filterQuery.sort = listSort;
 
     let pathname = "/catalog";
@@ -248,6 +252,10 @@ export default function CatalogTreePage({ initialPayload = null }) {
             query: catalogFiltersToQuery(appliedFilters, { omitBrandModel: true }),
           }),
       });
+    }
+    if (appliedFilters.isNew != null) {
+      tags.push({ key: "condition", label: appliedFilters.isNew ? "Новые" : "С пробегом",
+        onRemove: () => applyCatalogQuickFilters({ ...appliedFilters, isNew: null }) });
     }
     const priceLabel = chipLabelForFilter("price", appliedFilters);
     if (priceLabel) {
@@ -1050,7 +1058,8 @@ export default function CatalogTreePage({ initialPayload = null }) {
                               ? `${brand.name} · ${model.name}`
                               : brand
                                 ? brand.name
-                                : "Каталог автомобилей"}
+                                : appliedFilters.isNew === true ? "Новые автомобили из Китая"
+                                  : appliedFilters.isNew === false ? "Автомобили с пробегом" : "Каталог автомобилей"}
                         </h1>
                         <div className="catalog-sort-field catalog-sort-field--desktop">
                           <CatalogSortDropdown
@@ -1091,6 +1100,9 @@ export default function CatalogTreePage({ initialPayload = null }) {
                         />
                       </form>
 
+                      <div className="catalog-condition-mobile">
+                        <CarConditionFilter value={appliedFilters.isNew} onChange={(isNew) => applyCatalogQuickFilters({ ...appliedFilters, isNew })} />
+                      </div>
                       <div className="catalog-mobile-filters-row">
                         <button
                           type="button"

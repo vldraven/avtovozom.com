@@ -687,6 +687,7 @@ def _car_to_out(
         trim_id=car.trim_id,
         trim=_trim_to_out(getattr(car, "trim", None)) if include_trim else None,
         is_popular=bool(getattr(car, "is_popular", False)),
+        is_new=bool(getattr(car, "is_new", False)),
         updated_at=getattr(car, "updated_at", None),
     )
 
@@ -1044,6 +1045,11 @@ def startup() -> None:
                 "WHERE is_popular IS TRUE"
             )
         )
+        conn.execute(text("ALTER TABLE cars ADD COLUMN IF NOT EXISTS is_new BOOLEAN NOT NULL DEFAULT FALSE"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_cars_active_new_created "
+            "ON cars (created_at DESC, id DESC) WHERE is_active IS TRUE AND is_new IS TRUE"
+        ))
         conn.execute(
             text(
                 "ALTER TABLE cars ADD COLUMN IF NOT EXISTS estimated_total_rub DOUBLE PRECISION"
@@ -2746,6 +2752,9 @@ def list_cars(
         default=None,
         description="Если true — только объявления с флагом витрины «Популярные модели».",
     ),
+    is_new: bool | None = Query(
+        default=None, description="Состояние: true — новые, false — с пробегом, без параметра — все.",
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -2783,6 +2792,8 @@ def list_cars(
         stmt = stmt.where(Car.generation_id == generation_id)
     if is_popular is True:
         stmt = stmt.where(Car.is_popular.is_(True))
+    if is_new is not None:
+        stmt = stmt.where(Car.is_new.is_(is_new))
 
     # Фильтр rub_from/rub_to — по цене «под ключ» (акция или estimated_total_rub), не по CNY.
     filter_by_turnkey = (
@@ -3237,6 +3248,7 @@ async def _update_car_from_multipart(
     remove_photo_ids: str | None = None,
     trim_id: int | None = None,
     is_popular: bool | None = None,
+    is_new: bool | None = None,
 ) -> CarOut:
     model_row = db.execute(
         select(CarModel).where(CarModel.id == model_id)
@@ -3286,6 +3298,8 @@ async def _update_car_from_multipart(
         car.trim_id = trim_id
     if is_popular is not None:
         car.is_popular = bool(is_popular)
+    if is_new is not None:
+        car.is_new = is_new
 
     raw_rm = (remove_photo_ids or "").strip()
     if raw_rm:
@@ -3820,6 +3834,7 @@ def staff_my_posted_cars(
 
 @app.post("/staff/cars", response_model=CarOut)
 async def staff_create_car(
+    is_new: bool = Form(False),
     brand_id: int = Form(),
     model_id: int = Form(),
     generation_id: str | None = Form(None),
@@ -3876,6 +3891,7 @@ async def staff_create_car(
     car = Car(
         source="manual",
         source_listing_id=listing_id,
+        is_new=is_new,
         brand_id=brand_id,
         model_id=model_id,
         generation_id=gid,
@@ -4001,6 +4017,7 @@ async def staff_update_own_car(
     remove_photo_ids: str | None = Form(None),
     trim_id: str | None = Form(None),
     is_popular: str | None = Form(None),
+    is_new: bool | None = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "moderator", "dealer")),
 ):
@@ -4051,6 +4068,7 @@ async def staff_update_own_car(
         remove_photo_ids=remove_photo_ids,
         trim_id=tid,
         is_popular=_optional_bool_form(is_popular),
+        is_new=is_new,
     )
 
 
@@ -5123,6 +5141,7 @@ async def admin_update_car(
     remove_photo_ids: str | None = Form(None),
     trim_id: str | None = Form(None),
     is_popular: str | None = Form(None),
+    is_new: bool | None = Form(None),
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ):
@@ -5169,6 +5188,7 @@ async def admin_update_car(
         remove_photo_ids=remove_photo_ids,
         trim_id=tid,
         is_popular=_optional_bool_form(is_popular),
+        is_new=is_new,
     )
 
 

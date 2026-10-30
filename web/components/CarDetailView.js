@@ -858,6 +858,7 @@ export default function CarDetailView({
                         />
                       </svg>
                     </button>
+                    {car.is_new ? <span className="car-new-badge car-new-badge--detail">Новый</span> : null}
                     <span className="photo-gallery__stock" aria-hidden>
                       {stockBadge}
                     </span>
@@ -981,6 +982,7 @@ export default function CarDetailView({
                     ) : null}
 
                     <h1 className="detail-title">{car.title}</h1>
+                    {car.is_new ? <span className="car-new-badge">Новый</span> : null}
                   </div>
                   <div className="detail-sidebar__hero-actions" aria-label="Избранное и поделиться">
                     <ListingFavoriteButton carId={car.id} car={car} />

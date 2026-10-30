@@ -9,6 +9,7 @@ import BrandLogoMarquee from "../components/BrandLogoMarquee";
 import CarTurnkeyPrice from "../components/CarTurnkeyPrice";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HomeCarCard from "../components/HomeCarCard";
+import NewCarsShowcase from "../components/NewCarsShowcase";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
 import SiteLogo from "../components/SiteLogo";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
@@ -203,6 +204,20 @@ export default function Home({ initialData = null }) {
   const [heroModelsBusy, setHeroModelsBusy] = useState(false);
   const [homeFilterDraft, setHomeFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
   const [homeFilterApplied, setHomeFilterApplied] = useState(EMPTY_CATALOG_FILTERS);
+  const [newCars, setNewCars] = useState(initialData?.newCars ?? []);
+  const [newCarsTotal, setNewCarsTotal] = useState(initialData?.newCarsTotal ?? 0);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${API_URL}/cars?is_new=true&sort=date_desc&limit=12&photo_limit=${LIST_PHOTO_LIMIT}`, { signal: controller.signal })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!data || controller.signal.aborted) return;
+        setNewCars(data.items || []);
+        setNewCarsTotal(Number(data.total) || 0);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   const [popularCars, setPopularCars] = useState(initialData?.popularCars ?? []);
   const [cars, setCars] = useState(cacheSeed?.cars ?? initialData?.cars ?? []);
   const [total, setTotal] = useState(cacheSeed?.total ?? initialData?.total ?? 0);
@@ -1614,6 +1629,8 @@ export default function Home({ initialData = null }) {
               </div>
             </section>
 
+            <NewCarsShowcase cars={newCars} total={newCarsTotal} variant="mobile" onCarClick={saveHomeScrollPosition} />
+
             {activeDeal ? (
               <div className="home-deal-card">
                 <div className="home-deal-card__body">
@@ -1850,6 +1867,8 @@ export default function Home({ initialData = null }) {
                 </Link>
               </div>
             </section>
+
+            <NewCarsShowcase cars={newCars} total={newCarsTotal} variant="desktop" onCarClick={saveHomeScrollPosition} />
 
             {popularBrands.length > 0 ? (
               <section className="home-d-brands" aria-label="Популярные марки">
@@ -2410,16 +2429,19 @@ export async function getServerSideProps({ query }) {
   let brands = [];
   let cars = [];
   let popularCars = [];
+  let newCars = [];
+  let newCarsTotal = 0;
   let total = 0;
   let cbr = null;
   let cbrError = null;
   let tree = [];
   try {
-    const [bRes, cRes, pRes, tRes] = await Promise.all([
+    const [bRes, cRes, pRes, tRes, nRes] = await Promise.all([
       serverFetch(`${api}/catalog/brands`, { headers: { Accept: "application/json" } }),
       serverFetch(`${api}/cars?${params.toString()}`, { headers: { Accept: "application/json" } }),
       serverFetch(`${api}/cars?${popularParams.toString()}`, { headers: { Accept: "application/json" } }),
       serverFetch(`${api}/catalog/tree`, { headers: { Accept: "application/json" } }),
+      serverFetch(`${api}/cars?is_new=true&sort=date_desc&limit=12&photo_limit=${LIST_PHOTO_LIMIT}`, { headers: { Accept: "application/json" } }).catch(() => null),
     ]);
     if (bRes.ok) brands = await bRes.json();
     if (cRes.ok) {
@@ -2432,6 +2454,11 @@ export async function getServerSideProps({ query }) {
     if (pRes.ok) {
       const p = await pRes.json();
       popularCars = p.items || [];
+    }
+    if (nRes?.ok) {
+      const n = await nRes.json();
+      newCars = n.items || [];
+      newCarsTotal = Number(n.total) || 0;
     }
     if (tRes.ok) {
       const t = await tRes.json();
@@ -2447,6 +2474,8 @@ export async function getServerSideProps({ query }) {
         brands,
         cars,
         popularCars,
+        newCars,
+        newCarsTotal,
         total,
         cbr,
         cbrError,
