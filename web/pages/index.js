@@ -1610,7 +1610,24 @@ export default function Home({ initialData = null }) {
               </div>
             </div>
 
-            <h1 className="visually-hidden">Автомобили из Китая — Автовозом</h1>
+            <section className="home-m-hero" aria-label="Витрина">
+              <p className="home-m-hero__eyebrow">Автовозом</p>
+              <h1 className="home-m-hero__title">
+                Авто из Китая напрямую от дилеров — легко с Автовозом
+              </h1>
+              <p className="home-m-hero__subtitle">
+                Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном
+                кабинете.
+              </p>
+              <div className="home-m-hero__cta-row">
+                <Link href="/request-quote" className="btn btn-primary home-m-hero__cta">
+                  Рассчитать
+                </Link>
+                <Link href="/catalog" className="btn home-m-hero__cta home-m-hero__cta--ghost">
+                  Каталог
+                </Link>
+              </div>
+            </section>
 
             {activeDeal ? (
               <div className="home-deal-card">
@@ -2012,16 +2029,6 @@ export default function Home({ initialData = null }) {
                 </article>
               ))}
             </section>
-            <div className="home-d-consult-row">
-              <Link href="/messages" className="home-d-consult">
-                <span className="home-d-consult__icon" aria-hidden>AV</span>
-                <span className="home-d-consult__text">
-                  <strong>Спросите консультанта</strong>
-                  <span>Отвечает сразу, без регистрации</span>
-                </span>
-                <span aria-hidden>→</span>
-              </Link>
-            </div>
           </div>
 
           <div className="home-only-mobile home-m-staff-gap" />

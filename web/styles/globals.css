@@ -11023,7 +11023,6 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   text-decoration: none;
   font-size: 0.8125rem;
   line-height: 1.4;
-  overflow-wrap: anywhere;
 }
 
 .site-footer__col a:hover {
@@ -11227,7 +11226,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   padding: 8px 16px 16px;
   background: #fff;
   border-bottom: 1px solid var(--color-border);
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
 .home-m-top__row {
@@ -12487,22 +12486,21 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   margin-bottom: 1.5rem;
 }
 
-/* —— In-flow desktop consultant, after benefits —— */
-.home-d-consult-row {
-  display: flex;
-  justify-content: flex-end;
-  margin: 0 0 2rem;
-}
-
+/* —— Desktop consult pill —— */
 .home-d-consult {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 18px;
-  border-radius: 14px;
+  gap: 0.75rem;
+  padding: 0.75rem 1.1rem 0.75rem 0.75rem;
+  border-radius: 999px;
   background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
   color: #fff;
   text-decoration: none;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
 }
 
 .home-d-consult:hover {
