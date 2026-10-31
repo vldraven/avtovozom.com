@@ -797,7 +797,9 @@ export default function CarDetailView({
       </Head>
       <div
         className={`layout layout--car-detail${
-          me?.role !== "dealer" ? " layout--car-detail-cta" : ""
+          me?.role !== "dealer" && !isStaffRole(me?.role)
+            ? " layout--car-detail-cta"
+            : ""
         }`}
       >
       <SiteHeaderDesktopNav active="catalog" token={token} me={me} />
@@ -1169,11 +1171,11 @@ export default function CarDetailView({
 
             <div className="detail-main">
               {profileReady && token && me && isStaffRole(me?.role) && (
-                <div className="alert alert--danger">
+                <div className="alert alert--danger detail-staff-actions">
                   <span style={{ fontWeight: 700, display: "block", marginBottom: 8 }}>
                     Управление объявлением
                   </span>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                  <div className="detail-staff-actions__row">
                     {canEditThisListing && carId != null && (
                       <Link href={`/staff/edit-listing?id=${carId}`} className="btn btn-secondary">
                         Редактировать объявление
@@ -1197,7 +1199,7 @@ export default function CarDetailView({
               )}
 
               {profileReady && token && me && canCreateListings(me.role) && isListingOwner && !isStaffRole(me.role) && (
-                <div className="alert alert--success">
+                <div className="alert alert--success detail-staff-actions">
                   <span style={{ fontWeight: 700, display: "block", marginBottom: 8 }}>Ваше объявление</span>
                   <Link href={`/staff/edit-listing?id=${carId}`} className="btn btn-secondary">
                     Редактировать объявление
@@ -1335,7 +1337,7 @@ export default function CarDetailView({
           />
         </div>
       </main>
-      {me?.role !== "dealer" && car ? (
+      {me?.role !== "dealer" && !isStaffRole(me?.role) && car ? (
         <div className="car-detail-cta-bar" role="region" aria-label="Действия с объявлением">
           <div className="container car-detail-cta-bar__inner">
             <div className="car-detail-cta-bar__cta-row">
