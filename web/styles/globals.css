@@ -897,6 +897,19 @@ a:hover {
   color: #991b1b;
 }
 
+/* Staff edit/delete on car detail: above .car-detail-similar__scroller hit-testing. */
+.detail-staff-actions {
+  position: relative;
+  z-index: 2;
+}
+
+.detail-staff-actions__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .app-lock .alert--danger,
 .pin-panel--dark .alert--danger {
   width: 100%;
@@ -1390,6 +1403,8 @@ a:hover {
 }
 
 .staff-edit-photos {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -1414,6 +1429,8 @@ a:hover {
   position: absolute;
   top: 4px;
   right: 4px;
+  /* Above the photo tile: clipped parents / nearby scrollports can steal taps on iOS. */
+  z-index: 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1719,6 +1736,9 @@ a:hover {
 }
 
 .catalog-card__actions {
+  /* Keep admin/request buttons above any ancestor scrollport hit-testing quirks. */
+  position: relative;
+  z-index: 1;
   padding: 0.75rem 1rem 1rem;
   border-top: 1px solid var(--color-border);
   display: flex;
@@ -2813,10 +2833,16 @@ button.detail-back {
 }
 
 .car-detail-similar__scroller {
+  position: relative;
+  z-index: 0;
   display: flex;
   flex-wrap: nowrap;
   gap: 12px;
   overflow-x: auto;
+  /* Explicit Y clip: same iOS WebKit pattern as .import-plan-table-wrap —
+     overflow-x alone makes the other axis auto and can steal taps from
+     staff edit/delete controls above this rail. */
+  overflow-y: hidden;
   padding: 0 0 2px;
   margin: 0;
   -webkit-overflow-scrolling: touch;
@@ -4685,6 +4711,7 @@ code {
   .catalog-mobile-filters-row {
     flex-wrap: nowrap;
     overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     padding-bottom: 0.2rem;
   }
@@ -5355,6 +5382,7 @@ code {
     -webkit-mask-image: none;
     mask-image: none;
     overflow-x: auto;
+    overflow-y: hidden;
     scrollbar-width: thin;
   }
 
@@ -6592,6 +6620,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   gap: 6px;
   margin: 0 0 8px;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
@@ -8599,6 +8628,8 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
 }
 
 .profile-staff-list__actions {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -8765,7 +8796,11 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
 }
 
 .admin-parser-job-table-wrap {
+  position: relative;
+  z-index: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   margin-top: 0.5rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 8px);
@@ -9818,6 +9853,11 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
     max-width: 100%;
     min-width: 0;
     overflow-x: clip;
+    /* Pair X clip with explicit Y clip. With only overflow-x set, the other
+       axis becomes auto and WebKit under .layout{overflow-x:clip} can turn
+       every panel into a tap-stealing scrollport (edit-listing Save / photo
+       delete, profile staff actions, staff forms). */
+    overflow-y: clip;
   }
 
   .profile-field-grid {
@@ -11344,7 +11384,8 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   flex-wrap: nowrap;
   gap: 8px;
   overflow-x: auto;
-  overflow-y: visible;
+  /* visible→auto under clipped layout; keep Y clipped so chips don't steal taps. */
+  overflow-y: hidden;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 2px;
@@ -11387,6 +11428,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   display: flex;
   gap: 8px;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   padding-bottom: 2px;
@@ -12113,6 +12155,7 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   display: flex;
   gap: 20px;
   overflow-x: auto;
+  overflow-y: hidden;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
