@@ -17,7 +17,11 @@ from sqlalchemy.orm import Session
 
 from .app_settings import (
     DEFAULT_VK_OAUTH_CLIENT_ID,
+    VK_TOKEN_REFRESH_SKEW_SEC,
+    VK_USER_DEVICE_ID_KEY,
+    VK_USER_REFRESH_KEY,
     get_setting,
+    get_vk_user_token,
     set_setting,
     set_vk_user_token,
 )
@@ -32,7 +36,7 @@ VK_CLASSIC_TOKEN = "https://oauth.vk.com/access_token"
 PENDING_KEY = "vk_oauth_pending"
 # photos — загрузка; wall — getWallUploadServer/saveWallPhoto; groups — пост в сообщество.
 DEFAULT_SCOPE_ID = "vkid.personal_info photos wall groups"
-DEFAULT_SCOPE_CLASSIC = "photos,wall,groups"
+DEFAULT_SCOPE_CLASSIC = "photos,wall,groups,offline"
 PENDING_TTL_SEC = 15 * 60
 
 
@@ -262,6 +266,74 @@ def _exchange_vkid(
     return data
 
 
+def _exchange_vkid_refresh(*, refresh_token: str, device_id: str) -> dict[str, Any]:
+    form: dict[str, str] = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": vk_oauth_client_id(),
+        "device_id": device_id or "avtovozom-server",
+        "state": secrets.token_urlsafe(16),
+    }
+    secret = vk_oauth_client_secret()
+    if secret:
+        form["client_secret"] = secret
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.post(VK_ID_TOKEN, data=form)
+        try:
+            data = resp.json()
+        except Exception as exc:
+            raise VkOAuthError(f"VK ID refresh: HTTP {resp.status_code}") from exc
+    if not isinstance(data, dict):
+        raise VkOAuthError("VK ID refresh: неожиданный ответ")
+    if resp.status_code >= 400 or data.get("error"):
+        raise VkOAuthError(
+            f"VK ID refresh: {data.get('error_description') or data.get('error') or resp.status_code}"
+        )
+    if not data.get("access_token"):
+        raise VkOAuthError("VK ID refresh: нет access_token")
+    return data
+
+
+def ensure_fresh_vk_user_token(db: Session) -> tuple[str, datetime | None]:
+    """Вернуть действующий user-токен; при истечении обновить через refresh_token."""
+    token, expires_at = get_vk_user_token(db)
+    now = datetime.utcnow()
+    skew = timedelta(seconds=VK_TOKEN_REFRESH_SKEW_SEC)
+    still_good = bool(token) and (expires_at is None or expires_at > now + skew)
+    if still_good:
+        return token, expires_at
+
+    refresh = get_setting(db, VK_USER_REFRESH_KEY).strip()
+    if not refresh:
+        return token, expires_at
+
+    device_id = get_setting(db, VK_USER_DEVICE_ID_KEY).strip()
+    try:
+        body = _exchange_vkid_refresh(refresh_token=refresh, device_id=device_id)
+    except VkOAuthError as exc:
+        log.warning("VK user token refresh failed: %s", exc)
+        return token, expires_at
+
+    access = str(body.get("access_token") or "").strip()
+    if not access:
+        return token, expires_at
+    expires_in = body.get("expires_in")
+    try:
+        expires_in_int = int(expires_in) if expires_in is not None else 3600
+    except (TypeError, ValueError):
+        expires_in_int = 3600
+    new_refresh = str(body.get("refresh_token") or refresh).strip()
+    new_device = str(body.get("device_id") or device_id).strip()
+    expires_at = set_vk_user_token(
+        db,
+        access,
+        expires_in=expires_in_int,
+        refresh_token=new_refresh,
+        device_id=new_device,
+    )
+    return access, expires_at
+
+
 def complete_vk_oauth(
     db: Session,
     *,
@@ -302,7 +374,13 @@ def complete_vk_oauth(
     except (TypeError, ValueError):
         expires_in_int = 86400
 
-    expires_at = set_vk_user_token(db, access, expires_in=expires_in_int)
+    expires_at = set_vk_user_token(
+        db,
+        access,
+        expires_in=expires_in_int,
+        refresh_token=str(token_body.get("refresh_token") or ""),
+        device_id=parsed["device_id"] or str(token_body.get("device_id") or ""),
+    )
     return {
         "ok": True,
         "return_to": safe_return_to(str(pending.get("return_to") or "")),

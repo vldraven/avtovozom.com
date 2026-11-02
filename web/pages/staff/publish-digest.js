@@ -93,6 +93,7 @@ export default function PublishDigestPage() {
   const [loadBusy, setLoadBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
+  const [oauthBusy, setOauthBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -122,11 +123,13 @@ export default function PublishDigestPage() {
     })();
   }, [router]);
 
-  const loadCompose = useCallback(async () => {
+  const loadCompose = useCallback(async ({ keepMessage } = {}) => {
     if (!token) return;
     setLoadBusy(true);
-    setError("");
-    setMessage("");
+    if (!keepMessage) {
+      setError("");
+      setMessage("");
+    }
     try {
       const qs = new URLSearchParams({
         date_from: dateFrom,
@@ -144,11 +147,13 @@ export default function PublishDigestPage() {
       setCompose(body);
       setSelected(new Set());
       setPostText("");
-      setMessage(
-        body.count
-          ? `Найдено ${body.count} авто за ${body.period_label} — отметьте нужные для поста (до ${body.max_cars || 10})`
-          : `За ${body.period_label} новых объявлений нет`
-      );
+      if (!keepMessage) {
+        setMessage(
+          body.count
+            ? `Найдено ${body.count} авто за ${body.period_label} — отметьте нужные для поста (до ${body.max_cars || 10})`
+            : `За ${body.period_label} новых объявлений нет`
+        );
+      }
     } catch {
       setError("Сбой сети");
     } finally {
@@ -161,6 +166,24 @@ export default function PublishDigestPage() {
     loadCompose();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load
   }, [token, me]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const flag = router.query.vk_oauth;
+    if (!flag) return;
+    const detail = router.query.detail;
+    if (flag === "ok") {
+      setMessage("Токен VK получен через сервер. Можно публиковать дайджест с фото.");
+      if (token) loadCompose({ keepMessage: true });
+    } else if (flag === "error") {
+      setError(typeof detail === "string" && detail ? `VK OAuth: ${detail}` : "VK OAuth не удался");
+    }
+    const nextQuery = { ...router.query };
+    delete nextQuery.vk_oauth;
+    delete nextQuery.detail;
+    router.replace({ pathname: router.pathname, query: nextQuery }, undefined, { shallow: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot query flag
+  }, [router.isReady, router.query.vk_oauth]);
 
   const selectedItems = useMemo(() => {
     if (!compose?.items) return [];
@@ -227,6 +250,37 @@ export default function PublishDigestPage() {
       setError("Сбой сети или таймаут ИИ");
     } finally {
       setAiBusy(false);
+    }
+  }
+
+  async function startVkOauth() {
+    setError("");
+    setMessage("");
+    if (!token) return;
+    setOauthBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/integrations/vk/oauth/start`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ return_to: "/staff/publish-digest" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.detail || "Не удалось начать VK OAuth");
+        return;
+      }
+      if (!body.authorize_url) {
+        setError("Сервер не вернул authorize_url");
+        return;
+      }
+      window.location.href = body.authorize_url;
+    } catch {
+      setError("Сбой сети при старте VK OAuth");
+    } finally {
+      setOauthBusy(false);
     }
   }
 
@@ -379,6 +433,21 @@ export default function PublishDigestPage() {
                     </span>
                   ) : null}
                 </label>
+                {compose?.vk_user_expired ? (
+                  <p className="muted" style={{ fontSize: "0.85rem", margin: "0 0 8px" }}>
+                    User-токен VK для фото истёк — нажмите «Подключить VK», иначе карусель не загрузится.
+                  </p>
+                ) : null}
+                <div style={{ marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={oauthBusy}
+                    onClick={startVkOauth}
+                  >
+                    {oauthBusy ? "Открываю VK…" : "Подключить VK"}
+                  </button>
+                </div>
                 <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input type="checkbox" checked={channelMax} onChange={(e) => setChannelMax(e.target.checked)} />
                   MAX-канал
