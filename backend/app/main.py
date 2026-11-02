@@ -3500,10 +3500,12 @@ def admin_list_car_brands(
 
 @app.get("/admin/faq", response_model=list[FaqItemOut])
 def admin_faq_list(
+    response: Response,
     section: str | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_roles("admin")),
 ):
+    response.headers["Cache-Control"] = "no-store"
     q = select(FaqItem).order_by(FaqItem.sort_order.asc(), FaqItem.id.asc())
     if section:
         q = q.where(FaqItem.section == normalize_faq_section(section))
