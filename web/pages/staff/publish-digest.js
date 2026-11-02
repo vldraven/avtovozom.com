@@ -88,6 +88,7 @@ export default function PublishDigestPage() {
   const [postText, setPostText] = useState("");
   const [revision, setRevision] = useState("");
   const [channelTg, setChannelTg] = useState(true);
+  const [channelVk, setChannelVk] = useState(true);
   const [channelMax, setChannelMax] = useState(true);
   const [loadBusy, setLoadBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
@@ -235,8 +236,8 @@ export default function PublishDigestPage() {
       setError("Введите текст дайджеста");
       return;
     }
-    if (!channelTg && !channelMax) {
-      setError("Выберите Telegram и/или MAX");
+    if (!channelTg && !channelVk && !channelMax) {
+      setError("Выберите Telegram, VK и/или MAX");
       return;
     }
     if (!selectedItems.length) {
@@ -257,6 +258,7 @@ export default function PublishDigestPage() {
           text,
           car_ids: selectedItems.map((it) => it.car_id),
           channel_tg: channelTg,
+          channel_vk: channelVk,
           channel_max: channelMax,
         }),
       });
@@ -292,7 +294,7 @@ export default function PublishDigestPage() {
           <h1 className="section-title">Дайджест новых поступлений</h1>
           <p className="muted" style={{ marginTop: "-0.5rem", marginBottom: "1.25rem" }}>
             Все авто за период → отметьте нужные вручную → текст (каркас или ИИ) → публикация в
-            Telegram и/или MAX с обложками.
+            Telegram, VK и/или MAX с обложками.
           </p>
 
           {!me ? (
@@ -367,6 +369,15 @@ export default function PublishDigestPage() {
                 <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                   <input type="checkbox" checked={channelTg} onChange={(e) => setChannelTg(e.target.checked)} />
                   Telegram-канал
+                </label>
+                <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                  <input type="checkbox" checked={channelVk} onChange={(e) => setChannelVk(e.target.checked)} />
+                  VK-группа
+                  {compose?.vk_configured === false ? (
+                    <span className="muted" style={{ fontSize: "0.85rem" }}>
+                      (VK_GROUP_* не настроен на сервере)
+                    </span>
+                  ) : null}
                 </label>
                 <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input type="checkbox" checked={channelMax} onChange={(e) => setChannelMax(e.target.checked)} />

@@ -1,4 +1,4 @@
-"""Дайджест новых поступлений для Telegram / MAX."""
+"""Дайджест новых поступлений для Telegram / VK / MAX."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from .catalog_slug import build_catalog_slug_maps, slugs_for_car
 from .listing_compose import build_listing_marketing_compose
+from .app_settings import get_vk_user_token
 from .max_client import MaxApiError, publish_listing_to_channel
 from .models import Car
 from .n8n_client import n8n_webhook_post
@@ -19,6 +20,7 @@ from .social_publish import (
     extract_telegram_n8n_text,
     publish_telegram_via_n8n,
 )
+from .vk_client import VkApiError, publish_listing_to_group, vk_is_configured
 
 try:
     MSK = ZoneInfo("Europe/Moscow")
@@ -31,7 +33,7 @@ MAX_DIGEST_CARS = 10
 MAX_DIGEST_LIST = 200
 
 DEFAULT_DIGEST_AI_STYLE_HINT = (
-    "Ты редактор Telegram/MAX-канала avtovozom.com (доставка авто из Китая).\n"
+    "Ты редактор Telegram/VK/MAX-канала avtovozom.com (доставка авто из Китая).\n"
     "По JSON со списком новых объявлений собери ОДИН пост-дайджест.\n\n"
     "Структура строго:\n"
     "1) Короткое яркое вступление (1–3 предложения) — «описание подборки».\n"
@@ -306,6 +308,7 @@ def compose_digest(
         "cover_photo_urls": cover_urls[:MAX_DIGEST_CARS],
         "max_cars": MAX_DIGEST_CARS,
         "max_list": MAX_DIGEST_LIST,
+        "vk_configured": vk_is_configured(),
     }
 
 
@@ -377,14 +380,16 @@ def publish_digest(
     text: str,
     photo_urls: list[str],
     channel_tg: bool = True,
+    channel_vk: bool = True,
     channel_max: bool = True,
+    db: Session | None = None,
 ) -> dict[str, Any]:
     text = (text or "").strip()
     if not text:
         return {"ok": False, "detail": "Пустой текст дайджеста", "parts": []}
     urls = [u for u in photo_urls if (u or "").strip()][:MAX_DIGEST_CARS]
-    if not channel_tg and not channel_max:
-        return {"ok": False, "detail": "Выберите Telegram и/или MAX", "parts": []}
+    if not channel_tg and not channel_vk and not channel_max:
+        return {"ok": False, "detail": "Выберите Telegram, VK и/или MAX", "parts": []}
 
     parts: list[str] = []
     failed = False
@@ -401,6 +406,26 @@ def publish_digest(
         else:
             failed = True
             parts.append(f"Telegram: {err or 'ошибка'}")
+
+    if channel_vk:
+        try:
+            db_token = ""
+            if db is not None:
+                db_token, _expires = get_vk_user_token(db)
+            result = publish_listing_to_group(
+                message=text,
+                photo_urls=urls,
+                listing_web_url=None,
+                user_access_token=db_token or None,
+            )
+            url = result.wall_url or ""
+            parts.append(f"VK: ок{f' ({url})' if url else ''}")
+        except VkApiError as exc:
+            failed = True
+            parts.append(f"VK: {exc}")
+        except Exception as exc:
+            failed = True
+            parts.append(f"VK: {exc}")
 
     if channel_max:
         try:

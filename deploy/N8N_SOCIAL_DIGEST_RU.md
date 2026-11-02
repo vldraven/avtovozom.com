@@ -1,6 +1,6 @@
-# Дайджест новых поступлений (Telegram / MAX)
+# Дайджест новых поступлений (Telegram / VK / MAX)
 
-Админка: **`/staff/publish-digest`** — период (МСК), список всех новых авто за период, ручной отбор (до 10 в пост), каркас/ИИ-текст, публикация в TG и/или MAX с обложками.
+Админка: **`/staff/publish-digest`** — период (МСК), список всех новых авто за период, ручной отбор (до 10 в пост), каркас/ИИ-текст, публикация в TG / VK / MAX с обложками.
 
 Не помечает лоты как `published` в `car_external_publications` (очередь social agent не блокируется).
 
@@ -9,7 +9,7 @@
 1. Backend выбирает активные `Car` с `created_at` в диапазоне дат (МСК) + фото-обложка.
 2. Собирает skeleton-текст в формате подборки.
 3. Опционально: n8n AI улучшает текст (`event=social_digest_ai_draft`).
-4. Публикация: существующий Telegram publish webhook + прямой MAX API.
+4. Публикация: существующий Telegram publish webhook + прямой VK API (`wall.post`) + прямой MAX API.
 
 ## Backend API (admin JWT)
 
@@ -44,6 +44,7 @@ N8N_DIGEST_AI_WEBHOOK_SECRET=
 ```
 
 Публикация TG — те же `N8N_TELEGRAM_PUBLISH_WEBHOOK_*`, что для одиночных постов.
+VK — `VK_GROUP_ID` + `VK_GROUP_ACCESS_TOKEN` и user-токен с `photos`/`wall` (как для одиночных постов).
 MAX — `MAX_BOT_TOKEN` + `MAX_CHANNEL_CHAT_ID`.
 
 ## Формат поста
