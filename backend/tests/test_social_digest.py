@@ -212,9 +212,12 @@ class SocialDigestTests(unittest.TestCase):
 
         with patch("app.social_digest.publish_telegram_via_n8n") as mock_tg, patch(
             "app.social_digest.publish_listing_to_channel"
-        ) as mock_max:
+        ) as mock_max, patch("app.social_digest.publish_listing_to_group") as mock_vk, patch(
+            "app.social_digest.get_vk_user_token", return_value=("vk-user-tok", None)
+        ):
             mock_tg.return_value = (True, {}, "")
             mock_max.return_value = type("R", (), {"post_url": "https://max.ru/x"})()
+            mock_vk.return_value = type("R", (), {"wall_url": "https://vk.com/wall-1_2"})()
             pub = self.client.post(
                 "/agent/v1/social/digest/publish",
                 headers=self.headers,
@@ -222,13 +225,16 @@ class SocialDigestTests(unittest.TestCase):
                     "text": "Дайджест тест",
                     "car_ids": [car.id],
                     "channel_tg": True,
+                    "channel_vk": True,
                     "channel_max": True,
                 },
             )
         self.assertEqual(pub.status_code, 200)
         self.assertTrue(pub.json()["ok"])
         self.assertIn("Telegram", pub.json()["detail"])
+        self.assertIn("VK", pub.json()["detail"])
         self.assertIn("MAX", pub.json()["detail"])
+        mock_vk.assert_called_once()
 
 
 if __name__ == "__main__":

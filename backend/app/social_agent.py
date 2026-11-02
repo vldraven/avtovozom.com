@@ -281,6 +281,7 @@ class SocialDigestPublishAgentIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=12000)
     car_ids: list[int] = Field(default_factory=list)
     channel_tg: bool = True
+    channel_vk: bool = True
     channel_max: bool = True
 
 
@@ -346,5 +347,7 @@ def social_digest_publish(
         text=payload.text,
         photo_urls=photo_urls,
         channel_tg=payload.channel_tg,
+        channel_vk=payload.channel_vk,
         channel_max=payload.channel_max,
+        db=db,
     )

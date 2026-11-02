@@ -5113,7 +5113,9 @@ def admin_social_digest_publish(
         text=payload.text,
         photo_urls=photo_urls,
         channel_tg=payload.channel_tg,
+        channel_vk=payload.channel_vk,
         channel_max=payload.channel_max,
+        db=db,
     )
     return SocialDigestPublishOut(**result)
 

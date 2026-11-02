@@ -972,6 +972,7 @@ class SocialDigestComposeOut(BaseModel):
     cover_photo_urls: list[str] = Field(default_factory=list)
     max_cars: int = 10
     max_list: int = 200
+    vk_configured: bool = False
 
 
 class SocialDigestAiDraftIn(BaseModel):
@@ -992,6 +993,7 @@ class SocialDigestPublishIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=12000)
     car_ids: list[int] = Field(default_factory=list)
     channel_tg: bool = True
+    channel_vk: bool = True
     channel_max: bool = True
 
 
