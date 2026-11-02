@@ -213,7 +213,8 @@ class SocialDigestTests(unittest.TestCase):
         with patch("app.social_digest.publish_telegram_via_n8n") as mock_tg, patch(
             "app.social_digest.publish_listing_to_channel"
         ) as mock_max, patch("app.social_digest.publish_listing_to_group") as mock_vk, patch(
-            "app.social_digest.get_vk_user_token", return_value=("vk-user-tok", None)
+            "app.social_digest.ensure_fresh_vk_user_token",
+            return_value=("vk-user-tok", None),
         ):
             mock_tg.return_value = (True, {}, "")
             mock_max.return_value = type("R", (), {"post_url": "https://max.ru/x"})()

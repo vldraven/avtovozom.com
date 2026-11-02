@@ -13,7 +13,10 @@ from .models import AppSetting
 
 VK_USER_TOKEN_KEY = "vk_user_access_token"
 VK_USER_TOKEN_EXPIRES_KEY = "vk_user_access_token_expires_at"
+VK_USER_REFRESH_KEY = "vk_user_refresh_token"
+VK_USER_DEVICE_ID_KEY = "vk_user_device_id"
 DEFAULT_VK_OAUTH_CLIENT_ID = "54689021"
+VK_TOKEN_REFRESH_SKEW_SEC = 120
 
 
 def get_setting(db: Session, key: str) -> str:
@@ -49,6 +52,8 @@ def set_vk_user_token(
     token: str,
     *,
     expires_in: int | None = 86400,
+    refresh_token: str | None = None,
+    device_id: str | None = None,
 ) -> datetime | None:
     cleaned = (token or "").strip()
     if cleaned.startswith("#"):
@@ -73,6 +78,8 @@ def set_vk_user_token(
     if not cleaned:
         set_setting(db, VK_USER_TOKEN_KEY, "")
         set_setting(db, VK_USER_TOKEN_EXPIRES_KEY, "")
+        set_setting(db, VK_USER_REFRESH_KEY, "")
+        set_setting(db, VK_USER_DEVICE_ID_KEY, "")
         db.commit()
         return None
 
@@ -84,6 +91,10 @@ def set_vk_user_token(
         set_setting(db, VK_USER_TOKEN_EXPIRES_KEY, "")
 
     set_setting(db, VK_USER_TOKEN_KEY, cleaned)
+    if refresh_token is not None:
+        set_setting(db, VK_USER_REFRESH_KEY, (refresh_token or "").strip())
+    if device_id is not None:
+        set_setting(db, VK_USER_DEVICE_ID_KEY, (device_id or "").strip())
     db.commit()
     return expires_at
 
@@ -114,12 +125,14 @@ def vk_user_token_status(db: Session) -> dict[str, Any]:
     expired = False
     if expires_at is not None:
         expired = datetime.utcnow() >= expires_at
+    has_refresh = bool(get_setting(db, VK_USER_REFRESH_KEY).strip())
     return {
         "configured": bool(effective),
         "source": source,
         "preview": mask_token(effective) if effective else "",
         "expires_at": expires_at.isoformat(timespec="seconds") + "Z" if expires_at else None,
         "expired": expired,
+        "has_refresh": has_refresh,
         "oauth_url": vk_oauth_authorize_url(),
         "oauth_redirect_uri": vk_oauth_redirect_uri(),
         "oauth_mode": vk_oauth_mode(),

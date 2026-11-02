@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from .catalog_slug import build_catalog_slug_maps, slugs_for_car
 from .listing_compose import build_listing_marketing_compose
-from .app_settings import get_vk_user_token
+from .app_settings import vk_user_token_status
+from .vk_oauth import ensure_fresh_vk_user_token
 from .max_client import MaxApiError, publish_listing_to_channel
 from .models import Car
 from .n8n_client import n8n_webhook_post
@@ -298,6 +299,10 @@ def compose_digest(
     label = period_label(date_from, date_to)
     skeleton = build_digest_skeleton(items, period_label=label) if build_skeleton else ""
     cover_urls = [it["cover_absolute_url"] for it in items if it.get("cover_absolute_url")]
+    try:
+        vk_user = vk_user_token_status(db)
+    except Exception:
+        vk_user = {}
     return {
         "date_from": (date_from or "").strip() or None,
         "date_to": (date_to or "").strip() or None,
@@ -309,6 +314,8 @@ def compose_digest(
         "max_cars": MAX_DIGEST_CARS,
         "max_list": MAX_DIGEST_LIST,
         "vk_configured": vk_is_configured(),
+        "vk_user_configured": bool(vk_user.get("configured")),
+        "vk_user_expired": bool(vk_user.get("expired")),
     }
 
 
@@ -411,7 +418,11 @@ def publish_digest(
         try:
             db_token = ""
             if db is not None:
-                db_token, _expires = get_vk_user_token(db)
+                db_token, expires_at = ensure_fresh_vk_user_token(db)
+                if expires_at is not None and expires_at <= datetime.utcnow():
+                    raise VkApiError(
+                        "Токен VK для фото истёк. Нажмите «Подключить через сервер»."
+                    )
             result = publish_listing_to_group(
                 message=text,
                 photo_urls=urls,

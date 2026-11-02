@@ -37,6 +37,8 @@ https://api.avtovozom.com/admin/integrations/vk/oauth/callback
 
 Для **фотокарусели** токену нужны scopes `photos` + `wall` (+ `groups`). В кабинете VK ID/приложения включите эти доступы; серые пункты — через `devsupport@corp.vk.com`. После выдачи прав поддержкой **обязательно** заново нажмите **«Подключить через сервер»** (OAuth ходит с `revoke=1`, чтобы показать форму разрешений). Если экран всё равно не появляется — отзовите приложение в [настройках VK](https://vk.com/settings?act=apps) и подключите снова.
 
+User-токен VK ID живёт около часа. Сервер сохраняет `refresh_token` + `device_id` и обновляет access_token перед `photos.getWallUploadServer`. Если в логе `access_token has expired` — один раз переподключите VK на странице публикации или дайджеста, чтобы refresh попал в `app_settings`.
+
 Аккаунт, которым входите, должен быть **админом/редактором** группы `VK_GROUP_ID`.
 
 ## Переменные

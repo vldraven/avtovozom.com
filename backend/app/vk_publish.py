@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .listing_compose import ListingMarketingCompose
 from .models import CarExternalPublication
-from .app_settings import get_vk_user_token
+from .vk_oauth import ensure_fresh_vk_user_token
 from .vk_client import (
     MAX_WALL_PHOTOS,
     VkApiError,
@@ -154,10 +154,13 @@ def publish_car_to_vk(
     db.commit()
     db.refresh(pub)
 
-    db_token, _expires = get_vk_user_token(db)
-    cfg = load_vk_config_from_env(user_access_token=db_token or None)
-
     try:
+        db_token, expires_at = ensure_fresh_vk_user_token(db)
+        if expires_at is not None and expires_at <= datetime.utcnow():
+            raise VkApiError(
+                "Токен VK для фото истёк. Нажмите «Подключить через сервер» на странице публикации."
+            )
+        cfg = load_vk_config_from_env(user_access_token=db_token or None)
         result = publish_listing_to_group(
             message=text,
             photo_urls=photo_urls,

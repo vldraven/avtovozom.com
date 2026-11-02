@@ -973,6 +973,8 @@ class SocialDigestComposeOut(BaseModel):
     max_cars: int = 10
     max_list: int = 200
     vk_configured: bool = False
+    vk_user_configured: bool = False
+    vk_user_expired: bool = False
 
 
 class SocialDigestAiDraftIn(BaseModel):

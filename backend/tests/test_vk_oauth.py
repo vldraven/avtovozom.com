@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 from app.vk_oauth import (
     begin_vk_oauth,
     complete_vk_oauth,
+    ensure_fresh_vk_user_token,
     safe_return_to,
     vk_oauth_mode,
     vk_oauth_redirect_uri,
@@ -19,6 +20,7 @@ from app.vk_oauth import (
 class VkOAuthHelpersTests(unittest.TestCase):
     def test_safe_return_to(self):
         self.assertEqual(safe_return_to("/staff/publish-social/12"), "/staff/publish-social/12")
+        self.assertEqual(safe_return_to("/staff/publish-digest"), "/staff/publish-digest")
         self.assertEqual(safe_return_to("https://evil.com"), "/staff/publish-social")
         self.assertEqual(safe_return_to("/admin/x"), "/staff/publish-social")
 
@@ -122,6 +124,31 @@ class VkOAuthHelpersTests(unittest.TestCase):
             self.assertTrue(result["ok"])
             self.assertEqual(result["return_to"], "/staff/publish-social/3")
             set_tok.assert_called_once()
+
+    def test_ensure_fresh_refreshes_expired_token(self):
+        db = MagicMock()
+        expired = datetime.utcnow() - timedelta(minutes=5)
+        fresh = datetime.utcnow() + timedelta(hours=1)
+        with patch("app.vk_oauth.get_vk_user_token", return_value=("old-tok", expired)), patch(
+            "app.vk_oauth.get_setting",
+            side_effect=lambda _db, key: {
+                "vk_user_refresh_token": "refresh-1",
+                "vk_user_device_id": "dev-1",
+            }.get(key, ""),
+        ), patch(
+            "app.vk_oauth._exchange_vkid_refresh",
+            return_value={
+                "access_token": "new-tok",
+                "refresh_token": "refresh-2",
+                "expires_in": 3600,
+                "device_id": "dev-1",
+            },
+        ) as exch, patch("app.vk_oauth.set_vk_user_token", return_value=fresh) as set_tok:
+            token, exp = ensure_fresh_vk_user_token(db)
+        self.assertEqual(token, "new-tok")
+        self.assertEqual(exp, fresh)
+        exch.assert_called_once()
+        set_tok.assert_called_once()
 
 
 if __name__ == "__main__":
