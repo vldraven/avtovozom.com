@@ -116,7 +116,7 @@ from .fuel_types import fuel_from_car_trim, normalize_fuel_type_ru
 from .transmission_types import normalize_transmission_ru, transmission_from_trim_sections
 from .translator_ru import translate_to_ru
 from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_source, resolve_trim_for_listing
-from .trim_spec_storage import TrimSpecDocument, load_trim_spec_from_row, save_trim_spec_to_row
+from .trim_spec_storage import TrimSpecDocument, load_trim_spec_from_row, parse_trim_spec_document, save_trim_spec_to_row
 from .trim_display import (
     filter_param_sections_for_card,
     normalize_spec_heading,
@@ -4340,6 +4340,53 @@ def admin_rebuild_trim_ui_cache(
             skipped += 1
     db.commit()
     return {"ok": True, "rebuilt": rebuilt, "skipped": skipped, "scanned": len(trims)}
+
+
+@app.put("/admin/cars/{car_id}/trim-spec")
+def admin_set_car_trim_spec(
+    car_id: int,
+    payload: AdminTrimSpecUpdateIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "moderator")),
+):
+    """Attach a manual specification without editing another listing's shared trim."""
+    car = db.execute(select(Car).where(Car.id == car_id).with_for_update()).scalar_one_or_none()
+    if car is None:
+        raise HTTPException(status_code=404, detail="Автомобиль не найден")
+    if payload.spec.version != 1:
+        raise HTTPException(status_code=400, detail="Неподдерживаемая версия комплектации")
+    doc = parse_trim_spec_document(payload.spec.model_dump_json())
+    if doc is None or doc.is_empty:
+        raise HTTPException(status_code=400, detail="Укажите характеристики или оснащение")
+    name = normalize_spec_heading(payload.name_ru or car.title)[:256]
+    if not name.strip():
+        raise HTTPException(status_code=400, detail="Укажите название комплектации")
+    # The car lock serializes retries. Content-addressed revisions never mutate a
+    # shared trim, and repeating the same request reuses its original revision.
+    fingerprint = hashlib.sha256(json.dumps(
+        {"car_id": car.id, "name": name, "spec": json.loads(doc.to_json())},
+        ensure_ascii=False, sort_keys=True,
+    ).encode()).hexdigest()
+    trim = db.execute(select(CarTrim).where(
+        CarTrim.model_id == car.model_id,
+        CarTrim.generation_id == car.generation_id,
+        CarTrim.spec_fingerprint == fingerprint,
+    )).scalar_one_or_none()
+    if trim is not None and (
+        trim.source != "manual" or trim.name_ru != name or trim.spec_sections != doc.to_json()
+    ):
+        raise HTTPException(status_code=409, detail="Сохранённая версия комплектации изменена отдельно")
+    if trim is None:
+        trim = CarTrim(model_id=car.model_id, generation_id=car.generation_id,
+                       name_ru=name, name_normalized=name.casefold(),
+                       source="manual", spec_fingerprint=fingerprint)
+        save_trim_spec_to_row(trim, doc)
+        trim.spec_json_ru = trim.spec_sections
+        db.add(trim)
+        db.flush()
+    car.trim_id = trim.id
+    db.commit()
+    return {"ok": True, "car_id": car.id, "trim_id": trim.id}
 
 
 @app.put("/admin/trims/{trim_id}/spec")
