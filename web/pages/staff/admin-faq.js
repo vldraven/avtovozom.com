@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
 
 import HeaderProfileLink from "../../components/HeaderProfileLink";
-import { clearToken, getStoredToken } from "../../lib/auth";
+import { clearToken, ensureFreshAccessToken, getStoredToken } from "../../lib/auth";
 import {
   FAQ_SECTION_DEFAULT,
   FAQ_SECTION_OPTIONS,
@@ -19,6 +19,30 @@ function emptyDraft() {
   return { question: "", answer: "", section: FAQ_SECTION_DEFAULT, sort_order: "", is_published: true };
 }
 
+function draftFromItem(item) {
+  return {
+    question: item.question || "",
+    answer: item.answer || "",
+    section: normalizeFaqSection(item.section),
+    sort_order: item.sort_order == null ? "" : String(item.sort_order),
+    is_published: Boolean(item.is_published),
+  };
+}
+
+function apiErrorMessage(body, fallback) {
+  const detail = body?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const text = detail
+      .map((item) => (typeof item?.msg === "string" ? item.msg : ""))
+      .filter(Boolean)
+      .join(". ");
+    if (/at most 512|max_length/i.test(text)) return "Вопрос не длиннее 512 символов";
+    if (text) return text;
+  }
+  return fallback;
+}
+
 export default function AdminFaqPage() {
   const router = useRouter();
   const [token, setToken] = useState("");
@@ -31,97 +55,144 @@ export default function AdminFaqPage() {
   const [createDraft, setCreateDraft] = useState(emptyDraft);
   const [createOpen, setCreateOpen] = useState(false);
   const [adminSection, setAdminSection] = useState("all");
+  const [savingId, setSavingId] = useState(null);
+  const [cardError, setCardError] = useState({});
+  const [cardMessage, setCardMessage] = useState({});
+  const loadSeq = useRef(0);
+  const routerRef = useRef(router);
+  routerRef.current = router;
 
   const loadItems = useCallback(async (t) => {
+    const seq = ++loadSeq.current;
     const res = await fetch(`${API_URL}/admin/faq`, {
+      cache: "no-store",
       headers: { Authorization: `Bearer ${t}` },
     });
+    if (seq !== loadSeq.current) return;
     if (!res.ok) {
       setError("Не удалось загрузить FAQ");
       return;
     }
     const data = await res.json();
+    if (seq !== loadSeq.current) return;
     setItems(data);
     const next = {};
     for (const item of data) {
-      next[item.id] = {
-        question: item.question,
-        answer: item.answer,
-        section: normalizeFaqSection(item.section),
-        sort_order: String(item.sort_order),
-        is_published: item.is_published,
-      };
+      next[item.id] = draftFromItem(item);
     }
     setDrafts(next);
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const t = getStoredToken();
     if (!t) {
-      router.push("/auth?next=/staff/admin-faq");
-      return;
+      routerRef.current.push("/auth?next=/staff/admin-faq");
+      return undefined;
     }
     setToken(t);
     (async () => {
-      const res = await fetch(`${API_URL}/auth/me`, { headers: { Authorization: `Bearer ${t}` } });
+      const res = await fetch(`${API_URL}/auth/me`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      if (cancelled) return;
       if (!res.ok) {
         clearToken();
-        router.push("/auth?next=/staff/admin-faq");
+        routerRef.current.push("/auth?next=/staff/admin-faq");
         return;
       }
       const data = await res.json();
+      if (cancelled) return;
       setMe(data);
       if (!isAdminRole(data.role)) {
-        router.replace("/profile");
+        routerRef.current.replace("/profile");
         return;
       }
       await loadItems(t);
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     })();
-  }, [router, loadItems]);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadItems]);
 
   function updateDraft(id, field, value) {
     setDrafts((prev) => ({
       ...prev,
       [id]: { ...prev[id], [field]: value },
     }));
+    setCardError((prev) => (prev[id] ? { ...prev, [id]: "" } : prev));
+    setCardMessage((prev) => (prev[id] ? { ...prev, [id]: "" } : prev));
+  }
+
+  function failSave(id, text) {
+    setCardError((prev) => ({ ...prev, [id]: text }));
+    setError(text);
   }
 
   async function saveItem(id) {
     setError("");
     setMessage("");
+    setCardError((prev) => ({ ...prev, [id]: "" }));
+    setCardMessage((prev) => ({ ...prev, [id]: "" }));
     const d = drafts[id];
-    if (!d) return;
-    const question = (d.question || "").trim();
-    const answer = (d.answer || "").trim();
-    if (!question || !answer) {
-      setError("Заполните вопрос и ответ");
+    if (!d || !String(d.question || "").trim() || !String(d.answer || "").trim()) {
+      failSave(id, d ? "Заполните вопрос и ответ" : "Форма ещё не загрузилась. Обновите страницу.");
+      return;
+    }
+    const question = d.question.trim();
+    const answer = d.answer.trim();
+    if (question.length > 512) {
+      failSave(id, "Вопрос не длиннее 512 символов");
       return;
     }
     const sortRaw = String(d.sort_order ?? "").trim();
     const sort_order = sortRaw === "" ? 0 : Number.parseInt(sortRaw, 10);
     if (Number.isNaN(sort_order)) {
-      setError("Порядок — целое число");
+      failSave(id, "Порядок — целое число");
       return;
     }
-    const res = await fetch(`${API_URL}/admin/faq/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        question,
-        answer,
-        section: normalizeFaqSection(d.section),
-        sort_order,
-        is_published: Boolean(d.is_published),
-      }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(typeof body.detail === "string" ? body.detail : "Ошибка сохранения");
-      return;
+    setSavingId(id);
+    try {
+      await ensureFreshAccessToken();
+      const authToken = getStoredToken();
+      if (!authToken) {
+        failSave(id, "Сессия истекла. Войдите снова.");
+        return;
+      }
+      const res = await fetch(`${API_URL}/admin/faq/${id}`, {
+        method: "PATCH",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({
+          question,
+          answer,
+          section: normalizeFaqSection(d.section),
+          sort_order,
+          is_published: Boolean(d.is_published),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        failSave(id, apiErrorMessage(body, "Ошибка сохранения"));
+        return;
+      }
+      loadSeq.current += 1;
+      const saved = draftFromItem(body);
+      setItems((prev) => prev.map((item) => (item.id === body.id ? { ...item, ...body } : item)));
+      setDrafts((prev) => ({ ...prev, [body.id]: saved }));
+      const moved = adminSection !== "all" && saved.section !== adminSection;
+      if (moved) {
+        setMessage(`Сохранено. Вопрос перенесён в раздел «${faqSectionLabel(saved.section)}».`);
+      } else {
+        setCardMessage((prev) => ({ ...prev, [id]: "Сохранено" }));
+      }
+    } catch {
+      failSave(id, "Нет связи с сервером. Изменения не сохранены.");
+    } finally {
+      setSavingId(null);
     }
-    setMessage("Сохранено");
-    await loadItems(token);
   }
 
   async function deleteItem(id) {
@@ -130,14 +201,14 @@ export default function AdminFaqPage() {
     setMessage("");
     const res = await fetch(`${API_URL}/admin/faq/${id}`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${getStoredToken() || token}` },
     });
     if (!res.ok) {
       setError("Не удалось удалить");
       return;
     }
     setMessage("Удалено");
-    await loadItems(token);
+    await loadItems(getStoredToken() || token);
   }
 
   async function createItem() {
@@ -166,7 +237,8 @@ export default function AdminFaqPage() {
     }
     const res = await fetch(`${API_URL}/admin/faq`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getStoredToken() || token}` },
       body: JSON.stringify(payload),
     });
     const body = await res.json().catch(() => ({}));
@@ -177,7 +249,7 @@ export default function AdminFaqPage() {
     setCreateDraft(emptyDraft());
     setCreateOpen(false);
     setMessage("Добавлено");
-    await loadItems(token);
+    await loadItems(getStoredToken() || token);
   }
 
   const displayItems =
@@ -375,9 +447,16 @@ export default function AdminFaqPage() {
                       Опубликован
                     </label>
                   </div>
+                  {cardError[item.id] ? <div className="alert alert--danger">{cardError[item.id]}</div> : null}
+                  {cardMessage[item.id] ? <div className="alert alert--success">{cardMessage[item.id]}</div> : null}
                   <div className="admin-faq-editor__actions">
-                    <button type="button" className="btn btn-primary btn-sm" onClick={() => saveItem(item.id)}>
-                      Сохранить
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={savingId === item.id}
+                      onClick={() => saveItem(item.id)}
+                    >
+                      {savingId === item.id ? "Сохранение…" : "Сохранить"}
                     </button>
                     <button
                       type="button"
