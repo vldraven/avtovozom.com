@@ -280,6 +280,7 @@ class CreateRequestIn(BaseModel):
     user_contact: str | None = None
     car_id: int
     comment: str = ""
+    promo_code: str = ""
 
 
 class PublicRequestLeadIn(BaseModel):
@@ -290,6 +291,7 @@ class PublicRequestLeadIn(BaseModel):
     full_name: str = ""
     car_id: int
     comment: str = ""
+    promo_code: str = ""
 
 
 class PublicRequestLeadOut(BaseModel):
@@ -304,6 +306,7 @@ class FreeformRequestLeadIn(BaseModel):
     phone: str = ""
     full_name: str = ""
     comment: str
+    promo_code: str = ""
 
 
 class FreeformRequestLeadOut(BaseModel):
@@ -319,6 +322,7 @@ class CalculationRequestOut(BaseModel):
     comment: str
     status: str
     source: str = "website"
+    promo_code: str = ""
     created_at: datetime
     platform_chat_id: int | None = None
 
@@ -363,6 +367,7 @@ class CalculationRequestDealerOut(BaseModel):
     comment: str
     status: str
     source: str = "website"
+    promo_code: str = ""
     created_at: datetime
     car_title: str
     car_brand: str
@@ -385,6 +390,7 @@ class CalculationRequestMyOut(BaseModel):
     comment: str
     status: str
     source: str = "website"
+    promo_code: str = ""
     created_at: datetime
     car_title: str
     car_brand: str

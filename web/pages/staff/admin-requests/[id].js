@@ -214,6 +214,12 @@ export default function AdminRequestDetailPage() {
                   ) : null}
                 </div>
               </div>
+              {req.promo_code ? (
+                <div className="profile-comment-block" style={{ marginTop: "1rem" }}>
+                  <div className="muted profile-comment-block__label">Промокод</div>
+                  <p className="profile-comment-block__text">{req.promo_code}</p>
+                </div>
+              ) : null}
               {req.comment ? (
                 <div className="profile-comment-block" style={{ marginTop: "1rem" }}>
                   <div className="muted profile-comment-block__label">Комментарий клиента</div>

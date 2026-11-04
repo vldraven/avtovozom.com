@@ -880,6 +880,9 @@ export default function ProfilePage() {
                     <Link href="/staff/admin-blog" className="btn btn-secondary btn-inline">
                       Блог: разделы и модерация
                     </Link>
+                    <Link href="/staff/admin-promo" className="btn btn-secondary btn-inline">
+                      Промо-баннеры
+                    </Link>
                     <Link href="/staff/import-plan" className="btn btn-secondary btn-inline">
                       План импорта
                     </Link>

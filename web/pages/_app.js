@@ -14,6 +14,7 @@ import SiteFooter from "../components/SiteFooter";
 import YandexMetrika from "../components/YandexMetrika";
 import { ensureFreshAccessToken } from "../lib/auth";
 import { manrope } from "../lib/fonts";
+import { readPromoCodeFromQuery, rememberPromoCode } from "../lib/promo";
 import "../styles/globals.css";
 import "../styles/blog.css";
 
@@ -71,6 +72,12 @@ export default function App({ Component, pageProps }) {
       clearInterval(id);
     };
   }, []);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const code = readPromoCodeFromQuery(router.query);
+    if (code) rememberPromoCode(code);
+  }, [router.isReady, router.query]);
 
   // iOS «На экран Домой» / PWA: class for safe-area under status bar & notch.
   // Scoped via html.is-standalone so in-browser layout is unchanged.

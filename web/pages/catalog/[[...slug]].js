@@ -11,6 +11,7 @@ import CatalogFilterSidebar from "../../components/CatalogFilterSidebar";
 import CatalogQuickFilters from "../../components/CatalogQuickFilters";
 import CarTurnkeyPrice from "../../components/CarTurnkeyPrice";
 import HomeCarCard from "../../components/HomeCarCard";
+import PromoBannerCard from "../../components/PromoBannerCard";
 import SiteHeaderDesktopNav from "../../components/SiteHeaderDesktopNav";
 import CatalogSortDropdown, { CATALOG_SORT_DEFAULT } from "../../components/CatalogSortDropdown";
 import SiteHeader from "../../components/SiteHeader";
@@ -19,6 +20,7 @@ import HeaderProfileLink from "../../components/HeaderProfileLink";
 import HeaderFavoritesLink from "../../components/HeaderFavoritesLink";
 import TelegramChannelHeaderLink from "../../components/TelegramChannelHeaderLink";
 import RequestConfirmModal from "../../components/RequestConfirmModal";
+import { fetchActivePromo, getPlacement, placementEnabled } from "../../lib/promo";
 
 const CarDetailView = dynamic(() => import("../../components/CarDetailView"), {
   ssr: true,
@@ -125,6 +127,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
   const [carsLoadingMore, setCarsLoadingMore] = useState(false);
   const [carsRetryTick, setCarsRetryTick] = useState(0);
   const [similarCars, setSimilarCars] = useState([]);
+  const [promoCampaign, setPromoCampaign] = useState(null);
 
   const { brand, model, generation, unknownSlug, badModelSlug, badGenSlug } = useMemo(() => {
     if (segments == null) {
@@ -208,6 +211,21 @@ export default function CatalogTreePage({ initialPayload = null }) {
   useEffect(() => {
     setSearchInput(currentTextQuery);
   }, [currentTextQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const camp = await fetchActivePromo(API_URL);
+      if (!cancelled) setPromoCampaign(camp);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const catalogSidebarPromo = placementEnabled(promoCampaign, "catalog_sidebar");
+  const catalogFeedPlacement = getPlacement(promoCampaign, "catalog_feed");
+  const catalogFeedPromo = Boolean(promoCampaign && catalogFeedPlacement);
 
   const onCatalogSearchSubmit = useCallback(
     (e) => {
@@ -1043,6 +1061,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                     models={quickFilterModelOptions}
                     generations={quickFilterGenerationOptions}
                     total={total}
+                    promoCampaign={catalogSidebarPromo ? promoCampaign : null}
                   />
                 ) : null}
                 </div>
@@ -1233,6 +1252,15 @@ export default function CatalogTreePage({ initialPayload = null }) {
                       </div>
                     ) : (
                     <>
+                    {catalogFeedPromo ? (
+                      <div className="home-only-mobile" style={{ marginBottom: "0.85rem" }}>
+                        <PromoBannerCard
+                          campaign={promoCampaign}
+                          placement={catalogFeedPlacement}
+                          variant="feed"
+                        />
+                      </div>
+                    ) : null}
                     <div className="catalog-grid">
                       {cars.map((car, idx) => {
                         return (
