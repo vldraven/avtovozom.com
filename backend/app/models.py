@@ -322,6 +322,8 @@ class CalculationRequest(Base):
     comment: Mapped[str] = mapped_column(Text, default="")
     source: Mapped[str] = mapped_column(String(32), default="website")
     """website | telegram_bot | guest_web | freeform | …"""
+    promo_code: Mapped[str] = mapped_column(String(64), default="")
+    """Код промоакции с формы (?promo=…), пусто если без акции."""
     status: Mapped[str] = mapped_column(String(32), default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     offers_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -592,6 +594,66 @@ class AppSetting(Base):
         onupdate=datetime.utcnow,
         server_default=text("NOW()"),
     )
+
+
+class PromoCampaign(Base):
+    """Промоакция сайта (одновременно активна не больше одной)."""
+
+    __tablename__ = "promo_campaigns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), default="")
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    promo_code: Mapped[str] = mapped_column(String(64), default="")
+    accent_color: Mapped[str] = mapped_column(String(16), default="#d9f43a")
+    eyebrow: Mapped[str] = mapped_column(String(160), default="")
+    title_accent: Mapped[str] = mapped_column(String(64), default="")
+    title_rest: Mapped[str] = mapped_column(String(240), default="")
+    subtitle: Mapped[str] = mapped_column(Text, default="")
+    cta_label: Mapped[str] = mapped_column(String(120), default="")
+    cta_path: Mapped[str] = mapped_column(String(240), default="/request-quote")
+    hero_image_url: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    placements = relationship(
+        "PromoPlacement",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+        order_by="PromoPlacement.placement",
+    )
+
+
+class PromoPlacement(Base):
+    """Баннер/слот акции на конкретной поверхности сайта."""
+
+    __tablename__ = "promo_placements"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "placement", name="uq_promo_campaign_placement"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("promo_campaigns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    placement: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    image_url: Mapped[str] = mapped_column(String(512), default="")
+    badge: Mapped[str] = mapped_column(String(64), default="")
+    title: Mapped[str] = mapped_column(String(240), default="")
+    subtitle: Mapped[str] = mapped_column(String(320), default="")
+    kicker: Mapped[str] = mapped_column(String(160), default="")
+    cta_label: Mapped[str] = mapped_column(String(120), default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    campaign = relationship("PromoCampaign", back_populates="placements")
 
 
 class AgentMemory(Base):

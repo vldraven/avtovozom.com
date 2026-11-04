@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import PdConsentCheckbox from "./PdConsentCheckbox";
+import { getRememberedPromoCode } from "../lib/promo";
 import { formatRuPhoneMask, normalizeRuPhoneDigits, phoneDigitsToApi } from "../lib/ruPhoneMask";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -68,11 +69,13 @@ export default function LeadForm({
     }
 
     const bodyComment = (comment.trim() || DEFAULT_COMMENT).trim();
+    const promoCode = getRememberedPromoCode();
     const payload = {
       full_name: name,
       email: mail || `${phone.replace(/\D/g, "")}@contact.avtovozom.local`,
       phone: contactPhone ? phone : "",
       comment: bodyComment,
+      ...(promoCode ? { promo_code: promoCode } : {}),
     };
 
     setBusy(true);

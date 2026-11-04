@@ -287,6 +287,7 @@ from .n8n_bot_integration import (
 from .agent_api import router as agent_api_router
 from .social_agent import router as social_agent_router
 from .blog import router as blog_router
+from .promo import router as promo_router, ensure_promo_seed
 from .n8n_client import (
     guest_chat_ai_webhook_configured,
     n8n_webhook_post,
@@ -350,6 +351,7 @@ app = FastAPI(title="Avtovozom API", version="0.1.0")
 app.include_router(agent_api_router)
 app.include_router(social_agent_router)
 app.include_router(blog_router)
+app.include_router(promo_router)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
@@ -901,6 +903,12 @@ def startup() -> None:
             text(
                 "ALTER TABLE calculation_requests "
                 "ADD COLUMN IF NOT EXISTS source VARCHAR(32) DEFAULT 'website'"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE calculation_requests "
+                "ADD COLUMN IF NOT EXISTS promo_code VARCHAR(64) DEFAULT ''"
             )
         )
         conn.execute(
@@ -1554,6 +1562,14 @@ def startup() -> None:
         db.close()
 
     start_chat_email_notify_worker()
+    try:
+        db = SessionLocal()
+        try:
+            ensure_promo_seed(db)
+        finally:
+            db.close()
+    except Exception:
+        pass
 
 
 @app.get("/health")
@@ -5576,6 +5592,7 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
 
     user_name = full_name or email.split("@", 1)[0]
     user_contact = phone or email
+    promo_code = (getattr(payload, "promo_code", None) or "").strip()[:64]
     req = CalculationRequest(
         user_name=user_name,
         user_contact=user_contact,
@@ -5583,6 +5600,7 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
         car_id=payload.car_id,
         comment=comment
         or "Заявка на расчёт под ключ до РФ (форма без входа).",
+        promo_code=promo_code,
     )
     db.add(req)
     db.commit()
@@ -5622,6 +5640,7 @@ def create_freeform_request_lead(payload: FreeformRequestLeadIn, db: Session = D
     user_name = full_name or email.split("@", 1)[0]
     user_contact = phone or email
     contact = user_contact if user_contact == email else f"{user_contact}; email: {email}"
+    promo_code = (getattr(payload, "promo_code", None) or "").strip()[:64]
     req = CalculationRequest(
         user_name=user_name,
         user_contact=contact,
@@ -5629,6 +5648,7 @@ def create_freeform_request_lead(payload: FreeformRequestLeadIn, db: Session = D
         car_id=None,
         comment=comment,
         source="freeform",
+        promo_code=promo_code,
         status="open",
     )
     db.add(req)
@@ -5660,12 +5680,14 @@ def create_request(
     if not car_exists:
         raise HTTPException(status_code=404, detail="Car not found")
 
+    promo_code = (getattr(payload, "promo_code", None) or "").strip()[:64]
     request = CalculationRequest(
         user_name=payload.user_name or current_user.full_name or current_user.email,
         user_contact=payload.user_contact or current_user.email,
         user_id=current_user.id,
         car_id=payload.car_id,
         comment=payload.comment,
+        promo_code=promo_code,
     )
     db.add(request)
     db.commit()
@@ -5783,6 +5805,7 @@ def _calculation_requests_to_my_out(
                 comment=r.comment,
                 status=r.status,
                 source=r.source or "website",
+                promo_code=getattr(r, "promo_code", None) or "",
                 created_at=r.created_at,
                 car_title=car_title,
                 car_brand=car_brand,
@@ -6118,6 +6141,7 @@ def dealer_open_requests(
                 comment=r.comment,
                 status=r.status,
                 source=r.source or "website",
+                promo_code=getattr(r, "promo_code", None) or "",
                 created_at=r.created_at,
                 car_title=car_title,
                 car_brand=car_brand,

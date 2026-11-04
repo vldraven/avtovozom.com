@@ -7,6 +7,11 @@ import SiteHeader from "../components/SiteHeader";
 import { saveToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
 import { MEDIA_WIDTH, mediaSrc } from "../lib/media";
+import {
+  getRememberedPromoCode,
+  readPromoCodeFromQuery,
+  rememberPromoCode,
+} from "../lib/promo";
 import { formatRuPhoneMask, normalizeRuPhoneDigits, phoneDigitsToApi } from "../lib/ruPhoneMask";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -80,6 +85,12 @@ export default function RequestQuotePage() {
   const [pdConsent, setPdConsent] = useState(false);
 
   useEffect(() => {
+    if (!router.isReady) return;
+    const fromQuery = readPromoCodeFromQuery(router.query);
+    if (fromQuery) rememberPromoCode(fromQuery);
+  }, [router.isReady, router.query]);
+
+  useEffect(() => {
     if (!router.isReady || !carId) return;
     (async () => {
       setLoadError("");
@@ -104,6 +115,7 @@ export default function RequestQuotePage() {
     try {
       const endpoint = carId ? "/requests/lead" : "/requests/freeform-lead";
       const packedComment = packQuoteComment({ comment, city });
+      const promoCode = getRememberedPromoCode() || readPromoCodeFromQuery(router.query);
       const payload = {
         email: email.trim().toLowerCase(),
         phone: phoneDigitsToApi(phoneDigits).trim(),
@@ -111,6 +123,7 @@ export default function RequestQuotePage() {
         comment: packedComment,
       };
       if (carId) payload.car_id = Number(carId);
+      if (promoCode) payload.promo_code = promoCode;
       const res = await fetch(`${API_URL}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

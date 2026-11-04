@@ -2,7 +2,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { EMPTY_CATALOG_FILTERS } from "../lib/catalogFilters";
+import { getPlacement } from "../lib/promo";
 import CatalogFilterFields from "./CatalogFilterFields";
+import PromoBannerCard from "./PromoBannerCard";
 
 /**
  * Постоянно видимая панель фильтров на десктопе (макет 33).
@@ -15,7 +17,10 @@ export default function CatalogFilterSidebar({
   models = [],
   generations = [],
   total,
+  promoCampaign = null,
 }) {
+  const promoPlacement = getPlacement(promoCampaign, "catalog_sidebar");
+  const showPromo = Boolean(promoCampaign && promoPlacement?.is_enabled);
   const [rubFromDraft, setRubFromDraft] = useState(draft.rubFrom ? String(Math.round(draft.rubFrom)) : "");
   const [rubToDraft, setRubToDraft] = useState(draft.rubTo ? String(Math.round(draft.rubTo)) : "");
 
@@ -64,15 +69,24 @@ export default function CatalogFilterSidebar({
         {total ? `Показать ${Number(total).toLocaleString("ru-RU")} авто` : "Показать авто"}
       </button>
 
-      <div className="catalog-filter-sidebar__promo">
-        <p className="catalog-filter-sidebar__promo-title">Не нашли нужное?</p>
-        <p className="catalog-filter-sidebar__promo-text">
-          Оставьте заявку — подберём под бюджет и пришлём смету под ключ.
-        </p>
-        <Link href="/request-quote" className="btn btn-primary catalog-filter-sidebar__promo-btn">
-          Заявка на подбор
-        </Link>
-      </div>
+      {showPromo ? (
+        <PromoBannerCard
+          campaign={promoCampaign}
+          placement={promoPlacement}
+          variant="sidebar"
+          className="catalog-filter-sidebar__promo-banner"
+        />
+      ) : (
+        <div className="catalog-filter-sidebar__promo">
+          <p className="catalog-filter-sidebar__promo-title">Не нашли нужное?</p>
+          <p className="catalog-filter-sidebar__promo-text">
+            Оставьте заявку — подберём под бюджет и пришлём смету под ключ.
+          </p>
+          <Link href="/request-quote" className="btn btn-primary catalog-filter-sidebar__promo-btn">
+            Заявка на подбор
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

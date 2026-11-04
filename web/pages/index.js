@@ -44,6 +44,14 @@ import {
   homeHasListingQuery,
   RUB_TO_PRESETS,
 } from "../lib/catalogFilters";
+import {
+  fetchActivePromo,
+  getPlacement,
+  placementEnabled,
+  promoCtaHref,
+  promoTitleLines,
+  trackPromoClick,
+} from "../lib/promo";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const HOME_FRESH_LOTS_LIMIT = 16;
@@ -185,7 +193,7 @@ function homeHasSsrListSeed(initialData) {
   );
 }
 
-export default function Home({ initialData = null }) {
+export default function Home({ initialData = null, initialPromo = null }) {
   const router = useRouter();
   const lastExplicitHomeScrollSaveRef = useRef({ path: "", at: 0 });
   const cacheSeed = readHomeListCacheSeed();
@@ -205,6 +213,25 @@ export default function Home({ initialData = null }) {
   const [homeFilterDraft, setHomeFilterDraft] = useState(EMPTY_CATALOG_FILTERS);
   const [homeFilterApplied, setHomeFilterApplied] = useState(EMPTY_CATALOG_FILTERS);
   const [newCars, setNewCars] = useState(initialData?.newCars ?? []);
+  const [promoCampaign, setPromoCampaign] = useState(initialPromo);
+  const heroParallaxRef = useRef(null);
+  const heroRafRef = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (initialPromo) {
+      setPromoCampaign(initialPromo);
+      return undefined;
+    }
+    (async () => {
+      const camp = await fetchActivePromo(API_URL);
+      if (!cancelled) setPromoCampaign(camp);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialPromo]);
+
   useEffect(() => {
     const controller = new AbortController();
     fetch(`${API_URL}/cars?is_new=true&sort=date_desc&limit=12&photo_limit=${LIST_PHOTO_LIMIT}`, { signal: controller.signal })
@@ -528,6 +555,47 @@ export default function Home({ initialData = null }) {
   const showCountLabel = total
     ? `Показать ${Number(total).toLocaleString("ru-RU")}`
     : "Показать авто";
+
+  const homePromoOn = placementEnabled(promoCampaign, "home_hero");
+  const homePromoAccent = promoCampaign?.accent_color || "#d9f43a";
+  const homePromoHref = promoCtaHref(promoCampaign);
+  const homePromoTitleLines = promoTitleLines(promoCampaign);
+  const homePromoHeroImg =
+    getPlacement(promoCampaign, "home_hero")?.image_url ||
+    promoCampaign?.hero_image_url ||
+    "";
+
+  function onHomePromoCtaClick() {
+    trackPromoClick({
+      id: promoCampaign?.slug || promoCampaign?.promo_code,
+      placement: "home_hero",
+    });
+  }
+
+  function onHeroPromoMove(e) {
+    if (!homePromoOn || !heroParallaxRef.current) return;
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    if (typeof window !== "undefined" && !window.matchMedia("(pointer: fine)").matches) return;
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / Math.max(rect.width, 1);
+    const y = (e.clientY - rect.top) / Math.max(rect.height, 1);
+    const dx = (x - 0.5) * -28;
+    const dy = (y - 0.5) * -14;
+    if (heroRafRef.current) cancelAnimationFrame(heroRafRef.current);
+    heroRafRef.current = requestAnimationFrame(() => {
+      if (heroParallaxRef.current) {
+        heroParallaxRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
+      }
+    });
+  }
+
+  function onHeroPromoLeave() {
+    if (!heroParallaxRef.current) return;
+    heroParallaxRef.current.style.transform = "translate(0, 0)";
+  }
 
   async function cancelParserJob(jobId) {
     if (!token || !jobId || cancelParserBusy) return;
@@ -1608,18 +1676,47 @@ export default function Home({ initialData = null }) {
               </div>
             </div>
 
-            <section className="home-m-hero" aria-label="Витрина">
-              <p className="home-m-hero__eyebrow">Автовозом</p>
+            <section
+              className={`home-m-hero${homePromoOn ? " home-m-hero--promo" : ""}`}
+              aria-label="Витрина"
+              style={homePromoOn ? { "--promo-accent": homePromoAccent } : undefined}
+            >
+              <p className="home-m-hero__eyebrow">
+                {homePromoOn ? promoCampaign.eyebrow || "Для подписчиков Telegram" : "Автовозом"}
+              </p>
               <h1 className="home-m-hero__title">
-                Авто из Китая напрямую от дилеров — легко с Автовозом
+                {homePromoOn ? (
+                  <>
+                    {promoCampaign.title_accent ? (
+                      <span className="home-m-hero__title-accent">{promoCampaign.title_accent}</span>
+                    ) : null}
+                    {promoCampaign.title_accent ? " " : null}
+                    {homePromoTitleLines.length
+                      ? homePromoTitleLines.map((line, i) => (
+                          <span key={i}>
+                            {i > 0 ? <br /> : null}
+                            {line}
+                          </span>
+                        ))
+                      : null}
+                  </>
+                ) : (
+                  "Авто из Китая напрямую от дилеров — легко с Автовозом"
+                )}
               </h1>
               <p className="home-m-hero__subtitle">
-                Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном
-                кабинете.
+                {homePromoOn
+                  ? promoCampaign.subtitle ||
+                    "Скидка на подбор, сопровождение сделки, таможенное оформление, получение СБКТС и ЭПТС."
+                  : "Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном кабинете."}
               </p>
               <div className="home-m-hero__cta-row">
-                <Link href="/request-quote" className="btn btn-primary home-m-hero__cta">
-                  Рассчитать
+                <Link
+                  href={homePromoOn ? homePromoHref : "/request-quote"}
+                  className={`btn btn-primary home-m-hero__cta${homePromoOn ? " home-m-hero__cta--promo" : ""}`}
+                  onClick={homePromoOn ? onHomePromoCtaClick : undefined}
+                >
+                  {homePromoOn ? promoCampaign.cta_label || "Оставить заявку" : "Рассчитать"}
                 </Link>
                 <Link href="/catalog" className="btn home-m-hero__cta home-m-hero__cta--ghost">
                   Каталог
@@ -1779,14 +1876,60 @@ export default function Home({ initialData = null }) {
 
           {/* ===================== DESKTOP showcase ===================== */}
           <div className="home-d home-only-desktop">
-            <section className="home-d-hero" aria-label="Витрина">
-              <p className="home-d-hero__eyebrow">Автовозом</p>
+            <section
+              className={`home-d-hero${homePromoOn ? " home-d-hero--promo" : ""}`}
+              aria-label="Витрина"
+              style={homePromoOn ? { "--promo-accent": homePromoAccent } : undefined}
+              onMouseMove={homePromoOn ? onHeroPromoMove : undefined}
+              onMouseLeave={homePromoOn ? onHeroPromoLeave : undefined}
+            >
+              {homePromoOn && homePromoHeroImg ? (
+                <>
+                  <div className="home-d-hero__media-wrap" aria-hidden>
+                    <div className="home-d-hero__media-parallax" ref={heroParallaxRef}>
+                      <div className="home-d-hero__media-ken">
+                        <img
+                          src={homePromoHeroImg}
+                          alt=""
+                          loading="eager"
+                          fetchPriority="high"
+                        />
+                      </div>
+                      <span className="home-d-hero__media-sweep" />
+                    </div>
+                  </div>
+                  <div className="home-d-hero__shade" aria-hidden />
+                  <div className="home-d-hero__shade-bottom" aria-hidden />
+                </>
+              ) : null}
+              <p className="home-d-hero__eyebrow">
+                {homePromoOn ? promoCampaign.eyebrow || "Для подписчиков Telegram" : "Автовозом"}
+              </p>
               <h1 className="home-d-hero__title">
-                Авто из Китая напрямую от дилеров — легко с Автовозом
+                {homePromoOn ? (
+                  <>
+                    {promoCampaign.title_accent ? (
+                      <span className="home-d-hero__title-accent">{promoCampaign.title_accent}</span>
+                    ) : null}
+                    {promoCampaign.title_accent ? " " : null}
+                    {homePromoTitleLines.length
+                      ? homePromoTitleLines.map((line, i) => (
+                          <span key={i}>
+                            {i > 0 ? <br /> : null}
+                            {line}
+                          </span>
+                        ))
+                      : null}
+                  </>
+                ) : (
+                  "Авто из Китая напрямую от дилеров — легко с Автовозом"
+                )}
               </h1>
               <p className="home-d-hero__subtitle">
-                Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном
-                кабинете.
+                {homePromoOn
+                  ? promoCampaign.subtitle ||
+                    "Скидка на подбор, сопровождение сделки, таможенное оформление, получение СБКТС и ЭПТС."
+                  : "Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном кабинете."}
               </p>
               <form className="home-d-filters" onSubmit={onHeroFiltersSubmit}>
                 <div className="home-d-filters__field">
@@ -1860,8 +2003,14 @@ export default function Home({ initialData = null }) {
                     <span>за расчёт и отчёты</span>
                   </div>
                 </div>
-                <Link href="/request-quote" className="btn home-d-stats__quote">
-                  Рассчитать стоимость
+                <Link
+                  href={homePromoOn ? homePromoHref : "/request-quote"}
+                  className={`btn home-d-stats__quote${homePromoOn ? " home-d-stats__quote--promo" : ""}`}
+                  onClick={homePromoOn ? onHomePromoCtaClick : undefined}
+                >
+                  {homePromoOn
+                    ? promoCampaign.cta_label || "Оставить заявку"
+                    : "Рассчитать стоимость"}
                 </Link>
               </div>
             </section>
@@ -2432,13 +2581,15 @@ export async function getServerSideProps({ query }) {
   let cbr = null;
   let cbrError = null;
   let tree = [];
+  let initialPromo = null;
   try {
-    const [bRes, cRes, pRes, tRes, nRes] = await Promise.all([
+    const [bRes, cRes, pRes, tRes, nRes, promoRes] = await Promise.all([
       serverFetch(`${api}/catalog/brands`, { headers: { Accept: "application/json" } }),
       serverFetch(`${api}/cars?${params.toString()}`, { headers: { Accept: "application/json" } }),
       serverFetch(`${api}/cars?${popularParams.toString()}`, { headers: { Accept: "application/json" } }),
       serverFetch(`${api}/catalog/tree`, { headers: { Accept: "application/json" } }),
       serverFetch(`${api}/cars?is_new=true&sort=date_desc&limit=12&photo_limit=${LIST_PHOTO_LIMIT}`, { headers: { Accept: "application/json" } }).catch(() => null),
+      serverFetch(`${api}/promo/active`, { headers: { Accept: "application/json" } }).catch(() => null),
     ]);
     if (bRes.ok) brands = await bRes.json();
     if (cRes.ok) {
@@ -2460,6 +2611,10 @@ export async function getServerSideProps({ query }) {
       const t = await tRes.json();
       tree = Array.isArray(t) ? t : [];
     }
+    if (promoRes?.ok) {
+      const promoData = await promoRes.json();
+      if (promoData?.active && promoData.campaign) initialPromo = promoData.campaign;
+    }
   } catch {
     /* API недоступен на сервере — клиент догрузит */
   }
@@ -2478,6 +2633,7 @@ export async function getServerSideProps({ query }) {
         treeComplete: false,
         listSort: "date_desc",
       },
+      initialPromo,
     },
   };
 }

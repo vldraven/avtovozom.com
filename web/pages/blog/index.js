@@ -4,7 +4,9 @@ import { useRouter } from "next/router";
 
 import BlogChrome from "../../components/blog/BlogChrome";
 import { BlogCompactCard, BlogEmpty, BlogFeaturedCard } from "../../components/blog/BlogCards";
+import PromoBannerCard from "../../components/PromoBannerCard";
 import { getStoredToken } from "../../lib/auth";
+import { getPlacement, placementEnabled } from "../../lib/promo";
 import { absoluteUrl } from "../../lib/siteUrl";
 import { getServerApiBase } from "../../lib/serverApiUrl";
 
@@ -20,16 +22,22 @@ export async function getServerSideProps({ query }) {
   if (query.tag) params.set("tag", String(query.tag));
   if (query.q) params.set("q", String(query.q));
   try {
-    const [postsRes, sectionsRes, popularRes, tagsRes] = await Promise.all([
+    const [postsRes, sectionsRes, popularRes, tagsRes, promoRes] = await Promise.all([
       fetch(`${api}/blog/posts?${params}`, { headers: { Accept: "application/json" } }),
       fetch(`${api}/blog/sections`, { headers: { Accept: "application/json" } }),
       fetch(`${api}/blog/posts?sort=popular&limit=3`, { headers: { Accept: "application/json" } }),
       fetch(`${api}/blog/tags?limit=8`, { headers: { Accept: "application/json" } }),
+      fetch(`${api}/promo/active`, { headers: { Accept: "application/json" } }).catch(() => null),
     ]);
     const posts = postsRes.ok ? await postsRes.json() : { items: [], total: 0 };
     const sections = sectionsRes.ok ? await sectionsRes.json() : [];
     const popular = popularRes.ok ? await popularRes.json() : { items: [] };
     const tags = tagsRes.ok ? await tagsRes.json() : [];
+    let initialPromo = null;
+    if (promoRes?.ok) {
+      const promoData = await promoRes.json();
+      if (promoData?.active && promoData.campaign) initialPromo = promoData.campaign;
+    }
     return {
       props: {
         posts,
@@ -39,11 +47,12 @@ export async function getServerSideProps({ query }) {
         section: query.section ? String(query.section) : "",
         tag: query.tag ? String(query.tag) : "",
         q: query.q ? String(query.q) : "",
+        initialPromo,
       },
     };
   } catch {
     return {
-      props: { posts: { items: [], total: 0 }, sections: [], popular: [], tags: [], section: "", tag: "", q: "" },
+      props: { posts: { items: [], total: 0 }, sections: [], popular: [], tags: [], section: "", tag: "", q: "", initialPromo: null },
     };
   }
 }
@@ -56,11 +65,14 @@ function PlusIcon() {
   );
 }
 
-export default function BlogIndexPage({ posts, sections, popular, tags, section, tag, q }) {
+export default function BlogIndexPage({ posts, sections, popular, tags, section, tag, q, initialPromo = null }) {
   const router = useRouter();
   const items = posts?.items || [];
   const [featured, ...rest] = items;
   const canonical = absoluteUrl(section ? `/blog?section=${section}` : "/blog");
+  const blogSidebarOn = placementEnabled(initialPromo, "blog_sidebar");
+  const blogFeedPlacement = getPlacement(initialPromo, "blog_feed");
+  const blogFeedOn = Boolean(initialPromo && blogFeedPlacement);
 
   async function startWriting() {
     const token = getStoredToken();
@@ -124,6 +136,11 @@ export default function BlogIndexPage({ posts, sections, popular, tags, section,
       {tag ? <p className="muted">Тег: #{tag}</p> : null}
       <div className="blog-layout">
         <div className="blog-feed">
+          {blogFeedOn ? (
+            <div className="home-only-mobile" style={{ marginBottom: "0.85rem" }}>
+              <PromoBannerCard campaign={initialPromo} placement={blogFeedPlacement} variant="feed" />
+            </div>
+          ) : null}
           {items.length ? (
             <>
               <BlogFeaturedCard post={featured} />
@@ -170,13 +187,21 @@ export default function BlogIndexPage({ posts, sections, popular, tags, section,
               </div>
             </div>
           ) : null}
-          <div className="blog-side__promo">
-            <p className="blog-side__promo-title">Считаем цену под ключ</p>
-            <p className="blog-side__promo-text">Курс, пошлины и доставка до вашего города — в одном расчёте.</p>
-            <Link href="/customs-calculator" className="btn btn-primary">
-              Открыть калькулятор
-            </Link>
-          </div>
+          {blogSidebarOn ? (
+            <PromoBannerCard
+              campaign={initialPromo}
+              placement={getPlacement(initialPromo, "blog_sidebar")}
+              variant="sidebar"
+            />
+          ) : (
+            <div className="blog-side__promo">
+              <p className="blog-side__promo-title">Считаем цену под ключ</p>
+              <p className="blog-side__promo-text">Курс, пошлины и доставка до вашего города — в одном расчёте.</p>
+              <Link href="/customs-calculator" className="btn btn-primary">
+                Открыть калькулятор
+              </Link>
+            </div>
+          )}
         </aside>
       </div>
       <button type="button" className="blog-fab" onClick={startWriting}>

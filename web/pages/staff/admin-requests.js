@@ -194,6 +194,7 @@ export default function AdminRequestsPage() {
                         <div className="muted profile-request-card__meta-loose">
                           {formatDate(r.created_at)} · {r.status}
                           {r.client_email ? ` · ${r.client_email}` : ""}
+                          {r.promo_code ? ` · промо ${r.promo_code}` : ""}
                         </div>
                       </div>
                       <span className="btn btn-ghost btn-sm profile-request-card__toggle">Подробнее →</span>
