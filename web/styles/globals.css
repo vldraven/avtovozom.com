@@ -11525,7 +11525,10 @@ html.is-standalone.page-messages:not(:has(body.messages-thread-open)) .layout.la
   min-height: 46px;
   border-radius: 12px;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 13px;
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+  white-space: nowrap;
 }
 
 .home-m-hero__cta--ghost {
