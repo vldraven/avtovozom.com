@@ -308,7 +308,7 @@ def ensure_promo_seed(db: Session) -> None:
         title_accent="−30%",
         title_rest="на наши услуги\nдо 30 ноября",
         subtitle="Скидка на подбор, сопровождение сделки, таможенное оформление, получение СБКТС и ЭПТС.",
-        cta_label="Оставить заявку со скидкой",
+        cta_label="Оставить заявку",
         cta_path="/request-quote",
         hero_image_url="/promo/hero-zeekr007-full.png",
     )

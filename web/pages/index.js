@@ -1716,7 +1716,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
                   className={`btn btn-primary home-m-hero__cta${homePromoOn ? " home-m-hero__cta--promo" : ""}`}
                   onClick={homePromoOn ? onHomePromoCtaClick : undefined}
                 >
-                  {homePromoOn ? promoCampaign.cta_label || "Оставить заявку со скидкой" : "Рассчитать"}
+                  {homePromoOn ? promoCampaign.cta_label || "Оставить заявку" : "Рассчитать"}
                 </Link>
                 <Link href="/catalog" className="btn home-m-hero__cta home-m-hero__cta--ghost">
                   Каталог
@@ -2009,7 +2009,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
                   onClick={homePromoOn ? onHomePromoCtaClick : undefined}
                 >
                   {homePromoOn
-                    ? promoCampaign.cta_label || "Оставить заявку со скидкой"
+                    ? promoCampaign.cta_label || "Оставить заявку"
                     : "Рассчитать стоимость"}
                 </Link>
               </div>
