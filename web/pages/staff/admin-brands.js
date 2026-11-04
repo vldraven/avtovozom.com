@@ -267,7 +267,7 @@ export default function AdminBrandsPage() {
             </form>
           ) : null}
 
-          <div className="panel" style={{ overflowX: "auto" }}>
+          <div className="panel" style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
             <table
               className="admin-brands-table"
               style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}
