@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.indexnow import post_urls_blocking
-from app.models import Car, CarBrand, CarModel
+from app.models import BlogPost, BlogSection, Car, CarBrand, CarModel
 from app.parser_worker import process_seo_jobs
 from app.seo_jobs import (
     build_report,
@@ -189,6 +189,7 @@ class CatalogUrlTests(unittest.TestCase):
         with patch.dict(os.environ, {"PUBLIC_WEB_ORIGIN": "https://avtovozom.com"}, clear=False):
             urls = collect_indexnow_urls(self.db, "https://avtovozom.com")
         self.assertIn("https://avtovozom.com/", urls)
+        self.assertIn("https://avtovozom.com/blog", urls)
         self.assertIn("https://avtovozom.com/contacts", urls)
         self.assertIn("https://avtovozom.com/catalog/audi", urls)
         self.assertIn("https://avtovozom.com/catalog/audi/q5", urls)
@@ -197,6 +198,44 @@ class CatalogUrlTests(unittest.TestCase):
         self.assertEqual(len(car_urls), 3)
         self.assertTrue(all("/off" not in u for u in urls))
         self.assertEqual(urls[0], "https://avtovozom.com/")
+
+    def test_collect_includes_published_blog_posts(self) -> None:
+        BlogSection.__table__.create(bind=self.engine)
+        BlogPost.__table__.create(bind=self.engine)
+        section = BlogSection(slug="obzory-modelej", title="Обзоры", is_hidden=False)
+        hidden = BlogSection(slug="hidden", title="Скрыто", is_hidden=True)
+        self.db.add_all([section, hidden])
+        self.db.flush()
+        self.db.add_all(
+            [
+                BlogPost(
+                    author_id=1,
+                    section_id=section.id,
+                    slug="bmw-320li-g28",
+                    title="BMW 320Li",
+                    status="published",
+                ),
+                BlogPost(
+                    author_id=1,
+                    section_id=section.id,
+                    slug="draft-post",
+                    title="Draft",
+                    status="draft",
+                ),
+                BlogPost(
+                    author_id=1,
+                    section_id=hidden.id,
+                    slug="hidden-post",
+                    title="Hidden",
+                    status="published",
+                ),
+            ]
+        )
+        self.db.commit()
+        urls = collect_indexnow_urls(self.db, "https://avtovozom.com")
+        self.assertIn("https://avtovozom.com/blog/bmw-320li-g28", urls)
+        self.assertNotIn("https://avtovozom.com/blog/draft-post", urls)
+        self.assertNotIn("https://avtovozom.com/blog/hidden-post", urls)
 
     def test_priority_recrawl_starts_with_static_then_fatter_hubs(self) -> None:
         urls = priority_recrawl_urls(self.db, "https://avtovozom.com", limit=12)

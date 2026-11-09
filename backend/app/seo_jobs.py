@@ -21,7 +21,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect as sa_inspect, or_, select
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
@@ -48,6 +48,7 @@ STATIC_PATHS = (
     "/dostavka-avto-iz-kitaya",
     "/dostavka-avtovozom-iz-kitaya",
     "/faq",
+    "/blog",
     "/request-quote",
 )
 
@@ -140,12 +141,34 @@ def hub_counts(db: Session) -> tuple[dict[int, int], dict[tuple[int, int], int]]
     return dict(brands), models
 
 
+def _published_blog_slugs(db: Session) -> list[str]:
+    """Слаги опубликованных постов в видимых рубриках. Нет таблицы — пустой список."""
+    try:
+        inspector = sa_inspect(db.get_bind())
+        if not inspector.has_table("blog_posts") or not inspector.has_table("blog_sections"):
+            return []
+    except Exception:
+        return []
+    from .models import BlogPost, BlogSection
+
+    visible = select(BlogSection.id).where(BlogSection.is_hidden.is_(False))
+    rows = db.execute(
+        select(BlogPost.slug).where(
+            BlogPost.status == "published",
+            or_(BlogPost.section_id.is_(None), BlogPost.section_id.in_(visible)),
+        )
+    ).all()
+    return [slug for (slug,) in rows if slug]
+
+
 def collect_indexnow_urls(db: Session, origin: str | None = None) -> list[str]:
-    """Те же классы URL, что в sitemap: статика, хабы с объявлениями, активные карточки."""
+    """Те же классы URL, что в sitemap: статика, блог, хабы с объявлениями, активные карточки."""
     origin = (origin or web_origin()).rstrip("/")
     if not origin.startswith("http"):
         return []
     urls: list[str] = [_abs(origin, path) for path in STATIC_PATHS]
+    for slug in _published_blog_slugs(db):
+        urls.append(_abs(origin, f"/blog/{slug}"))
     from .catalog_slug import build_catalog_slug_maps
 
     bmap, mmap = build_catalog_slug_maps(db)

@@ -1,52 +1,77 @@
 import { publicCarHref } from "../lib/carRoutes";
 import { getPublicSiteUrlFromRequest } from "../lib/publicSiteUrl";
 import { getServerApiBase } from "../lib/serverApiUrl";
+import {
+  blogSitemapUrls,
+  catalogTreeUrls,
+  isoDateOnly,
+  renderUrlset,
+} from "../lib/sitemapUrls";
 
-/** YYYY-MM-DD для <lastmod> (W3C Datetime). Возвращает null, если дата некорректна. */
-function isoDateOnly(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
+const FETCH_MS = 8000;
+const CARS_PAGE_MS = 12000;
 
-function escapeXml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function hasListings(node) {
-  return Number(node?.listings_count) > 0;
-}
-
-/**
- * Только хабы с активными объявлениями. Справочник марок и моделей намного
- * шире того, что реально продаётся, и пустые разделы в sitemap Яндекс
- * трактует как малоценные страницы — вместе с деградацией оценки хоста.
- */
-function catalogTreeUrls(base, tree) {
-  const urls = [];
-  for (const brand of tree || []) {
-    if (!brand?.slug || !hasListings(brand)) continue;
-    urls.push({
-      loc: `${base}/catalog/${brand.slug}`,
-      changefreq: "daily",
-      priority: "0.85",
+async function fetchJson(url, timeoutMs = FETCH_MS) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: ctrl.signal,
     });
-    for (const model of brand.models || []) {
-      if (!model?.slug || !hasListings(model)) continue;
-      urls.push({
-        loc: `${base}/catalog/${brand.slug}/${model.slug}`,
-        changefreq: "daily",
-        priority: "0.8",
-      });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${url}`);
     }
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchJsonRetry(url, timeoutMs = FETCH_MS) {
+  try {
+    return await fetchJson(url, timeoutMs);
+  } catch (err) {
+    console.error("sitemap: retry", url, err);
+    return fetchJson(url, timeoutMs);
+  }
+}
+
+function carEntries(base, items) {
+  const urls = [];
+  for (const car of items || []) {
+    const path = publicCarHref(car);
+    if (!path) continue;
+    const lastmod = isoDateOnly(car.updated_at);
+    urls.push({
+      loc: `${base}${path}`,
+      changefreq: "weekly",
+      priority: "0.7",
+      ...(lastmod ? { lastmod } : {}),
+    });
   }
   return urls;
+}
+
+async function fetchCarLocs(api, base) {
+  const limit = 100;
+  const first = await fetchJson(
+    `${api}/cars?page=1&limit=${limit}&sort=date_desc&photo_limit=1`,
+    CARS_PAGE_MS
+  );
+  const total = Number(first.total) || 0;
+  const pages = Math.min(500, Math.max(1, Math.ceil(total / limit) || 1));
+  const rest = [];
+  for (let page = 2; page <= pages; page += 1) {
+    rest.push(
+      fetchJson(
+        `${api}/cars?page=${page}&limit=${limit}&sort=date_desc&photo_limit=1`,
+        CARS_PAGE_MS
+      )
+    );
+  }
+  const others = rest.length ? await Promise.all(rest) : [];
+  return [first, ...others].flatMap((data) => carEntries(base, data.items));
 }
 
 export async function getServerSideProps({ req, res }) {
@@ -67,110 +92,40 @@ export async function getServerSideProps({ req, res }) {
     "/blog",
     "/request-quote",
   ];
-  const urls = staticPaths.map((loc) => ({
+  const staticUrls = staticPaths.map((loc) => ({
     loc: `${base}${loc}`,
     changefreq: "daily",
-    priority: loc === "/" ? "1.0" : "0.8",
+    priority: loc === "/" ? "1.0" : loc === "/blog" ? "0.85" : "0.8",
   }));
 
-  try {
-    const treeRes = await fetch(`${API_URL}/catalog/tree`, {
-      headers: { Accept: "application/json" },
-    });
-    if (treeRes.ok) {
-      const tree = await treeRes.json();
-      urls.push(...catalogTreeUrls(base, tree));
-    }
-  } catch {
-    /* только статические URL */
-  }
+  const blogPromise = fetchJsonRetry(`${API_URL}/blog/sitemap`).catch((err) => {
+    console.error("sitemap: blog unavailable", err);
+    return null;
+  });
+  const treePromise = fetchJson(`${API_URL}/catalog/tree`).catch((err) => {
+    console.error("sitemap: catalog tree unavailable", err);
+    return null;
+  });
+  const carsPromise = fetchCarLocs(API_URL, base).catch((err) => {
+    console.error("sitemap: cars unavailable", err);
+    return [];
+  });
 
-  const limit = 100;
-  let page = 1;
-  let total = Infinity;
-  const carLocs = [];
+  const [blog, tree, carLocs] = await Promise.all([blogPromise, treePromise, carsPromise]);
+  const blogUrls = blog ? blogSitemapUrls(base, blog) : [];
+  const hubUrls = tree ? catalogTreeUrls(base, tree) : [];
 
-  try {
-    while ((page - 1) * limit < total) {
-      const r = await fetch(
-        `${API_URL}/cars?page=${page}&limit=${limit}&sort=date_desc&photo_limit=1`,
-        {
-          headers: { Accept: "application/json" },
-        }
-      );
-      if (!r.ok) break;
-      const data = await r.json();
-      total = Number(data.total) || 0;
-      const items = data.items || [];
-      for (const car of items) {
-        const path = publicCarHref(car);
-        if (path) {
-          const lastmod = isoDateOnly(car.updated_at);
-          carLocs.push({
-            loc: `${base}${path}`,
-            changefreq: "weekly",
-            priority: "0.7",
-            ...(lastmod ? { lastmod } : {}),
-          });
-        }
-      }
-      if (items.length < limit) break;
-      page += 1;
-      if (page > 500) break;
-    }
-  } catch {
-    /* только статические URL */
-  }
-
-  try {
-    const blogRes = await fetch(`${API_URL}/blog/sitemap`, { headers: { Accept: "application/json" } });
-    if (blogRes.ok) {
-      const blog = await blogRes.json();
-      for (const post of blog.posts || []) {
-        const lastmod = isoDateOnly(post.updated_at);
-        urls.push({
-          loc: `${base}/blog/${post.slug}`,
-          changefreq: "weekly",
-          priority: "0.7",
-          ...(lastmod ? { lastmod } : {}),
-        });
-      }
-      for (const section of blog.sections || []) {
-        urls.push({
-          loc: `${base}/blog?section=${encodeURIComponent(section)}`,
-          changefreq: "weekly",
-          priority: "0.6",
-        });
-      }
-      urls.push({ loc: `${base}/blog/sections`, changefreq: "weekly", priority: "0.6" });
-      for (const author of blog.authors || []) {
-        urls.push({
-          loc: `${base}/blog/authors/${author}`,
-          changefreq: "weekly",
-          priority: "0.5",
-        });
-      }
-    }
-  } catch {
-    /* блог необязателен для sitemap */
-  }
-
-  const all = [...urls, ...carLocs];
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${all
-  .map(
-    (u) => `  <url>
-    <loc>${escapeXml(u.loc)}</loc>${u.lastmod ? `\n    <lastmod>${u.lastmod}</lastmod>` : ""}
-    <changefreq>${u.changefreq}</changefreq>
-    <priority>${u.priority}</priority>
-  </url>`
-  )
-  .join("\n")}
-</urlset>`;
+  // Посты сразу после статики: даже усечённый ответ прокси всё ещё содержит блог.
+  const all = [...staticUrls, ...blogUrls, ...hubUrls, ...carLocs];
+  const body = renderUrlset(all);
 
   res.setHeader("Content-Type", "application/xml; charset=utf-8");
-  res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+  const publishedPosts = (blog?.posts || []).filter((p) => p?.slug).length;
+  if (!blog || publishedPosts === 0) {
+    res.setHeader("Cache-Control", "public, max-age=60, must-revalidate");
+  } else {
+    res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+  }
   res.write(body);
   res.end();
 
