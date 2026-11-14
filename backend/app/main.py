@@ -112,7 +112,12 @@ from .import_plan_logic import (
 from .parser_cancellation import request_cancel
 from .parser_logic import run_parser_job
 from .indexnow import submit_urls as _indexnow_submit_urls
-from .fuel_types import fuel_from_car_trim, normalize_fuel_type_ru
+from .fuel_types import (
+    drive_type_from_car_trim,
+    fuel_from_car_trim,
+    horsepower_from_car_trim,
+    normalize_fuel_type_ru,
+)
 from .transmission_types import normalize_transmission_ru, transmission_from_trim_sections
 from .translator_ru import translate_to_ru
 from .trim_catalog import migrate_legacy_trim_specs, rebuild_trim_spec_from_source, resolve_trim_for_listing
@@ -4228,6 +4233,8 @@ def admin_batch_refresh_from_che168(
             car.production_date = parsed.production_date
         if parsed.body_color_slug:
             car.body_color_slug = parsed.body_color_slug
+        if getattr(parsed, "drive_type", None):
+            car.drive_type = parsed.drive_type
 
         # Title: Brand Model Trim на латинице — без перевода на русский
         car.title = pick_listing_title(
@@ -4258,8 +4265,17 @@ def admin_batch_refresh_from_che168(
             )
             if trim_id:
                 car.trim_id = trim_id
+                trim = db.get(CarTrim, trim_id)
                 if not car.fuel_type:
-                    car.fuel_type = fuel_from_car_trim(db.get(CarTrim, trim_id))
+                    car.fuel_type = fuel_from_car_trim(trim)
+                if not car.horsepower:
+                    hp = horsepower_from_car_trim(trim)
+                    if hp:
+                        car.horsepower = hp
+                if not car.drive_type:
+                    drive = drive_type_from_car_trim(trim)
+                    if drive:
+                        car.drive_type = drive
         ok += 1
         db.commit()
 

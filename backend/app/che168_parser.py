@@ -366,6 +366,7 @@ class ParsedCar:
     mileage_km: int | None = None
     fuel_type: str | None = None
     transmission: str | None = None
+    drive_type: str | None = None
     location_city: str | None = None
     body_color_slug: str | None = None
     price_cny: float | None = None
@@ -373,6 +374,21 @@ class ParsedCar:
     production_date: str | None = None
     photos: list[str] | None = None
     autohome_spec_id: int | None = None
+
+
+def _drive_type_from_che168_text(raw: str | None) -> str | None:
+    """drivingmode / 驱动方式 → русская подпись для карточки."""
+    s = re.sub(r"\s+", "", str(raw or "").strip())
+    if not s or s in ("--", "-", "—", "无", "暂无"):
+        return None
+    low = s.lower()
+    if any(k in s for k in ("四驱", "四轮驱动", "全时四驱", "适时四驱", "分时四驱")) or "4wd" in low or "awd" in low:
+        return "Полный"
+    if any(k in s for k in ("后驱", "后轮驱动", "后置后驱")) or "rwd" in low:
+        return "Задний"
+    if any(k in s for k in ("前驱", "前置前驱", "前轮驱动")) or "fwd" in low:
+        return "Передний"
+    return None
 
 
 @dataclass
@@ -621,6 +637,8 @@ def _parsed_car_from_global_carinfo(info: dict[str, Any], source_listing_id: str
     title = str(info.get("carname") or "").strip() or None
     series_raw = str(info.get("specname") or "").strip() or None
     location_city = str(info.get("cname") or "").strip() or None
+    if location_city in ("--", "-", ""):
+        location_city = None
     fuel_type = str(info.get("fuelname") or "").strip() or None
     transmission = str(info.get("gearbox") or "").strip() or None
     if transmission in ("--", "-", ""):
@@ -633,6 +651,18 @@ def _parsed_car_from_global_carinfo(info: dict[str, Any], source_listing_id: str
         transmission = None
     if fuel_type in ("--", "-", ""):
         fuel_type = None
+
+    title_blob = " ".join(part for part in (title, series_raw) if part)
+    if not fuel_type or not transmission:
+        fuel_guess, trans_guess, _ = _parse_fuel_transmission_city(title_blob)
+        if not fuel_type:
+            fuel_type = fuel_guess
+        if not transmission:
+            transmission = trans_guess
+
+    drive_type = _drive_type_from_che168_text(
+        str(info.get("drivingmode") or info.get("drivemode") or "")
+    )
 
     autohome_spec_id: int | None = None
     try:
@@ -656,8 +686,11 @@ def _parsed_car_from_global_carinfo(info: dict[str, Any], source_listing_id: str
                 photos.append(u)
     photos = filter_vehicle_photo_urls(photos)
 
-    engine_volume_cc = _parse_engine_volume_cc(str(info.get("engine") or title or ""))
-    horsepower = _parse_horsepower(str(info.get("engine") or title or ""))
+    engine_blob = " ".join(
+        str(info.get(k) or "") for k in ("engine", "specname", "carname")
+    )
+    engine_volume_cc = _parse_engine_volume_cc(engine_blob or title_blob)
+    horsepower = _parse_horsepower(engine_blob or title_blob)
 
     return ParsedCar(
         source_listing_id=source_listing_id,
@@ -670,6 +703,7 @@ def _parsed_car_from_global_carinfo(info: dict[str, Any], source_listing_id: str
         mileage_km=mileage_km,
         fuel_type=fuel_type,
         transmission=transmission,
+        drive_type=drive_type,
         location_city=location_city,
         photos=photos or None,
         registration_date=registration_date,
@@ -699,6 +733,7 @@ def _merge_parsed_cars(primary: ParsedCar | None, secondary: ParsedCar | None) -
         "mileage_km",
         "fuel_type",
         "transmission",
+        "drive_type",
         "location_city",
         "body_color_slug",
         "price_cny",
@@ -2305,7 +2340,8 @@ def parse_che168_detail(
     best: ParsedCar | None = None
     best_score = 0
 
-    infoid = _mobile_che168_infoid_from_url(detail_url)
+    # dealer/i.che168/global — один infoid; _mobile_* его из dealer URL не достаёт.
+    infoid = infoid_from_listing_url(detail_url)
     global_info: dict[str, Any] | None = None
     if infoid and not is_dongchedi:
         global_info = _fetch_global_che168_carinfo(infoid)

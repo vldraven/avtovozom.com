@@ -26,7 +26,12 @@ from .models import Car, CarGeneration, CarPhoto, CarModel, CarTrim, ModelWhitel
 from .model_resolver import resolve_model_id_for_listing
 from .parser_cancellation import clear_cancel, is_cancel_requested
 from .parser_timeout import ParserJobCancelled, call_with_cancel_poll, call_with_timeout
-from .fuel_types import fuel_from_car_trim, normalize_fuel_type_ru
+from .fuel_types import (
+    drive_type_from_car_trim,
+    fuel_from_car_trim,
+    horsepower_from_car_trim,
+    normalize_fuel_type_ru,
+)
 from .transmission_types import normalize_transmission_ru
 from .translator_ru import translate_to_ru
 from .trim_catalog import pick_generation_id_for_car, resolve_trim_for_listing
@@ -131,8 +136,17 @@ def _apply_trim_from_parsed(
     )
     if trim_id:
         car.trim_id = trim_id
+        trim = db.get(CarTrim, trim_id)
         if not car.fuel_type:
-            car.fuel_type = fuel_from_car_trim(db.get(CarTrim, trim_id))
+            car.fuel_type = fuel_from_car_trim(trim)
+        if not getattr(car, "horsepower", None):
+            hp = horsepower_from_car_trim(trim)
+            if hp:
+                car.horsepower = hp
+        if not getattr(car, "drive_type", None):
+            drive = drive_type_from_car_trim(trim)
+            if drive:
+                car.drive_type = drive
 
 
 def _ensure_autohome_spec_id(parsed: ParsedCar, detail_url: str, marketplace: str) -> None:
@@ -203,6 +217,7 @@ def _insert_car_from_parsed(
         mileage_km=parsed.mileage_km,
         fuel_type=fuel_ru,
         transmission=trans_ru,
+        drive_type=(parsed.drive_type or "").strip() or None,
         location_city=city_ru,
         body_color_slug=parsed.body_color_slug,
         price_cny=parsed.price_cny if parsed.price_cny is not None else 0.01,
@@ -313,6 +328,7 @@ def _revive_inactive_car_from_parsed(
     car.mileage_km = parsed.mileage_km
     car.fuel_type = fuel_ru
     car.transmission = trans_ru
+    car.drive_type = (parsed.drive_type or "").strip() or None
     car.location_city = city_ru
     car.body_color_slug = parsed.body_color_slug
     car.price_cny = parsed.price_cny if parsed.price_cny is not None else 0.01
