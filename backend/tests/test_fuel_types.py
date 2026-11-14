@@ -2,7 +2,12 @@ import json
 import unittest
 
 from app.che168_parser import _parse_fuel_transmission_city
-from app.fuel_types import fuel_from_trim_source_json, normalize_fuel_type_ru
+from app.fuel_types import (
+    drive_type_from_trim_source_json,
+    fuel_from_trim_source_json,
+    horsepower_from_trim_source_json,
+    normalize_fuel_type_ru,
+)
 
 
 class FuelTypeNormalizeTests(unittest.TestCase):
@@ -33,12 +38,16 @@ class FuelTypeNormalizeTests(unittest.TestCase):
                     "items": [
                         {"name": "能源类型", "value": "汽油"},
                         {"name": "发动机", "value": "2.0T"},
+                        {"name": "最大马力", "value": "169Ps"},
+                        {"name": "驱动方式", "value": "前置前驱"},
                     ],
                 }
             ],
             ensure_ascii=False,
         )
         self.assertEqual(fuel_from_trim_source_json(raw), "бензин")
+        self.assertEqual(horsepower_from_trim_source_json(raw), 169)
+        self.assertEqual(drive_type_from_trim_source_json(raw), "Передний")
 
 
 class FuelParseFromListingTextTests(unittest.TestCase):

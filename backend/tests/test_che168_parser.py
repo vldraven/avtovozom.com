@@ -318,6 +318,43 @@ class Che168ListCardTests(unittest.TestCase):
             )
         self.assertEqual(hp, 184)
 
+    def test_parse_detail_fetches_global_carinfo_for_dealer_url(self):
+        from app.che168_parser import parse_che168_detail
+
+        dealer = "https://www.che168.com/dealer/551960/60237808.html"
+        info = {
+            "mileage": "11800",
+            "regdate": "2024.05",
+            "producedate": "2024-05-01 00:00:00",
+            "carname": "Haval M6 2023 PLUS 1.5T DCT",
+            "specname": "2023 PLUS 1.5T DCT Luxury Smart Connect",
+            "cname": "haerbin",
+            "fuelname": "",
+            "gearbox": "--",
+            "engine": "--",
+            "color": "黑色",
+            "drivingmode": "前置前驱",
+            "specid": 62208,
+            "yearname": "2023.04",
+            "catepiclist": [],
+        }
+        with patch(
+            "app.che168_parser._fetch_global_che168_carinfo", return_value=info
+        ) as fetch, patch(
+            "app.che168_parser._http_get_text",
+            side_effect=Exception("skip html"),
+        ), patch(
+            "app.che168_parser._allow_playwright_default", return_value=False
+        ):
+            parsed = parse_che168_detail(dealer, allow_playwright=False)
+        fetch.assert_called_once_with("60237808")
+        self.assertEqual(parsed.body_color_slug, "black")
+        self.assertEqual(parsed.production_date, "2024-05-01")
+        self.assertEqual(parsed.autohome_spec_id, 62208)
+        self.assertEqual(parsed.drive_type, "Передний")
+        self.assertEqual(parsed.mileage_km, 11800)
+        self.assertEqual(parsed.transmission, "DCT")
+
 
 if __name__ == "__main__":
     unittest.main()
