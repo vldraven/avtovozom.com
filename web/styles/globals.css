@@ -15009,27 +15009,27 @@ a.contacts-card:hover {
   min-height: calc(2 * 1.45em);
 }
 
-/* Промо-hero: фильтры прозрачнее, чтобы не закрывали фото авто */
+/* Промо-hero: фильтры максимально прозрачные поверх фото */
 .home-d-hero--promo .home-d-filters {
-  background: rgba(15, 23, 42, 0.22);
-  border-color: rgba(148, 163, 184, 0.16);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.02);
+  border-color: rgba(226, 232, 240, 0.08);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
 .home-d-hero--promo .home-d-filters .site-dropdown--floating .site-dropdown__trigger--floating {
-  background: rgba(30, 41, 59, 0.38);
-  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.08);
+  border-color: rgba(226, 232, 240, 0.16);
 }
 
 .home-d-hero--promo .home-d-filters .site-dropdown--floating .site-dropdown__trigger--floating:hover:not(:disabled) {
-  background: rgba(30, 41, 59, 0.55);
-  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.2);
+  border-color: rgba(226, 232, 240, 0.3);
 }
 
 .home-d-hero--promo .home-d-filters__select {
-  background-color: rgba(30, 41, 59, 0.38);
-  border-color: rgba(148, 163, 184, 0.22);
+  background-color: rgba(15, 23, 42, 0.08);
+  border-color: rgba(226, 232, 240, 0.16);
 }
 
 
