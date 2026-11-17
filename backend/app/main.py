@@ -73,6 +73,7 @@ from .models import (
 )
 from .che168_parser import (
     che168_detail_url_from_source_listing_id,
+    enrich_parsed_from_global_carinfo,
     fetch_autohome_spec_id_from_detail_url,
     http_referer_for_request_url,
     marketplace_from_detail_url,
@@ -4194,6 +4195,7 @@ def admin_batch_refresh_from_che168(
             continue
         try:
             parsed = parse_che168_detail(url)
+            parsed = enrich_parsed_from_global_carinfo(parsed, url)
         except Exception as e:
             errors.append(f"id={car.id}: {e!s}")
             continue

@@ -165,8 +165,24 @@ def drive_type_from_trim_source_json(raw_json: str | None) -> str | None:
 def drive_type_from_car_trim(trim: Any) -> str | None:
     if trim is None:
         return None
-    for attr in ("source_spec_json", "spec_json", "spec_sections"):
+    for attr in ("source_spec_json", "spec_json"):
         drive = drive_type_from_trim_source_json(getattr(trim, attr, None))
         if drive:
             return drive
+    # Русский UI-кэш: {"param_sections":[{"items":[{"name":"Привод","value":"Передний"}]}]}
+    raw_sections = getattr(trim, "spec_sections", None) or getattr(trim, "spec_json_ru", None)
+    if raw_sections and str(raw_sections).strip():
+        try:
+            doc = json.loads(raw_sections)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            doc = None
+        if isinstance(doc, dict):
+            for key in ("param_sections", "sections"):
+                drive = drive_type_from_trim_source_json(json.dumps(doc.get(key) or [], ensure_ascii=False))
+                if drive:
+                    return drive
+        elif isinstance(doc, list):
+            drive = drive_type_from_trim_source_json(raw_sections)
+            if drive:
+                return drive
     return None

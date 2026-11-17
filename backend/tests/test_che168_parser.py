@@ -355,6 +355,39 @@ class Che168ListCardTests(unittest.TestCase):
         self.assertEqual(parsed.mileage_km, 11800)
         self.assertEqual(parsed.transmission, "DCT")
 
+    def test_finalize_merges_global_color_onto_priced_html(self):
+        from app.che168_parser import ParsedCar, _finalize_parsed_with_global
+
+        html = ParsedCar(
+            source_listing_id="dealer-1-2",
+            title="Chery Tiggo 7",
+            price_cny=79800,
+            mileage_km=7000,
+            transmission="Автомат",
+        )
+        info = {
+            "color": "白色",
+            "specid": 64410,
+            "producedate": "2024-03-01 00:00:00",
+            "mileage": "7000",
+            "regdate": "2024.03",
+            "carname": "Chery Tiggo 7 PLUS",
+            "specname": "PLUS",
+            "engine": "--",
+            "fuelname": "",
+            "gearbox": "--",
+            "drivingmode": "--",
+            "cname": "haerbin",
+            "catepiclist": [],
+        }
+        out = _finalize_parsed_with_global(
+            html, global_info=info, source_listing_id="dealer-1-2"
+        )
+        self.assertEqual(out.body_color_slug, "white")
+        self.assertEqual(out.autohome_spec_id, 64410)
+        self.assertEqual(out.production_date, "2024-03-01")
+        self.assertEqual(out.price_cny, 79800)
+
 
 if __name__ == "__main__":
     unittest.main()

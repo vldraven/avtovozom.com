@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
@@ -14,6 +15,8 @@ from .autohome_config import extract_autohome_spec_id
 
 from .body_colors import guess_body_color_slug_from_vehicle_text
 from .engine_volume_util import normalize_passenger_engine_volume_cc
+
+log = logging.getLogger(__name__)
 
 
 # Старый формат карточки; на витрине серии чаще встречаются дилерские URL.
@@ -757,6 +760,38 @@ def _merge_parsed_cars(primary: ParsedCar | None, secondary: ParsedCar | None) -
     )
 
 
+def _finalize_parsed_with_global(
+    parsed: ParsedCar | None,
+    *,
+    global_info: dict[str, Any] | None,
+    source_listing_id: str,
+) -> ParsedCar | None:
+    """Перед возвратом ещё раз добрать color/specId/даты из global carinfo."""
+    if parsed is None or not global_info:
+        return parsed
+    global_parsed = _parsed_car_from_global_carinfo(global_info, source_listing_id)
+    return _merge_parsed_cars(parsed, global_parsed) or parsed
+
+
+def enrich_parsed_from_global_carinfo(parsed: ParsedCar, detail_url: str) -> ParsedCar:
+    """
+    Перед записью в БД — повторно подтянуть global carinfo по infoid.
+    Нужен как страховочная сеть: HTTP/Playwright иногда возвращают цену без color/specId.
+    """
+    if marketplace_from_detail_url(detail_url) == "dongchedi":
+        return parsed
+    infoid = infoid_from_listing_url(detail_url)
+    if not infoid:
+        return parsed
+    info = _fetch_global_che168_carinfo(infoid)
+    if not info:
+        log.warning("global carinfo empty for infoid=%s url=%s", infoid, detail_url)
+        return parsed
+    sid = parsed.source_listing_id or source_listing_id_from_url(detail_url)
+    enriched = _finalize_parsed_with_global(parsed, global_info=info, source_listing_id=sid)
+    return enriched or parsed
+
+
 def _normalize_listing_href(href: str) -> str | None:
     if not href:
         return None
@@ -1112,9 +1147,17 @@ def _parse_quality_score(parsed: ParsedCar | None) -> int:
         score += 3
     if parsed.registration_date:
         score += 2
+    if parsed.production_date:
+        score += 1
     if parsed.autohome_spec_id:
         score += 5
     if parsed.fuel_type:
+        score += 1
+    if parsed.horsepower:
+        score += 1
+    if parsed.body_color_slug:
+        score += 2
+    if parsed.drive_type:
         score += 1
     if parsed.photos:
         score += min(len(parsed.photos), 3)
@@ -2374,8 +2417,12 @@ def parse_che168_detail(
                     best_score = _parse_quality_score(best)
                 # Цена есть, но без specId — не выходим: Playwright чаще достаёт комплектацию.
                 if _parse_is_complete(parsed):
-                    merged = _merge_parsed_cars(parsed, best) or parsed
-                    if merged.autohome_spec_id or not allow_playwright:
+                    merged = _finalize_parsed_with_global(
+                        _merge_parsed_cars(parsed, best) or parsed,
+                        global_info=global_info,
+                        source_listing_id=source_listing_id,
+                    )
+                    if merged and (merged.autohome_spec_id or not allow_playwright):
                         return merged
                     best = merged
                     best_score = _parse_quality_score(best)
@@ -2399,7 +2446,9 @@ def parse_che168_detail(
 
     if not allow_playwright:
         if best and best_score > 0:
-            return best
+            return _finalize_parsed_with_global(
+                best, global_info=global_info, source_listing_id=source_listing_id
+            )
         raise RuntimeError(
             "Карточка не разобрана по HTTP (Playwright отключён для быстрого режима): "
             f"{detail_url}"
@@ -2428,9 +2477,13 @@ def parse_che168_detail(
                 best = _merge_parsed_cars(parsed, best) or parsed
                 best_score = _parse_quality_score(best)
             if _parse_is_complete(parsed):
-                merged = _merge_parsed_cars(parsed, best) or parsed
+                merged = _finalize_parsed_with_global(
+                    _merge_parsed_cars(parsed, best) or parsed,
+                    global_info=global_info,
+                    source_listing_id=source_listing_id,
+                )
                 # С комплектацией — готово; иначе пробуем следующий URL Playwright.
-                if merged.autohome_spec_id:
+                if merged and merged.autohome_spec_id:
                     return merged
                 best = merged
                 best_score = _parse_quality_score(best)
@@ -2438,7 +2491,9 @@ def parse_che168_detail(
             last_err = exc
 
     if best and best_score > 0 and _parse_is_complete(best):
-        return best
+        return _finalize_parsed_with_global(
+            best, global_info=global_info, source_listing_id=source_listing_id
+        )
     if captcha_hits >= len(fetch_urls):
         raise RuntimeError(
             "che168.com открыл антибот-проверку (Tencent captcha) для всех HTTP-запросов. "
