@@ -1,5 +1,6 @@
+import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.che168_parser import (
     ParsedCar,
@@ -387,6 +388,28 @@ class Che168ListCardTests(unittest.TestCase):
         self.assertEqual(out.autohome_spec_id, 64410)
         self.assertEqual(out.production_date, "2024-03-01")
         self.assertEqual(out.price_cny, 79800)
+
+    def test_fetch_global_carinfo_passes_che168_proxy(self):
+        from app.che168_parser import _fetch_global_che168_carinfo
+
+        payload = {"returncode": 0, "result": {"color": "黑色", "specid": 64410}}
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        response.json = MagicMock(return_value=payload)
+        client = MagicMock()
+        client.get = MagicMock(return_value=response)
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+
+        with patch.dict(os.environ, {"CHE168_PROXY": "http://proxy.example:8080"}), patch(
+            "app.che168_parser.httpx.Client", return_value=client
+        ) as client_cls:
+            info = _fetch_global_che168_carinfo("60413475", timeout=5.0)
+
+        self.assertEqual(info, {"color": "黑色", "specid": 64410})
+        kwargs = client_cls.call_args.kwargs
+        self.assertEqual(kwargs.get("proxy"), "http://proxy.example:8080")
+        client.get.assert_called_once()
 
 
 if __name__ == "__main__":

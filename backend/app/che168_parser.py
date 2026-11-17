@@ -120,20 +120,51 @@ def _fetch_global_che168_carinfo(
     headers = {
         "User-Agent": UA,
         "Accept": "application/json",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Referer": "https://global.che168.com/",
     }
-    try:
-        wait = float(timeout) if timeout is not None else 25.0
-        with httpx.Client(timeout=wait, follow_redirects=True, headers=headers) as client:
-            r = client.get(url, params=params)
-            r.raise_for_status()
-            data = r.json()
-    except Exception:
-        return None
-    if not isinstance(data, dict) or data.get("returncode") != 0:
-        return None
-    result = data.get("result")
-    return result if isinstance(result, dict) else None
+    wait = float(timeout) if timeout is not None else 25.0
+    # С VPS вне Китая API часто режется без CHE168_PROXY — как и HTML-карточки.
+    proxy = che168_proxy_url()
+    attempts: list[str | None] = [proxy, None] if proxy else [None]
+    last_err: str | None = None
+    for proxy_url in attempts:
+        try:
+            kwargs: dict[str, Any] = {
+                "timeout": _http_timeout(wait),
+                "follow_redirects": True,
+                "headers": headers,
+            }
+            if proxy_url:
+                kwargs["proxy"] = proxy_url
+            with httpx.Client(**kwargs) as client:
+                r = client.get(url, params=params)
+                r.raise_for_status()
+                data = r.json()
+        except Exception as exc:
+            last_err = f"{type(exc).__name__}: {exc}"
+            continue
+        if not isinstance(data, dict):
+            last_err = "non-dict json"
+            continue
+        if data.get("returncode") != 0:
+            last_err = (
+                f"returncode={data.get('returncode')} "
+                f"error={data.get('message') or data.get('error')}"
+            )
+            continue
+        result = data.get("result")
+        if isinstance(result, dict):
+            return result
+        last_err = "result not a dict"
+    if last_err:
+        log.warning(
+            "global carinfo failed infoid=%s proxy=%s err=%s",
+            sid,
+            bool(proxy),
+            last_err,
+        )
+    return None
 
 
 def _dealer_url_from_global_carinfo(info: dict[str, Any]) -> str | None:
