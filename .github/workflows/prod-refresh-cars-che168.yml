@@ -1,0 +1,226 @@
+# One-shot: re-enrich incomplete che168 cars on prod via global carinfo (+ trim).
+name: Prod refresh cars che168
+
+on:
+  workflow_dispatch:
+    inputs:
+      car_ids:
+        description: "Comma-separated car ids (empty = recent incomplete che168)"
+        required: false
+        default: ""
+      since:
+        description: "ISO date lower bound when car_ids empty (UTC)"
+        required: false
+        default: "2026-11-17"
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh incomplete cars on prod
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          CAR_IDS: ${{ github.event.inputs.car_ids }}
+          SINCE: ${{ github.event.inputs.since }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '${DEPLOY_PATH}' && CAR_IDS=$(printf %q "$CAR_IDS") SINCE=$(printf %q "$SINCE") docker compose -f docker-compose.prod.yml exec -T -e CAR_IDS -e SINCE backend python - <<'PY'
+          import os
+          from datetime import datetime, timezone
+          from sqlalchemy import or_, select
+          from sqlalchemy.orm import joinedload
+
+          from app.body_colors import label_for_slug
+          from app.che168_parser import (
+              ParsedCar,
+              _fetch_global_che168_carinfo,
+              _parsed_car_from_global_carinfo,
+              che168_detail_url_from_source_listing_id,
+              enrich_parsed_from_global_carinfo,
+              parse_che168_detail,
+          )
+          from app.db import SessionLocal
+          from app.listing_copy_ru import basic_neutral_description_ru, pick_listing_title
+          from app.models import Car, CarModel, CarTrim
+          from app.fuel_types import (
+              drive_type_from_car_trim,
+              fuel_from_car_trim,
+              horsepower_from_car_trim,
+              normalize_fuel_type_ru,
+          )
+          from app.model_resolver import resolve_model_id_for_listing
+          from app.translator_ru import translate_to_ru
+          from app.transmission_types import normalize_transmission_ru
+          from app.trim_catalog import resolve_trim_for_listing
+
+          raw_ids = (os.environ.get('CAR_IDS') or '').strip()
+          since_raw = (os.environ.get('SINCE') or '2026-11-17').strip()
+          db = SessionLocal()
+          try:
+              if raw_ids:
+                  ids = [int(x) for x in raw_ids.replace(' ', '').split(',') if x]
+                  stmt = (
+                      select(Car)
+                      .options(joinedload(Car.brand), joinedload(Car.model))
+                      .where(Car.id.in_(ids))
+                      .order_by(Car.id.asc())
+                  )
+              else:
+                  since = datetime.fromisoformat(since_raw).replace(tzinfo=timezone.utc)
+                  stmt = (
+                      select(Car)
+                      .options(joinedload(Car.brand), joinedload(Car.model))
+                      .where(
+                          Car.is_active.is_(True),
+                          Car.source.in_(('che168', 'global_che168')),
+                          Car.created_at >= since,
+                          or_(
+                              Car.trim_id.is_(None),
+                              Car.body_color_slug.is_(None),
+                              Car.horsepower.is_(None),
+                              Car.horsepower <= 0,
+                              Car.fuel_type.is_(None),
+                              Car.drive_type.is_(None),
+                              Car.production_date.is_(None),
+                          ),
+                      )
+                      .order_by(Car.id.asc())
+                      .limit(80)
+                  )
+              cars = db.execute(stmt).unique().scalars().all()
+              print('candidates', [c.id for c in cars])
+              ok = 0
+              errors = []
+              for car in cars:
+                  if car.brand is None:
+                      errors.append(f'id={car.id}: no brand')
+                      continue
+                  url = che168_detail_url_from_source_listing_id(car.source_listing_id)
+                  if not url:
+                      errors.append(f'id={car.id}: no url for {car.source_listing_id}')
+                      continue
+                  parsed = None
+                  try:
+                      parsed = parse_che168_detail(url, allow_playwright=False, http_timeout=25)
+                      parsed = enrich_parsed_from_global_carinfo(parsed, url)
+                  except Exception as exc:
+                      print(f'id={car.id}: parse fallback global-only ({type(exc).__name__}: {exc})')
+                      info = _fetch_global_che168_carinfo(
+                          (car.source_listing_id or '').rsplit('-', 1)[-1]
+                      )
+                      if not info:
+                          from app.che168_parser import infoid_from_listing_url
+                          iid = infoid_from_listing_url(url)
+                          info = _fetch_global_che168_carinfo(iid or '')
+                      if not info:
+                          errors.append(f'id={car.id}: global empty after parse fail')
+                          continue
+                      parsed = _parsed_car_from_global_carinfo(info, car.source_listing_id)
+                      # keep existing price/mileage/year from DB via a stub merge
+                      stub = ParsedCar(
+                          source_listing_id=car.source_listing_id,
+                          title=car.title,
+                          price_cny=car.price_cny,
+                          mileage_km=car.mileage_km,
+                          year=car.year,
+                          engine_volume_cc=car.engine_volume_cc,
+                          transmission=car.transmission,
+                      )
+                      parsed = enrich_parsed_from_global_carinfo(stub, url)
+
+                  resolved = resolve_model_id_for_listing(
+                      db,
+                      brand_name=car.brand.name,
+                      brand_id=car.brand_id,
+                      fallback_model_id=car.model_id,
+                      title=parsed.title,
+                      description=parsed.description,
+                      series_raw=parsed.series_raw,
+                  )
+                  car.model_id = resolved
+                  resolved_row = db.get(CarModel, resolved)
+                  mn = resolved_row.name if resolved_row else (car.model.name if car.model else 'Авто')
+
+                  if parsed.year is not None:
+                      car.year = parsed.year
+                  if parsed.engine_volume_cc is not None:
+                      car.engine_volume_cc = parsed.engine_volume_cc
+                  if parsed.horsepower is not None and parsed.horsepower > 0:
+                      car.horsepower = parsed.horsepower
+                  if parsed.mileage_km is not None:
+                      car.mileage_km = parsed.mileage_km
+                  fuel = normalize_fuel_type_ru(parsed.fuel_type)
+                  if fuel:
+                      car.fuel_type = fuel
+                  if parsed.transmission:
+                      car.transmission = normalize_transmission_ru(parsed.transmission)
+                  if parsed.location_city:
+                      car.location_city = translate_to_ru(parsed.location_city) or parsed.location_city
+                  if parsed.price_cny is not None and parsed.price_cny > 0:
+                      car.price_cny = parsed.price_cny
+                  if parsed.registration_date:
+                      car.registration_date = parsed.registration_date
+                  if parsed.production_date:
+                      car.production_date = parsed.production_date
+                  if parsed.body_color_slug:
+                      car.body_color_slug = parsed.body_color_slug
+                  if getattr(parsed, 'drive_type', None):
+                      car.drive_type = parsed.drive_type
+
+                  car.title = pick_listing_title(
+                      car.brand.name, mn, car.year, parsed.title, series_raw=parsed.series_raw
+                  )
+
+                  if parsed.autohome_spec_id:
+                      trim_id = resolve_trim_for_listing(
+                          db,
+                          model_id=car.model_id,
+                          year=car.year,
+                          autohome_spec_id=parsed.autohome_spec_id,
+                      )
+                      if trim_id:
+                          car.trim_id = trim_id
+                          trim = db.get(CarTrim, trim_id)
+                          if not car.fuel_type:
+                              car.fuel_type = fuel_from_car_trim(trim)
+                          if not car.horsepower:
+                              hp = horsepower_from_car_trim(trim)
+                              if hp:
+                                  car.horsepower = hp
+                          if not car.drive_type:
+                              drive = drive_type_from_car_trim(trim)
+                              if drive:
+                                  car.drive_type = drive
+
+                  car.description = basic_neutral_description_ru(
+                      car.brand.name,
+                      mn,
+                      car.year,
+                      car.mileage_km,
+                      car.engine_volume_cc,
+                      car.horsepower,
+                      car.fuel_type,
+                      car.transmission,
+                      car.location_city,
+                      body_color_label=label_for_slug(car.body_color_slug),
+                  )
+                  db.commit()
+                  ok += 1
+                  print(
+                      f'ok id={car.id} color={car.body_color_slug} trim={car.trim_id} '
+                      f'hp={car.horsepower} fuel={car.fuel_type} drive={car.drive_type} '
+                      f'prod={car.production_date} spec={parsed.autohome_spec_id}'
+                  )
+              print('done', {'ok': ok, 'attempted': len(cars), 'errors': errors[:20], 'errors_total': len(errors)})
+          finally:
+              db.close()
+          PY"
