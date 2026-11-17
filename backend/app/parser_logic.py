@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from .che168_parser import (
     ParsedCar,
     car_source_for_marketplace,
+    enrich_parsed_from_global_carinfo,
     fetch_autohome_spec_id_from_detail_url,
     filter_vehicle_photo_urls,
     incomplete_listing_parse_message,
@@ -156,6 +157,35 @@ def _ensure_autohome_spec_id(parsed: ParsedCar, detail_url: str, marketplace: st
     sid = fetch_autohome_spec_id_from_detail_url(detail_url)
     if sid:
         parsed.autohome_spec_id = sid
+
+
+def _enrich_parsed_before_save(parsed: ParsedCar, detail_url: str, marketplace: str) -> ParsedCar:
+    """Добрать color/specId/даты из global carinfo + specId из HTML, затем trim-поля."""
+    if marketplace != "dongchedi":
+        parsed = enrich_parsed_from_global_carinfo(parsed, detail_url)
+    _ensure_autohome_spec_id(parsed, detail_url, marketplace)
+    return parsed
+
+
+def _fill_car_fields_from_parsed(car: Car, parsed: ParsedCar) -> None:
+    """Заполнить пустые поля карточки из разбора (не затирает уже заданные)."""
+    if parsed.horsepower and not getattr(car, "horsepower", None):
+        car.horsepower = int(parsed.horsepower)
+    fuel = normalize_fuel_type_ru(parsed.fuel_type)
+    if fuel and not car.fuel_type:
+        car.fuel_type = fuel
+    if parsed.drive_type and not getattr(car, "drive_type", None):
+        car.drive_type = parsed.drive_type
+    if parsed.body_color_slug and not car.body_color_slug:
+        car.body_color_slug = parsed.body_color_slug
+    if parsed.production_date and not car.production_date:
+        car.production_date = parsed.production_date
+    if parsed.registration_date and not car.registration_date:
+        car.registration_date = parsed.registration_date
+    if parsed.location_city and not car.location_city:
+        car.location_city = translate_to_ru(parsed.location_city) or parsed.location_city
+    if parsed.transmission and not car.transmission:
+        car.transmission = normalize_transmission_ru(parsed.transmission)
 
 
 def _insert_car_from_parsed(
@@ -507,7 +537,8 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
                         lambda: parse_che168_detail(detail_url),
                         timeout_sec=float(os.getenv("CHE168_DETAIL_PARSE_TIMEOUT_SEC", "180")),
                     )
-                    _ensure_autohome_spec_id(parsed_exist, detail_url, mp)
+                    parsed_exist = _enrich_parsed_before_save(parsed_exist, detail_url, mp)
+                    _fill_car_fields_from_parsed(existing_car, parsed_exist)
                     _apply_trim_from_parsed(
                         db,
                         existing_car,
@@ -586,7 +617,7 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             db.refresh(job)
             return job
 
-        _ensure_autohome_spec_id(parsed, detail_url, mp)
+        parsed = _enrich_parsed_before_save(parsed, detail_url, mp)
         total_processed = 1
         flush_progress("2/3 Сохранение объявления в каталог…")
 
@@ -594,6 +625,7 @@ def _run_single_listing_import(db: Session, job: ParseJob) -> ParseJob:
             select(Car).where(Car.source_listing_id == parsed.source_listing_id)
         ).scalar_one_or_none()
         if car and car.is_active:
+            _fill_car_fields_from_parsed(car, parsed)
             _apply_trim_from_parsed(
                 db,
                 car,
@@ -900,7 +932,7 @@ def run_parser_job(db: Session, job: ParseJob) -> ParseJob:
                     flush_progress(f"Ошибка страницы объявления ({model.name}): {e}")
                     continue
 
-                _ensure_autohome_spec_id(
+                parsed = _enrich_parsed_before_save(
                     parsed,
                     detail_url,
                     marketplace_from_detail_url(detail_url),

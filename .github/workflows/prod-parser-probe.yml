@@ -1,0 +1,64 @@
+# One-shot: verify global carinfo enrich on prod for a dealer listing.
+name: Prod parser probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      detail_url:
+        description: che168 dealer/detail URL
+        required: true
+        default: "https://www.che168.com/dealer/551960/60413475.html"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe parser enrich on prod
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DETAIL_URL: ${{ github.event.inputs.detail_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "cd '${DEPLOY_PATH}' && DETAIL_URL=$(printf %q "$DETAIL_URL") docker compose -f docker-compose.prod.yml exec -T -e DETAIL_URL backend python - <<'PY'
+          import os
+          from app.che168_parser import (
+              enrich_parsed_from_global_carinfo,
+              infoid_from_listing_url,
+              source_listing_id_from_url,
+              _fetch_global_che168_carinfo,
+              _parsed_car_from_global_carinfo,
+              parse_che168_detail,
+          )
+          url = os.environ['DETAIL_URL']
+          print('url', url)
+          print('infoid', infoid_from_listing_url(url))
+          info = _fetch_global_che168_carinfo(infoid_from_listing_url(url) or '')
+          print('global', None if not info else {k: info.get(k) for k in ('color','specid','producedate','fuelname','engine','drivingmode','cname')})
+          if info:
+              g = _parsed_car_from_global_carinfo(info, source_listing_id_from_url(url))
+              print('from_global', g.body_color_slug, g.autohome_spec_id, g.production_date)
+          try:
+              p = parse_che168_detail(url, allow_playwright=False, http_timeout=25)
+              p2 = enrich_parsed_from_global_carinfo(p, url)
+              print('parse_no_pw', {
+                  'color': p2.body_color_slug,
+                  'spec': p2.autohome_spec_id,
+                  'hp': p2.horsepower,
+                  'fuel': p2.fuel_type,
+                  'drive': p2.drive_type,
+                  'prod': p2.production_date,
+                  'price': p2.price_cny,
+                  'title': (p2.title or '')[:80],
+              })
+          except Exception as e:
+              print('parse_no_pw_err', type(e).__name__, e)
+          PY"

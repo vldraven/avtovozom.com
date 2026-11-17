@@ -49,6 +49,27 @@ class FuelTypeNormalizeTests(unittest.TestCase):
         self.assertEqual(horsepower_from_trim_source_json(raw), 169)
         self.assertEqual(drive_type_from_trim_source_json(raw), "Передний")
 
+    def test_drive_from_russian_spec_sections_doc(self) -> None:
+        from types import SimpleNamespace
+
+        from app.fuel_types import drive_type_from_car_trim
+
+        trim = SimpleNamespace(
+            source_spec_json=None,
+            spec_json=None,
+            spec_sections=json.dumps(
+                {
+                    "version": 1,
+                    "sections": [],
+                    "param_sections": [
+                        {"group": "Шасси", "items": [{"name": "Привод", "value": "Передний"}]}
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        )
+        self.assertEqual(drive_type_from_car_trim(trim), "Передний")
+
 
 class FuelParseFromListingTextTests(unittest.TestCase):
     def test_label_and_token(self) -> None:
