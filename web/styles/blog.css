@@ -77,6 +77,8 @@
   display: flex;
   gap: 8px;
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   padding-bottom: 8px;
   margin-bottom: 16px;
 }
@@ -637,6 +639,8 @@
 
 .blog-body__table-scroll {
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .blog-body table {

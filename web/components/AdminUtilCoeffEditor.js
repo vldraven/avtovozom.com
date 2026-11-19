@@ -90,13 +90,22 @@ function IceBandTable({ title, rows, onChange, columnLabel }) {
 
   return (
     <div style={{ marginBottom: "1rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div
+        style={{
+          position: "relative",
+          zIndex: 2,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 6,
+        }}
+      >
         <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>{title}</span>
         <button type="button" className="btn btn-secondary btn-sm" onClick={addRow}>
           + строка
         </button>
       </div>
-      <div style={{ overflowX: "auto" }}>
+      <div style={{ position: "relative", zIndex: 0, overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
         <table className="admin-util-table">
           <thead>
             <tr>
@@ -186,13 +195,22 @@ function DualAgeTable({ title, rowsU3, rowsO3, onChange }) {
 
   return (
     <div style={{ marginBottom: "1rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div
+        style={{
+          position: "relative",
+          zIndex: 2,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 6,
+        }}
+      >
         <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>{title}</span>
         <button type="button" className="btn btn-secondary btn-sm" onClick={addRow}>
           + строка
         </button>
       </div>
-      <div style={{ overflowX: "auto" }}>
+      <div style={{ position: "relative", zIndex: 0, overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
         <table className="admin-util-table">
           <thead>
             <tr>

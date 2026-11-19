@@ -252,7 +252,7 @@ export default function AdminUsersPage() {
             </form>
           ) : null}
 
-          <div className="panel" style={{ overflowX: "auto" }}>
+          <div className="panel" style={{ overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" }}>
             <table className="admin-users-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid var(--color-border)" }}>
