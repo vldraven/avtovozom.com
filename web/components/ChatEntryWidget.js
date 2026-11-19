@@ -20,7 +20,10 @@ import {
   chatEntryPathHidden,
   chatEntryRoleHidden,
 } from "../lib/chatEntryWidget";
+import { PdProcessingConsent } from "./PdConsentCheckbox";
 import { getGuestChatToken, guestNeedsAiReply, setGuestChatToken } from "../lib/guestChat";
+import { guestPdConsentGranted, processingConsentFields } from "../lib/pdConsent";
+import { useSiteMode } from "../lib/siteMode";
 import { sanitizeConsultantReplyText } from "../lib/consultantReplyText";
 import {
   ChatConsultPanel,
@@ -113,11 +116,18 @@ export default function ChatEntryWidget({ suppressed = false, onOpenChange }) {
   const [loadingThread, setLoadingThread] = useState(false);
   const [guestAwaitingAi, setGuestAwaitingAi] = useState(false);
   const [sending, setSending] = useState(false);
+  const [guestPdConsent, setGuestPdConsent] = useState(false);
+
+  useEffect(() => {
+    setGuestPdConsent(guestPdConsentGranted());
+  }, []);
   const [consultOpen, setConsultOpen] = useState(false);
   const [consultComment, setConsultComment] = useState("");
   const threadEndRef = useRef(null);
 
+  const { reviewMode } = useSiteMode();
   const isGuest = !token;
+  const guestCanSend = !isGuest || guestPdConsent;
   const hiddenByPath = chatEntryPathHidden(router.pathname, router.asPath);
   const hiddenByRole = chatEntryRoleHidden(me?.role);
   const hidden = suppressed || hiddenByPath || hiddenByRole;
@@ -389,7 +399,11 @@ export default function ChatEntryWidget({ suppressed = false, onOpenChange }) {
     const res = await fetchWithTimeout(`${API_URL}/public/guest-chats/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ guest_token: guestToken || getGuestChatToken() || null, text }),
+      body: JSON.stringify({
+        guest_token: guestToken || getGuestChatToken() || null,
+        text,
+        ...processingConsentFields({ termsAccepted: false }),
+      }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -427,6 +441,10 @@ export default function ChatEntryWidget({ suppressed = false, onOpenChange }) {
   const handleSend = async (rawText) => {
     const text = String(rawText || draft || "").trim();
     if (!text || sending) return;
+    if (isGuest && !guestPdConsent) {
+      setSendErr("Отметьте согласие на обработку сообщения, прежде чем отправить его.");
+      return;
+    }
     setSending(true);
     setSendErr("");
     try {
@@ -457,7 +475,7 @@ export default function ChatEntryWidget({ suppressed = false, onOpenChange }) {
     }
   };
 
-  if (hidden) return null;
+  if (hidden || reviewMode) return null;
 
   const showPanel = phase === "open";
   const showInviteBody = !hasThread && !loadingThread;
@@ -526,7 +544,7 @@ export default function ChatEntryWidget({ suppressed = false, onOpenChange }) {
                       key={item}
                       type="button"
                       className="chat-entry__suggestion"
-                      disabled={sending}
+                      disabled={sending || !guestCanSend}
                       onClick={() => handleSend(item)}
                     >
                       {item}
@@ -577,6 +595,14 @@ export default function ChatEntryWidget({ suppressed = false, onOpenChange }) {
             }}
           >
             {sendErr ? <p className="chat-entry__err">{sendErr}</p> : null}
+            {isGuest ? (
+              <PdProcessingConsent
+                guest
+                checked={guestPdConsent}
+                onChange={setGuestPdConsent}
+                id="chat-entry-pd-consent"
+              />
+            ) : null}
             {isGuest && guestAwaitingAi && hasThread ? (
               <p className="chat-entry__hint muted" aria-live="polite">
                 Консультант печатает…
@@ -586,13 +612,13 @@ export default function ChatEntryWidget({ suppressed = false, onOpenChange }) {
             <label className="chat-entry__composer-row">
               <span className="visually-hidden">{hasThread ? "Сообщение" : "Свой вопрос"}</span>
               <input
-                className="chat-entry__input"
+                className="chat-entry__input ym-disable-keys"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder={hasThread ? "Сообщение…" : "Свой вопрос…"}
-                disabled={sending}
+                disabled={sending || (isGuest && !guestPdConsent)}
               />
-              <button type="submit" className="chat-entry__send" disabled={sending || !draft.trim()}>
+              <button type="submit" className="chat-entry__send" disabled={sending || !draft.trim() || (isGuest && !guestPdConsent)}>
                 {sending ? "…" : "→"}
               </button>
             </label>

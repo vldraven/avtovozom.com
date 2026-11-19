@@ -1,6 +1,9 @@
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import PdConsentCheckbox from "./PdConsentCheckbox";
+import PdConsentFields from "./PdConsentCheckbox";
+import { processingConsentFields } from "../lib/pdConsent";
+import { useSiteMode } from "../lib/siteMode";
 import PinSetupPanel from "./PinSetupPanel";
 import SiteLogo from "./SiteLogo";
 import { saveToken } from "../lib/auth";
@@ -132,10 +135,20 @@ export default function AuthFlow({
   const [resendAt, setResendAt] = useState(0);
   const [resendLeft, setResendLeft] = useState(0);
   const [pdConsent, setPdConsent] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const { reviewMode } = useSiteMode();
 
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
+
+  useEffect(() => {
+    if (reviewMode && mode !== "login" && !pinSetupRequired) {
+      setMode("login");
+      setError("");
+      setMessage("");
+    }
+  }, [reviewMode, mode, pinSetupRequired]);
 
   useEffect(() => {
     onModeChange?.(mode);
@@ -230,8 +243,8 @@ export default function AuthFlow({
   }
 
   async function startRegister({ resend = false } = {}) {
-    if (!pdConsent) {
-      setError("Подтвердите согласие с политикой и пользовательским соглашением.");
+    if (!pdConsent || !termsAccepted) {
+      setError("Отметьте согласие на обработку данных и отдельно — пользовательское соглашение.");
       return;
     }
     setBusy(true);
@@ -245,6 +258,7 @@ export default function AuthFlow({
           email: regEmail.trim().toLowerCase(),
           phone: regPhone.trim(),
           full_name: regName.trim(),
+          ...processingConsentFields(),
         }),
       });
       if (!res.ok) {
@@ -369,7 +383,7 @@ export default function AuthFlow({
         </button>
       ) : null}
 
-      {showTabs ? (
+      {showTabs && !reviewMode ? (
         <div className="auth-tabs" role="tablist" aria-label="Вход или регистрация">
           <button
             type="button"
@@ -459,17 +473,25 @@ export default function AuthFlow({
               </button>
             </div>
             <p className="auth-reset-disclaimer">
+              Вход использует данные уже созданного аккаунта. Обработка описана в{" "}
+              <Link href="/privacy">политике</Link>.
+            </p>
+            {!reviewMode ? (
+            <p className="auth-reset-disclaimer">
               Забыли пароль?{" "}
               <button type="button" className="auth-reset-disclaimer__link" onClick={goForgot}>
                 Восстановить
               </button>
             </p>
+            ) : null}
+            {!reviewMode ? (
             <p className="auth-switch-hint">
               Нет аккаунта?{" "}
               <button type="button" className="auth-reset-disclaimer__link" onClick={goRegister}>
                 Зарегистрироваться
               </button>
             </p>
+            ) : null}
           </form>
         </div>
       ) : null}
@@ -561,11 +583,17 @@ export default function AuthFlow({
                 onChange={(e) => setRegName(e.target.value)}
               />
             </label>
-            <PdConsentCheckbox checked={pdConsent} onChange={setPdConsent} id="auth-pd-consent" />
+            <PdConsentFields
+              pdConsent={pdConsent}
+              onPdConsent={setPdConsent}
+              termsAccepted={termsAccepted}
+              onTermsAccepted={setTermsAccepted}
+              idPrefix="auth"
+            />
             <button
               type="button"
               className="btn btn-primary auth-submit-wide"
-              disabled={busy || !pdConsent}
+              disabled={busy || !pdConsent || !termsAccepted}
               onClick={() => startRegister()}
             >
               Отправить код на email

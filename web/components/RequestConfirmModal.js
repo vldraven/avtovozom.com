@@ -56,12 +56,16 @@ export default function RequestConfirmModal({
         <label className="muted" style={{ display: "grid", gap: 6 }}>
           Комментарий к заявке
           <textarea
-            className="input"
+            className="input ym-disable-keys"
             rows={4}
             value={comment}
             onChange={(e) => onCommentChange(e.target.value)}
           />
         </label>
+        <p className="muted" style={{ fontSize: "0.875rem", margin: "12px 0 0" }}>
+          Заявка уйдёт с контактами вашего аккаунта. Как они обрабатываются, написано в{" "}
+          <a href="/privacy">политике</a>.
+        </p>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
             Отмена

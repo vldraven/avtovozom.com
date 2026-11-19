@@ -6,6 +6,7 @@ import MaxIcon from "../components/MaxIcon";
 import { COMPANY, hasLegalRequisites, phoneHref } from "../lib/companyInfo";
 import { breadcrumbListJsonLd, jsonLdScriptProps, organizationContactJsonLd } from "../lib/schema";
 import { absoluteUrl } from "../lib/siteUrl";
+import { useSiteMode } from "../lib/siteMode";
 
 const CANONICAL_PATH = "/contacts";
 const TITLE = "Контакты Автовозом — связаться и реквизиты";
@@ -58,6 +59,7 @@ function ChevronRight() {
 }
 
 export default function ContactsPage() {
+  const { reviewMode } = useSiteMode();
   const tel = phoneHref();
   const jsonLd = [
     breadcrumbListJsonLd([
@@ -83,9 +85,11 @@ export default function ContactsPage() {
         <Link href="/about" className="btn btn-ghost btn-sm">
           О компании
         </Link>
+        {reviewMode ? null : (
         <Link href="/request-quote" className="btn btn-secondary btn-sm">
           Заявка
         </Link>
+        )}
       </SiteHeader>
 
       <main className="site-main">
@@ -167,9 +171,11 @@ export default function ContactsPage() {
                 ) : null}
               </div>
 
+              {reviewMode ? null : (
               <Link href="/request-quote" className="btn contacts-cta-btn">
                 Оставить заявку
               </Link>
+              )}
             </div>
 
             {/* Right column — requisites */}

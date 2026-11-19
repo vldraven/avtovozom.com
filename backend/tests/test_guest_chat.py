@@ -12,7 +12,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import get_db
 from app.main import app
-from app.models import Chat, ChatMessage, Role, User
+from app.models import Chat, ChatMessage, PdConsentLog, Role, User
+from app.pd_consent import CONSENT_VERSION
 from app.security import create_access_token, hash_password
 
 
@@ -28,6 +29,7 @@ class GuestChatApiTests(unittest.TestCase):
         User.__table__.create(bind=self.engine)
         Chat.__table__.create(bind=self.engine)
         ChatMessage.__table__.create(bind=self.engine)
+        PdConsentLog.__table__.create(bind=self.engine)
         self.Session = sessionmaker(bind=self.engine)
         self.db = self.Session()
 
@@ -64,12 +66,43 @@ class GuestChatApiTests(unittest.TestCase):
         token = create_access_token(str(self.admin.id))
         return {"Authorization": f"Bearer {token}"}
 
+    def _guest_json(self, **fields):
+        body = {"pd_consent": True, "consent_version": CONSENT_VERSION}
+        body.update(fields)
+        return body
+
+    def test_guest_message_without_consent_is_rejected(self):
+        res = self.client.post("/public/guest-chats/messages", json={"text": "Без согласия"})
+        self.assertEqual(res.status_code, 400, res.text)
+        self.assertIn("согласи", res.text.lower())
+
+    def test_review_mode_blocks_new_guest_message(self):
+        from sqlalchemy import text
+
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS app_settings ("
+                    "key VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME)"
+                )
+            )
+            conn.execute(
+                text("INSERT INTO app_settings (key, value, updated_at) VALUES ('review_mode', '1', CURRENT_TIMESTAMP)")
+            )
+        self.db.expire_all()
+        res = self.client.post(
+            "/public/guest-chats/messages",
+            json=self._guest_json(text="Нельзя"),
+        )
+        self.assertEqual(res.status_code, 403, res.text)
+        self.assertIn("обзорном", res.text.lower())
+
     @patch("app.main.notify_guest_chat_started")
     @patch("app.main.notify_guest_chat_message")
     def test_new_guest_chat_notifies_telegram(self, mock_msg, mock_started):
         res = self.client.post(
             "/public/guest-chats/messages",
-            json={"text": "Здравствуйте, хочу Toyota"},
+            json=self._guest_json(text="Здравствуйте, хочу Toyota"),
         )
         self.assertEqual(res.status_code, 200, res.text)
         body = res.json()
@@ -83,7 +116,7 @@ class GuestChatApiTests(unittest.TestCase):
         token = body["guest_token"]
         res2 = self.client.post(
             "/public/guest-chats/messages",
-            json={"guest_token": token, "text": "Ещё вопрос"},
+            json=self._guest_json(guest_token=token, text="Ещё вопрос"),
         )
         self.assertEqual(res2.status_code, 200, res2.text)
         mock_msg.assert_called_once()
@@ -118,7 +151,7 @@ class GuestChatApiTests(unittest.TestCase):
     ):
         res = self.client.post(
             "/public/guest-chats/messages",
-            json={"text": "Нужна Toyota"},
+            json=self._guest_json(text="Нужна Toyota"),
         )
         self.assertEqual(res.status_code, 200, res.text)
         body = res.json()
@@ -139,7 +172,7 @@ class GuestChatApiTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 200, reply.text)
         res2 = self.client.post(
             "/public/guest-chats/messages",
-            json={"guest_token": body["guest_token"], "text": "Ещё вопрос"},
+            json=self._guest_json(guest_token=body["guest_token"], text="Ещё вопрос"),
         )
         self.assertEqual(res2.status_code, 200, res2.text)
         mock_trigger.assert_not_called()
@@ -152,7 +185,7 @@ class GuestChatApiTests(unittest.TestCase):
         try:
             created = self.client.post(
                 "/public/guest-chats/messages",
-                json={"text": "Привет"},
+                json=self._guest_json(text="Привет"),
             )
             self.assertEqual(created.status_code, 200, created.text)
             token = created.json()["guest_token"]
@@ -201,7 +234,7 @@ class GuestChatApiTests(unittest.TestCase):
         try:
             created = self.client.post(
                 "/public/guest-chats/messages",
-                json={"text": "Привет"},
+                json=self._guest_json(text="Привет"),
             )
             self.assertEqual(created.status_code, 200, created.text)
             token = created.json()["guest_token"]
@@ -237,7 +270,7 @@ class GuestChatApiTests(unittest.TestCase):
     def test_staff_can_delete_guest_chat(self, mock_msg, mock_started):
         res = self.client.post(
             "/public/guest-chats/messages",
-            json={"text": "Удалите меня"},
+            json=self._guest_json(text="Удалите меня"),
         )
         self.assertEqual(res.status_code, 200, res.text)
         chat_id = res.json()["chat_id"]
@@ -268,7 +301,7 @@ class GuestChatApiTests(unittest.TestCase):
     def test_staff_can_delete_message_and_reply(self, mock_msg, mock_started):
         created = self.client.post(
             "/public/guest-chats/messages",
-            json={"text": "Исходное сообщение"},
+            json=self._guest_json(text="Исходное сообщение"),
         )
         self.assertEqual(created.status_code, 200, created.text)
         chat_id = created.json()["chat_id"]

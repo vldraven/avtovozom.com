@@ -812,3 +812,22 @@ class BlogCommentLike(Base):
     comment_id: Mapped[int] = mapped_column(ForeignKey("blog_comments.id"), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PdConsentLog(Base):
+    """Факт отдельного согласия или запроса на отзыв. Не заменяет текст документа."""
+
+    __tablename__ = "pd_consent_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    form_code: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    document_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    subject_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subject_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    guest_token: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)

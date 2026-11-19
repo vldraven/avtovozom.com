@@ -15,6 +15,7 @@ import YandexMetrika from "../components/YandexMetrika";
 import { ensureFreshAccessToken } from "../lib/auth";
 import { manrope } from "../lib/fonts";
 import { readPromoCodeFromQuery, rememberPromoCode } from "../lib/promo";
+import { SiteModeProvider, useSiteMode } from "../lib/siteMode";
 import "../styles/globals.css";
 import "../styles/blog.css";
 
@@ -30,21 +31,6 @@ function useSeoNoIndex() {
 }
 
 export default function App({ Component, pageProps }) {
-  const [cookieConsent, setCookieConsent] = useState(null);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [installOpen, setInstallOpen] = useState(false);
-
-  useEffect(() => {
-    const sync = () => setCookieConsent(getCookieConsent());
-    sync();
-    window.addEventListener("avtovozom:cookie-consent", sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener("avtovozom:cookie-consent", sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, []);
-
   const router = useRouter();
   const noindex = useSeoNoIndex();
   const path = router.pathname || "";
@@ -145,7 +131,7 @@ export default function App({ Component, pageProps }) {
   }, []);
 
   return (
-    <>
+    <SiteModeProvider>
       <Head>
         <title>Автовозом — авто из Китая под заказ</title>
         <meta
@@ -168,18 +154,51 @@ export default function App({ Component, pageProps }) {
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
       </Head>
-      <div className={`app-chrome ${manrope.variable} ${manrope.className}`}>
+      <ReviewModeChrome
+        showFooter={showFooter}
+        showMobileBottomNav={showMobileBottomNav}
+        installPromptAllowed={installPromptAllowed}
+      >
         <AppLockGate>
           <Component {...pageProps} />
         </AppLockGate>
-        {showFooter ? <SiteFooter /> : null}
-        {showMobileBottomNav ? <MobileBottomNav /> : null}
+      </ReviewModeChrome>
+    </SiteModeProvider>
+  );
+}
+
+function ReviewModeChrome({ children, showFooter, showMobileBottomNav, installPromptAllowed }) {
+  const { reviewMode } = useSiteMode();
+  const [cookieConsent, setCookieConsent] = useState(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setCookieConsent(getCookieConsent());
+    sync();
+    window.addEventListener("avtovozom:cookie-consent", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("avtovozom:cookie-consent", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+
+  return (
+    <div className={`app-chrome ${manrope.variable} ${manrope.className}`}>
+      {children}
+      {showFooter ? <SiteFooter /> : null}
+      {showMobileBottomNav ? <MobileBottomNav /> : null}
+      {reviewMode ? null : (
         <ChatEntryWidget suppressed={!cookieConsent || installOpen} onOpenChange={setChatOpen} />
-        <PwaInstallPrompt suppressed={!cookieConsent || chatOpen || !installPromptAllowed} onOpenChange={setInstallOpen} />
-        <PwaServiceWorker />
-        <CookieConsentBanner />
-        <YandexMetrika />
-      </div>
-    </>
+      )}
+      <PwaInstallPrompt
+        suppressed={!cookieConsent || chatOpen || !installPromptAllowed || reviewMode}
+        onOpenChange={setInstallOpen}
+      />
+      <PwaServiceWorker />
+      <CookieConsentBanner />
+      <YandexMetrika />
+    </div>
   );
 }

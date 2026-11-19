@@ -1,6 +1,8 @@
 import { useState } from "react";
 
-import PdConsentCheckbox from "./PdConsentCheckbox";
+import PdConsentFields from "./PdConsentCheckbox";
+import { processingConsentFields } from "../lib/pdConsent";
+import { useSiteMode } from "../lib/siteMode";
 import { getRememberedPromoCode } from "../lib/promo";
 import { formatRuPhoneMask, normalizeRuPhoneDigits, phoneDigitsToApi } from "../lib/ruPhoneMask";
 
@@ -39,14 +41,16 @@ export default function LeadForm({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [pdConsent, setPdConsent] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const { reviewMode } = useSiteMode();
 
   async function onSubmit(e) {
     e.preventDefault();
     setError("");
     setSuccess("");
 
-    if (!pdConsent) {
-      setError("Подтвердите согласие с политикой и пользовательским соглашением.");
+    if (!pdConsent || !termsAccepted) {
+      setError("Отметьте согласие на обработку данных и отдельно — пользовательское соглашение.");
       return;
     }
 
@@ -75,6 +79,7 @@ export default function LeadForm({
       email: mail || `${phone.replace(/\D/g, "")}@contact.avtovozom.local`,
       phone: contactPhone ? phone : "",
       comment: bodyComment,
+      ...processingConsentFields(),
       ...(promoCode ? { promo_code: promoCode } : {}),
     };
 
@@ -102,6 +107,8 @@ export default function LeadForm({
     }
   }
 
+  if (reviewMode) return null;
+
   return (
     <section className={`lead-form-section panel${className ? ` ${className}` : ""}`} id={id}>
       <h2 className="section-title section-title--flush-top">{title}</h2>
@@ -113,7 +120,7 @@ export default function LeadForm({
           <label className="muted form-label">
             Имя *
             <input
-              className="input"
+              className="input ym-disable-keys"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Как к вам обращаться"
@@ -124,7 +131,7 @@ export default function LeadForm({
           <label className="muted form-label">
             Телефон или Telegram
             <input
-              className="input"
+              className="input ym-disable-keys"
               type="tel"
               inputMode="tel"
               autoComplete="tel"
@@ -136,7 +143,7 @@ export default function LeadForm({
           <label className="muted form-label">
             Email
             <input
-              className="input"
+              className="input ym-disable-keys"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -148,15 +155,21 @@ export default function LeadForm({
           <label className="muted form-label">
             Комментарий
             <textarea
-              className="input"
+              className="input ym-disable-keys"
               rows={4}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder="Марка, модель, год, бюджет, сроки…"
             />
           </label>
-          <PdConsentCheckbox checked={pdConsent} onChange={setPdConsent} id={`${id}-pd-consent`} />
-          <button type="submit" className="btn btn-primary" disabled={busy || !pdConsent}>
+          <PdConsentFields
+            pdConsent={pdConsent}
+            onPdConsent={setPdConsent}
+            termsAccepted={termsAccepted}
+            onTermsAccepted={setTermsAccepted}
+            idPrefix={id}
+          />
+          <button type="submit" className="btn btn-primary" disabled={busy || !pdConsent || !termsAccepted}>
             {busy ? "Отправка…" : "Отправить заявку"}
           </button>
         </form>

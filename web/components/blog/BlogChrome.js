@@ -7,12 +7,14 @@ import HeaderProfileLink from "../HeaderProfileLink";
 import SiteHeader from "../SiteHeader";
 import SiteHeaderDesktopNav from "../SiteHeaderDesktopNav";
 import { getStoredToken } from "../../lib/auth";
+import { useSiteMode } from "../../lib/siteMode";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function BlogChrome({ children }) {
   const [token, setToken] = useState("");
   const [me, setMe] = useState(null);
+  const { reviewMode } = useSiteMode();
 
   useEffect(() => {
     const next = getStoredToken();
@@ -49,7 +51,7 @@ export default function BlogChrome({ children }) {
             <HeaderProfileLink token={token} me={me} />
             <HeaderFavoritesLink token={token} />
           </>
-        ) : (
+        ) : reviewMode ? null : (
           <Link href="/auth?next=/blog" className="btn btn-primary btn-sm">
             Войти
           </Link>

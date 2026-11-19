@@ -2,7 +2,9 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
-import PdConsentCheckbox from "../components/PdConsentCheckbox";
+import PdConsentFields from "../components/PdConsentCheckbox";
+import { processingConsentFields } from "../lib/pdConsent";
+import { useSiteMode } from "../lib/siteMode";
 import SiteHeader from "../components/SiteHeader";
 import { saveToken } from "../lib/auth";
 import { publicCarHref } from "../lib/carRoutes";
@@ -83,6 +85,19 @@ export default function RequestQuotePage() {
   const [verifyMode, setVerifyMode] = useState(null);
   const [pendingPlatformChatId, setPendingPlatformChatId] = useState(null);
   const [pdConsent, setPdConsent] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  // isReady на сервере false, а в браузере при первой отрисовке уже true.
+  // Отдельный флаг стартует одинаково с обеих сторон, иначе React рвёт гидрацию.
+  const [routeReady, setRouteReady] = useState(false);
+  const { reviewMode } = useSiteMode();
+
+  useEffect(() => {
+    if (reviewMode) router.replace("/");
+  }, [reviewMode, router]);
+
+  useEffect(() => {
+    if (router.isReady) setRouteReady(true);
+  }, [router.isReady]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -107,8 +122,8 @@ export default function RequestQuotePage() {
     e.preventDefault();
     setError("");
     setMessage("");
-    if (!pdConsent) {
-      setError("Подтвердите согласие с политикой и пользовательским соглашением.");
+    if (!pdConsent || !termsAccepted) {
+      setError("Отметьте согласие на обработку данных и отдельно — пользовательское соглашение.");
       return;
     }
     setBusy(true);
@@ -121,6 +136,7 @@ export default function RequestQuotePage() {
         phone: phoneDigitsToApi(phoneDigits).trim(),
         full_name: fullName.trim(),
         comment: packedComment,
+        ...processingConsentFields(),
       };
       if (carId) payload.car_id = Number(carId);
       if (promoCode) payload.promo_code = promoCode;
@@ -193,7 +209,7 @@ export default function RequestQuotePage() {
   const backHref = nextUrl || (car ? publicCarHref(car) : "/");
   const authNext = nextUrl || (car ? publicCarHref(car) : "/");
 
-  if (!router.isReady) {
+  if (!routeReady) {
     return (
       <div className="layout request-quote-layout-root">
         <SiteHeader tagline="Заявка на подбор">
@@ -229,7 +245,7 @@ export default function RequestQuotePage() {
           {error ? <div className="alert alert--danger">{error}</div> : null}
           {message && step !== "form" ? <div className="alert alert--success">{message}</div> : null}
 
-          {step === "form" && (car || !carId) ? (
+          {reviewMode ? null : step === "form" && (car || !carId) ? (
             <div className="request-quote-shell">
               <div className="request-quote-main">
                 <header className="request-quote-hero">
@@ -269,7 +285,7 @@ export default function RequestQuotePage() {
                     <label className="request-quote-field">
                       <span className="request-quote-field__label">Имя</span>
                       <input
-                        className="input"
+                        className="input ym-disable-keys"
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         placeholder="Как к вам обращаться"
@@ -280,7 +296,7 @@ export default function RequestQuotePage() {
                     <label className="request-quote-field">
                       <span className="request-quote-field__label">Email</span>
                       <input
-                        className="input"
+                        className="input ym-disable-keys"
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -292,7 +308,7 @@ export default function RequestQuotePage() {
                     <label className="request-quote-field">
                       <span className="request-quote-field__label">Телефон</span>
                       <input
-                        className="input"
+                        className="input ym-disable-keys"
                         type="tel"
                         inputMode="numeric"
                         autoComplete="tel"
@@ -304,7 +320,7 @@ export default function RequestQuotePage() {
                     <label className="request-quote-field">
                       <span className="request-quote-field__label">Город получения</span>
                       <input
-                        className="input"
+                        className="input ym-disable-keys"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
                         placeholder="Москва"
@@ -316,7 +332,7 @@ export default function RequestQuotePage() {
                         {carId ? "Комментарий к заявке" : "Какой автомобиль вас интересует"}
                       </span>
                       <textarea
-                        className="input"
+                        className="input ym-disable-keys"
                         rows={4}
                         value={comment}
                         onChange={(e) => setComment(e.target.value)}
@@ -340,15 +356,17 @@ export default function RequestQuotePage() {
                   </aside>
 
                   <div className="request-quote-actions">
-                    <PdConsentCheckbox
-                      checked={pdConsent}
-                      onChange={setPdConsent}
-                      id="request-quote-pd-consent"
+                    <PdConsentFields
+                      pdConsent={pdConsent}
+                      onPdConsent={setPdConsent}
+                      termsAccepted={termsAccepted}
+                      onTermsAccepted={setTermsAccepted}
+                      idPrefix="request-quote"
                     />
                     <button
                       type="submit"
                       className="btn btn-primary request-quote-submit"
-                      disabled={busy || !pdConsent}
+                      disabled={busy || !pdConsent || !termsAccepted}
                     >
                       {busy ? "Отправка…" : "Отправить заявку"}
                     </button>
@@ -420,7 +438,7 @@ export default function RequestQuotePage() {
                 Введите код из письма, отправленного на <strong>{email.trim().toLowerCase()}</strong>.
               </p>
               <input
-                className="input"
+                className="input ym-disable-keys"
                 placeholder="Код из письма"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}

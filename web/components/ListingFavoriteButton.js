@@ -5,6 +5,7 @@ import AuthPromptModal from "./AuthPromptModal";
 import { getStoredToken } from "../lib/auth";
 import { addFavorite, fetchFavoriteCarIds, removeFavorite } from "../lib/favorites";
 import { publicCarHref } from "../lib/carRoutes";
+import { useSiteMode } from "../lib/siteMode";
 
 function IconHeart({ filled }) {
   return (
@@ -26,6 +27,7 @@ function IconHeart({ filled }) {
  */
 export default function ListingFavoriteButton({ carId, car = null, variant = "chip" }) {
   const router = useRouter();
+  const { reviewMode } = useSiteMode();
   const [token, setToken] = useState("");
   const [favorited, setFavorited] = useState(false);
   const [ready, setReady] = useState(false);
@@ -105,6 +107,8 @@ export default function ListingFavoriteButton({ carId, car = null, variant = "ch
       setBusy(false);
     }
   }
+
+  if (reviewMode) return null;
 
   const label = favorited ? "Убрать из избранного" : "Добавить в избранное";
   const isOverlay = variant === "overlay";

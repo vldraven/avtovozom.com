@@ -10,9 +10,10 @@ import { absoluteUrl } from "../lib/siteUrl";
  * @param {{
  *   meta: { path: string, title: string, description: string, h1: string },
  *   sections: { title: string, paragraphs: string[], list?: string[] }[],
+ *   children?: import("react").ReactNode,
  * }} props
  */
-export default function LegalDocLayout({ meta, sections }) {
+export default function LegalDocLayout({ meta, sections, children }) {
   const jsonLd = breadcrumbListJsonLd([
     { label: "Главная", href: "/" },
     { label: meta.h1 },
@@ -53,13 +54,21 @@ export default function LegalDocLayout({ meta, sections }) {
             ) : null}
           </section>
         ))}
+        {children}
         <p className="legal-doc__nav muted">
           См. также:{" "}
-          {meta.path === "/privacy" ? (
-            <Link href="/terms">Пользовательское соглашение</Link>
-          ) : (
-            <Link href="/privacy">Политика обработки персональных данных</Link>
-          )}
+          {[
+            ["/privacy", "Политика обработки персональных данных"],
+            ["/consent", "Согласие на обработку"],
+            ["/terms", "Пользовательское соглашение"],
+          ]
+            .filter(([path]) => path !== meta.path)
+            .map(([path, label], index) => (
+              <span key={path}>
+                {index > 0 ? " · " : null}
+                <Link href={path}>{label}</Link>
+              </span>
+            ))}
           {" · "}
           <Link href="/contacts">Контакты</Link>
         </p>

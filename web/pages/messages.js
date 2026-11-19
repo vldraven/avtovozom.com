@@ -21,6 +21,9 @@ import { mediaSrc } from "../lib/media";
 import { isStaffRole } from "../lib/roles";
 import SiteHeader from "../components/SiteHeader";
 import { ChatConsultPanel, ChatQuickActions, latestOwnMessageText } from "../components/ChatComposerActions";
+import { PdProcessingConsent } from "../components/PdConsentCheckbox";
+import { guestPdConsentGranted, processingConsentFields } from "../lib/pdConsent";
+import { useSiteMode } from "../lib/siteMode";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const GUEST_CHAT_PLACEHOLDER_ID = "guest";
@@ -138,6 +141,8 @@ export default function MessagesPage() {
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState("");
+  const [guestPdConsent, setGuestPdConsent] = useState(false);
+  const { reviewMode } = useSiteMode();
   const [attachFile, setAttachFile] = useState(null);
   const [sendErr, setSendErr] = useState("");
   const [loadingList, setLoadingList] = useState(true);
@@ -283,6 +288,10 @@ export default function MessagesPage() {
     },
     [token, loadChats]
   );
+
+  useEffect(() => {
+    setGuestPdConsent(guestPdConsentGranted());
+  }, []);
 
   useEffect(() => {
     const mq = typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)") : null;
@@ -701,10 +710,18 @@ export default function MessagesPage() {
     setDraft(text);
     setSendErr("");
     if (!text.trim()) return;
+    if (!guestPdConsent) {
+      setSendErr("Отметьте согласие на обработку сообщения, прежде чем отправить его.");
+      return;
+    }
     const res = await fetch(`${API_URL}/public/guest-chats/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ guest_token: guestToken || null, text: text.trim() }),
+      body: JSON.stringify({
+        guest_token: guestToken || null,
+        text: text.trim(),
+        ...processingConsentFields({ termsAccepted: false }),
+      }),
     });
     const errBody = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -757,6 +774,10 @@ export default function MessagesPage() {
     const text = draft.trim();
     if (guestMode) {
       if (!text) return;
+      if (!guestPdConsent) {
+        setSendErr("Отметьте согласие на обработку сообщения, прежде чем отправить его.");
+        return;
+      }
       const res = await fetch(`${API_URL}/public/guest-chats/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -764,6 +785,7 @@ export default function MessagesPage() {
           guest_token: guestToken || null,
           text,
           reply_to_message_id: replyTo?.id || null,
+          ...processingConsentFields({ termsAccepted: false }),
         }),
       });
       const errBody = await res.json().catch(() => ({}));
@@ -1138,7 +1160,16 @@ export default function MessagesPage() {
                     )}
                   </div>
 
+                  {reviewMode && guestMode ? null : (
                   <form className="messenger__composer" onSubmit={sendMessage}>
+                    {guestMode ? (
+                      <PdProcessingConsent
+                        guest
+                        checked={guestPdConsent}
+                        onChange={setGuestPdConsent}
+                        id="messages-guest-pd-consent"
+                      />
+                    ) : null}
                     {sendErr ? <p className="messenger__composer-err">{sendErr}</p> : null}
                     {guestMode && guestAwaitingAi ? (
                       <p className="messenger__composer-hint muted" aria-live="polite">
@@ -1202,7 +1233,7 @@ export default function MessagesPage() {
                         ) : null}
                         <textarea
                           ref={composerInputRef}
-                          className="messenger__composer-input"
+                          className="messenger__composer-input ym-disable-keys"
                           rows={1}
                           placeholder={guestMode ? "Напишите сообщение…" : "Сообщение…"}
                           enterKeyHint="send"
@@ -1220,7 +1251,7 @@ export default function MessagesPage() {
                       <button
                         type="submit"
                         className="messenger__send-fab"
-                        disabled={!draft.trim() && !(attachFile && !guestMode)}
+                        disabled={(!draft.trim() && !(attachFile && !guestMode)) || (guestMode && !guestPdConsent)}
                         aria-label="Отправить"
                       >
                         <svg
@@ -1236,6 +1267,7 @@ export default function MessagesPage() {
                       </button>
                     </div>
                   </form>
+                  )}
                 </>
               )}
             </section>

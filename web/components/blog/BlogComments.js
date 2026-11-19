@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 
 import { getStoredToken } from "../../lib/auth";
 import { formatBlogRelative } from "../../lib/blogFormat";
+import { PdDistributionConsent } from "../PdConsentCheckbox";
+import { PD_CONSENT_VERSION } from "../../lib/pdConsent";
+import { useSiteMode } from "../../lib/siteMode";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -83,9 +86,26 @@ export default function BlogComments({ slug, comments, onChanged }) {
   const [replyTo, setReplyTo] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [distributionConsent, setDistributionConsent] = useState(false);
+  const [distributionGranted, setDistributionGranted] = useState(false);
+  const { reviewMode } = useSiteMode();
 
   useEffect(() => {
-    setToken(getStoredToken());
+    const auth = getStoredToken();
+    setToken(auth);
+    if (!auth) return undefined;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`${API_URL}/public/pd-consents/status`, {
+        headers: { Authorization: `Bearer ${auth}` },
+      });
+      if (!res.ok || cancelled) return;
+      const data = await res.json().catch(() => ({}));
+      if (!cancelled) setDistributionGranted(Boolean(data.blog_distribution));
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function submit(event) {
@@ -97,11 +117,21 @@ export default function BlogComments({ slug, comments, onChanged }) {
     }
     setBusy(true);
     setError("");
+    if (!distributionGranted && !distributionConsent) {
+      setError("Отметьте согласие на публикацию имени и текста комментария.");
+      setBusy(false);
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/blog/posts/${slug}/comments`, {
         method: "POST",
         headers: { Authorization: `Bearer ${auth}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text, parent_id: replyTo?.id || null }),
+        body: JSON.stringify({
+          body: text,
+          parent_id: replyTo?.id || null,
+          distribution_consent: distributionGranted || distributionConsent,
+          consent_version: PD_CONSENT_VERSION,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -110,6 +140,7 @@ export default function BlogComments({ slug, comments, onChanged }) {
       }
       setText("");
       setReplyTo(null);
+      setDistributionGranted(true);
       onChanged();
     } finally {
       setBusy(false);
@@ -122,7 +153,7 @@ export default function BlogComments({ slug, comments, onChanged }) {
   return (
     <section className="blog-comments" id="comments">
       <h2>{total > 0 ? `Комментарии · ${total}` : "Комментарии"}</h2>
-      {token ? (
+      {reviewMode ? null : token ? (
         <form onSubmit={submit} className="blog-comments__form">
           {replyTo ? (
             <p className="blog-comments__replying">
@@ -133,14 +164,26 @@ export default function BlogComments({ slug, comments, onChanged }) {
             </p>
           ) : null}
           <textarea
+            className="ym-disable-keys"
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder="Написать комментарий"
             rows={3}
             maxLength={2000}
           />
+          {distributionGranted ? null : (
+            <PdDistributionConsent
+              checked={distributionConsent}
+              onChange={setDistributionConsent}
+              id="blog-distribution-consent"
+            />
+          )}
           <div className="blog-comments__submit">
-            <button type="submit" className="btn btn-primary" disabled={busy || text.trim().length < 2}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={busy || text.trim().length < 2 || (!distributionGranted && !distributionConsent)}
+            >
               Отправить
             </button>
           </div>

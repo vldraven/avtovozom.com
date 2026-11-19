@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import SiteSelectDropdown from "../components/SiteSelectDropdown";
 import { absoluteUrl } from "../lib/siteUrl";
+import { useSiteMode } from "../lib/siteMode";
 import SiteHeader from "../components/SiteHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -161,6 +162,7 @@ function ResultCard({ summary, isCompany, disclaimer }) {
 }
 
 function NextSteps({ compact }) {
+  const { reviewMode } = useSiteMode();
   return (
     <section className={`customs-calc-next${compact ? " customs-calc-next--compact" : ""}`}>
       {!compact ? <p className="customs-calc-next__title">Что дальше</p> : null}
@@ -168,9 +170,11 @@ function NextSteps({ compact }) {
         <Link href="/catalog" className="btn btn-primary">
           {compact ? "Показать авто" : "Показать авто под этот бюджет"}
         </Link>
+        {reviewMode ? null : (
         <Link href="/request-quote" className="btn btn-secondary">
           {compact ? "В заявку" : "Оставить заявку"}
         </Link>
+        )}
       </div>
       {!compact ? (
         <p className="customs-calc-next__note muted">
@@ -182,6 +186,7 @@ function NextSteps({ compact }) {
 }
 
 export default function CustomsCalculatorPage() {
+  const { reviewMode } = useSiteMode();
   const [form, setForm] = useState(DEFAULT_FORM);
   const isElectric = form.engine_type === "electric";
   const [busy, setBusy] = useState(false);
@@ -304,9 +309,11 @@ export default function CustomsCalculatorPage() {
         <Link href="/catalog" className="btn btn-ghost btn-sm">
           Каталог
         </Link>
+        {reviewMode ? null : (
         <Link href="/request-quote" className="btn btn-secondary btn-sm">
           Заявка
         </Link>
+        )}
       </SiteHeader>
 
       <main className="site-main">

@@ -34,6 +34,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
@@ -293,6 +294,16 @@ from .n8n_bot_integration import (
 from .agent_api import router as agent_api_router
 from .social_agent import router as social_agent_router
 from .blog import router as blog_router
+from .pd_consent import (
+    record_consent,
+    router as pd_consent_router,
+    validate_processing_consent,
+)
+from .site_mode import (
+    assert_public_intake_open,
+    assert_user_allowed,
+    router as site_mode_router,
+)
 from .promo import router as promo_router, ensure_promo_seed
 from .n8n_client import (
     guest_chat_ai_webhook_configured,
@@ -357,6 +368,8 @@ app = FastAPI(title="Avtovozom API", version="0.1.0")
 app.include_router(agent_api_router)
 app.include_router(social_agent_router)
 app.include_router(blog_router)
+app.include_router(pd_consent_router)
+app.include_router(site_mode_router)
 app.include_router(promo_router)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -1849,6 +1862,7 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User is not active",
         )
+    assert_user_allowed(db, user)
     return user
 
 
@@ -2046,6 +2060,7 @@ def _reissue_from_session(
     ).scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User is not active")
+    assert_user_allowed(db, user)
     now = datetime.utcnow()
     sess.last_used_at = now
     if device_name and device_name.strip():
@@ -2116,7 +2131,21 @@ def _credential_from_payload(cls: Any, payload: dict[str, Any]) -> Any:
 
 
 @app.post("/auth/register", response_model=TokenOut)
-def register(payload: RegisterIn, db: Session = Depends(get_db)):
+def register(payload: RegisterIn, request: Request, db: Session = Depends(get_db)):
+    assert_public_intake_open(db)
+    validate_processing_consent(
+        pd_consent=payload.pd_consent,
+        consent_version=payload.consent_version,
+        terms_accepted=payload.terms_accepted,
+        require_terms=True,
+    )
+    record_consent(
+        db,
+        request,
+        form_code="register",
+        email=payload.email,
+        phone=payload.phone,
+    )
     # Backward-compatible one-step registration for integrations.
     exists = db.execute(select(User).where(User.email == payload.email.lower())).scalar_one_or_none()
     if exists and exists.email_verified:
@@ -2173,7 +2202,21 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/register/start", response_model=RegisterStartOut)
-def register_start(payload: RegisterIn, db: Session = Depends(get_db)):
+def register_start(payload: RegisterIn, request: Request, db: Session = Depends(get_db)):
+    assert_public_intake_open(db)
+    validate_processing_consent(
+        pd_consent=payload.pd_consent,
+        consent_version=payload.consent_version,
+        terms_accepted=payload.terms_accepted,
+        require_terms=True,
+    )
+    record_consent(
+        db,
+        request,
+        form_code="register",
+        email=payload.email,
+        phone=payload.phone,
+    )
     _upsert_unverified_user_send_code(
         db,
         email=payload.email.lower(),
@@ -2188,6 +2231,7 @@ def register_start(payload: RegisterIn, db: Session = Depends(get_db)):
 
 @app.post("/auth/register/verify", response_model=RegisterStartOut)
 def register_verify(payload: RegisterVerifyIn, db: Session = Depends(get_db)):
+    assert_public_intake_open(db)
     user = db.execute(select(User).where(User.email == payload.email.lower())).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -2263,6 +2307,7 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail="Email is not verified")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is not active")
+    assert_user_allowed(db, user)
     return _issue_session_tokens(db, user, payload.device_name)
 
 
@@ -2286,6 +2331,7 @@ def logout_auth_session(payload: LogoutSessionIn, db: Session = Depends(get_db))
 
 @app.post("/auth/password-reset/start", response_model=RegisterStartOut)
 def password_reset_start(payload: PasswordResetStartIn, db: Session = Depends(get_db)):
+    assert_public_intake_open(db)
     email = payload.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Укажите корректный email")
@@ -2315,6 +2361,7 @@ def password_reset_start(payload: PasswordResetStartIn, db: Session = Depends(ge
 
 @app.post("/auth/password-reset/confirm", response_model=RegisterStartOut)
 def password_reset_confirm(payload: PasswordResetConfirmIn, db: Session = Depends(get_db)):
+    assert_public_intake_open(db)
     token = payload.token.strip()
     new_password = payload.new_password
     if len(new_password) < 8:
@@ -5549,15 +5596,29 @@ def admin_update_customs_calculator_config(
 
 
 @app.post("/requests/lead", response_model=PublicRequestLeadOut)
-def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_db)):
+def create_request_lead(payload: PublicRequestLeadIn, request: Request, db: Session = Depends(get_db)):
     """
     Заявка на расчёт без авторизации: сохраняем контакты, создаём неподтверждённого пользователя
     (если нужно), отправляем код на email. После /auth/register/verify клиент получает временный пароль
     (новый пользователь) или access_token (уже существующий подтверждённый email).
     """
+    assert_public_intake_open(db)
     email = payload.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Укажите корректный email")
+    validate_processing_consent(
+        pd_consent=payload.pd_consent,
+        consent_version=payload.consent_version,
+        terms_accepted=payload.terms_accepted,
+        require_terms=True,
+    )
+    record_consent(
+        db,
+        request,
+        form_code="lead",
+        email=email,
+        phone=payload.phone,
+    )
     phone = (payload.phone or "").strip()
     full_name = (payload.full_name or "").strip()
     comment = (payload.comment or "").strip()
@@ -5646,15 +5707,29 @@ def create_request_lead(payload: PublicRequestLeadIn, db: Session = Depends(get_
 
 
 @app.post("/requests/freeform-lead", response_model=FreeformRequestLeadOut)
-def create_freeform_request_lead(payload: FreeformRequestLeadIn, db: Session = Depends(get_db)):
+def create_freeform_request_lead(payload: FreeformRequestLeadIn, request: Request, db: Session = Depends(get_db)):
+    assert_public_intake_open(db)
     email = payload.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Укажите корректный email")
+    validate_processing_consent(
+        pd_consent=payload.pd_consent,
+        consent_version=payload.consent_version,
+        terms_accepted=payload.terms_accepted,
+        require_terms=True,
+    )
     full_name = (payload.full_name or "").strip()
     phone = (payload.phone or "").strip()
     comment = (payload.comment or "").strip()
     if len(comment) < 3:
         raise HTTPException(status_code=400, detail="Опишите автомобиль, который вас интересует")
+    record_consent(
+        db,
+        request,
+        form_code="freeform",
+        email=email,
+        phone=phone,
+    )
     user_name = full_name or email.split("@", 1)[0]
     user_contact = phone or email
     contact = user_contact if user_contact == email else f"{user_contact}; email: {email}"
@@ -6892,6 +6967,7 @@ def delete_chat(
 def public_guest_chat_send(
     payload: GuestChatSendIn,
     background_tasks: BackgroundTasks,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     text_clean = (payload.text or "").strip()
@@ -6899,8 +6975,19 @@ def public_guest_chat_send(
         raise HTTPException(status_code=400, detail="Добавьте текст")
     if len(text_clean) > 4000:
         raise HTTPException(status_code=400, detail="Сообщение слишком длинное")
+    assert_public_intake_open(db)
+    validate_processing_consent(
+        pd_consent=payload.pd_consent,
+        consent_version=payload.consent_version,
+    )
 
     chat, token, created = _ensure_guest_chat(db, payload.guest_token)
+    record_consent(
+        db,
+        request,
+        form_code="guest_chat",
+        guest_token=token,
+    )
     reply_id, reply_quote = _resolve_reply_target(db, chat.id, payload.reply_to_message_id)
     msg = ChatMessage(
         chat_id=chat.id,

@@ -20,6 +20,7 @@ import {
   carTotalRub,
 } from "../lib/carCardMeta";
 import { publicCarHref } from "../lib/carRoutes";
+import { useSiteMode } from "../lib/siteMode";
 import {
   consumeListingReturnPath,
   handleListingDetailRouteChangeStart,
@@ -37,12 +38,39 @@ import { absoluteUrl } from "../lib/siteUrl";
 import { seoDescription } from "../lib/seoText";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { canCreateListings, isAdminRole, isStaffRole } from "../lib/roles";
+import { COMPANY, phoneHref } from "../lib/companyInfo";
+import { TELEGRAM_CHANNEL_URL } from "../lib/telegramChannel";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const DEFAULT_REQUEST_COMMENT =
   "Нужен расчёт под ключ до РФ. Прошу уточнить сроки и стоимость доставки.";
 const DEFAULT_CHAT_COMMENT = "Хочу уточнить по этому авто в чате — без обязательств.";
+
+function ReviewContactActions({ bar = false }) {
+  const tel = phoneHref();
+  const phoneClass = bar ? "btn btn-primary car-detail-cta-bar__btn" : "btn btn-primary";
+  const telegramClass = bar
+    ? "btn btn-outline-accent car-detail-cta-bar__btn"
+    : "btn btn-outline-accent";
+  return (
+    <>
+      {COMPANY.phone ? (
+        <a href={`tel:${tel}`} className={phoneClass}>
+          Позвонить
+        </a>
+      ) : null}
+      <a
+        href={TELEGRAM_CHANNEL_URL}
+        className={telegramClass}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Telegram-канал
+      </a>
+    </>
+  );
+}
 
 const TRUST_CHECKS = [
   {
@@ -173,6 +201,7 @@ export default function CarDetailView({
   initialCar = null,
 }) {
   const router = useRouter();
+  const { reviewMode } = useSiteMode();
   const [car, setCar] = useState(initialCar);
   const [error, setError] = useState("");
   const [activePhoto, setActivePhoto] = useState(0);
@@ -1028,7 +1057,7 @@ export default function CarDetailView({
                   </p>
                 ) : null}
 
-                {me?.role !== "dealer" ? (
+                {me?.role !== "dealer" && !reviewMode ? (
                   <div className="detail-cta-pair detail-cta-pair--sidebar">
                     <button type="button" className="btn btn-primary" onClick={openRequestModal}>
                       Оставить заявку
@@ -1039,6 +1068,10 @@ export default function CarDetailView({
                     <p className="detail-cta-pair__hint muted">
                       Вы можете оставить заявку на подбор и расчёт или задать свой вопрос в чате
                     </p>
+                  </div>
+                ) : me?.role !== "dealer" && reviewMode ? (
+                  <div className="detail-cta-pair detail-cta-pair--sidebar">
+                    <ReviewContactActions />
                   </div>
                 ) : null}
 
@@ -1154,7 +1187,7 @@ export default function CarDetailView({
                 </section>
               ) : null}
 
-              {me?.role !== "dealer" ? (
+              {me?.role !== "dealer" && !reviewMode ? (
                 <section className="detail-consult-card" aria-label="ИИ-консультант">
                   <p className="detail-consult-card__title">Сомневаетесь?</p>
                   <p className="detail-consult-card__text">
@@ -1331,7 +1364,7 @@ export default function CarDetailView({
             open={trimModalOpen}
             onClose={() => setTrimModalOpen(false)}
             car={car}
-            onChat={me?.role !== "dealer" ? openChatCta : undefined}
+            onChat={me?.role !== "dealer" && !reviewMode ? openChatCta : undefined}
           />
         </div>
       </main>
@@ -1339,20 +1372,28 @@ export default function CarDetailView({
         <div className="car-detail-cta-bar" role="region" aria-label="Действия с объявлением">
           <div className="container car-detail-cta-bar__inner">
             <div className="car-detail-cta-bar__cta-row">
-              <button type="button" className="btn btn-primary car-detail-cta-bar__btn" onClick={openRequestModal}>
-                Оставить заявку
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline-accent car-detail-cta-bar__btn"
-                onClick={openChatCta}
-              >
-                Задать вопрос
-              </button>
+              {reviewMode ? (
+                <ReviewContactActions bar />
+              ) : (
+                <>
+                  <button type="button" className="btn btn-primary car-detail-cta-bar__btn" onClick={openRequestModal}>
+                    Оставить заявку
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-accent car-detail-cta-bar__btn"
+                    onClick={openChatCta}
+                  >
+                    Задать вопрос
+                  </button>
+                </>
+              )}
             </div>
-            <p className="car-detail-cta-bar__note">
-              Вы можете оставить заявку на подбор и расчёт или задать свой вопрос в чате
-            </p>
+            {reviewMode ? null : (
+              <p className="car-detail-cta-bar__note">
+                Вы можете оставить заявку на подбор и расчёт или задать свой вопрос в чате
+              </p>
+            )}
           </div>
         </div>
       ) : null}

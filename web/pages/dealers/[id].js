@@ -9,11 +9,13 @@ import { MEDIA_WIDTH, mediaSrc } from "../../lib/media";
 import { absoluteUrl } from "../../lib/siteUrl";
 import CarTurnkeyPrice from "../../components/CarTurnkeyPrice";
 import SiteHeader from "../../components/SiteHeader";
+import { useSiteMode } from "../../lib/siteMode";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function DealerPublicPage() {
   const router = useRouter();
+  const { reviewMode } = useSiteMode();
   const { id } = router.query;
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -72,9 +74,11 @@ export default function DealerPublicPage() {
           <Link href="/" className="btn btn-ghost btn-sm">
             Каталог
           </Link>
+          {reviewMode ? null : (
           <Link href="/auth" className="btn btn-primary btn-sm">
             Войти
           </Link>
+          )}
         </SiteHeader>
 
       <main className="site-main">

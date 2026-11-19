@@ -291,6 +291,9 @@ class PublicRequestLeadIn(BaseModel):
     full_name: str = ""
     car_id: int
     comment: str = ""
+    pd_consent: bool = False
+    terms_accepted: bool = False
+    consent_version: str = ""
     promo_code: str = ""
 
 
@@ -306,6 +309,9 @@ class FreeformRequestLeadIn(BaseModel):
     phone: str = ""
     full_name: str = ""
     comment: str
+    pd_consent: bool = False
+    terms_accepted: bool = False
+    consent_version: str = ""
     promo_code: str = ""
 
 
@@ -1026,6 +1032,9 @@ class RegisterIn(BaseModel):
     email: str
     phone: str
     full_name: str = ""
+    pd_consent: bool = False
+    terms_accepted: bool = False
+    consent_version: str = ""
 
 
 class LoginIn(BaseModel):
@@ -1168,6 +1177,8 @@ class ChatMessageOut(BaseModel):
 class GuestChatSendIn(BaseModel):
     guest_token: str | None = None
     text: str = ""
+    pd_consent: bool = False
+    consent_version: str = ""
     reply_to_message_id: int | None = None
 
 

@@ -6,6 +6,7 @@ import HeaderProfileLink from "./HeaderProfileLink";
 import SiteHeaderPhoneLink from "./SiteHeaderPhoneLink";
 import SiteLogo from "./SiteLogo";
 import { canCreateListings } from "../lib/roles";
+import { useSiteMode } from "../lib/siteMode";
 
 const NAV_LINKS = [
   { key: "catalog", href: "/catalog", label: "Каталог" },
@@ -19,6 +20,7 @@ const NAV_LINKS = [
  * Мобайл использует отдельный SiteHeader (с className="home-only-mobile" у вызывающей страницы).
  */
 export default function SiteHeaderDesktopNav({ active, token, me }) {
+  const { reviewMode } = useSiteMode();
   return (
     <header className="site-header home-only-desktop">
       <div className="container site-header__inner home-d-header">
@@ -36,17 +38,19 @@ export default function SiteHeaderDesktopNav({ active, token, me }) {
         </nav>
         <div className="home-d-header__actions">
           <SiteHeaderPhoneLink />
-          <HeaderMessagesLink token={token} />
-          <HeaderFavoritesLink token={token} />
+          {reviewMode ? null : <HeaderMessagesLink token={token} />}
+          {reviewMode ? null : <HeaderFavoritesLink token={token} />}
           {!token ? (
-            <>
-              <Link href="/auth" className="btn home-d-btn-login">
-                Войти
-              </Link>
-              <Link href="/auth" className="btn home-d-btn-register">
-                Регистрация
-              </Link>
-            </>
+            reviewMode ? null : (
+              <>
+                <Link href="/auth" className="btn home-d-btn-login">
+                  Войти
+                </Link>
+                <Link href="/auth" className="btn home-d-btn-register">
+                  Регистрация
+                </Link>
+              </>
+            )
           ) : (
             <>
               <HeaderProfileLink token={token} me={me} />
