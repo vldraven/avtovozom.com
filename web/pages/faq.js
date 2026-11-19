@@ -13,6 +13,7 @@ import {
 import { jsonLdScriptProps } from "../lib/schema";
 import { getServerApiBase, serverFetch } from "../lib/serverApiUrl";
 import { absoluteUrl } from "../lib/siteUrl";
+import { useSiteMode } from "../lib/siteMode";
 
 /**
  * Контент FAQ — опубликованные пункты из админки (`GET /faq`).
@@ -35,6 +36,7 @@ export async function getServerSideProps() {
 }
 
 export default function FaqPage({ initialItems = [] }) {
+  const { reviewMode } = useSiteMode();
   const items = useMemo(
     () => (Array.isArray(initialItems) ? initialItems : []),
     [initialItems]
@@ -109,9 +111,11 @@ export default function FaqPage({ initialItems = [] }) {
         <Link href="/catalog" className="btn btn-ghost btn-sm">
           Каталог
         </Link>
+        {reviewMode ? null : (
         <Link href="/request-quote" className="btn btn-secondary btn-sm">
           Заявка
         </Link>
+        )}
       </SiteHeader>
 
       <main className="site-main site-main--faq">
@@ -230,9 +234,11 @@ export default function FaqPage({ initialItems = [] }) {
                     <Link href="/catalog" className="btn btn-primary">
                       Выбрать авто
                     </Link>
+                    {reviewMode ? null : (
                     <Link href="/messages" className="btn btn-secondary">
                       Задать вопрос
                     </Link>
+                    )}
                   </>
                 )}
               </div>
@@ -245,6 +251,7 @@ export default function FaqPage({ initialItems = [] }) {
             </div>
           </div>
 
+          {reviewMode ? null : (
           <section className="faq-help-bar faq-only-desktop" aria-label="Нужна помощь">
             <div className="faq-help-bar__text">
               <p className="faq-help-bar__title">Не нашли ответ?</p>
@@ -259,6 +266,7 @@ export default function FaqPage({ initialItems = [] }) {
               </Link>
             </div>
           </section>
+          )}
         </div>
       </main>
     </div>

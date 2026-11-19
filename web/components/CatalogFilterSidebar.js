@@ -5,6 +5,7 @@ import { EMPTY_CATALOG_FILTERS } from "../lib/catalogFilters";
 import { getPlacement } from "../lib/promo";
 import CatalogFilterFields from "./CatalogFilterFields";
 import PromoBannerCard from "./PromoBannerCard";
+import { useSiteMode } from "../lib/siteMode";
 
 /**
  * Постоянно видимая панель фильтров на десктопе (макет 33).
@@ -19,6 +20,7 @@ export default function CatalogFilterSidebar({
   total,
   promoCampaign = null,
 }) {
+  const { reviewMode } = useSiteMode();
   const promoPlacement = getPlacement(promoCampaign, "catalog_sidebar");
   const showPromo = Boolean(promoCampaign && promoPlacement?.is_enabled);
   const [rubFromDraft, setRubFromDraft] = useState(draft.rubFrom ? String(Math.round(draft.rubFrom)) : "");
@@ -69,7 +71,7 @@ export default function CatalogFilterSidebar({
         {total ? `Показать ${Number(total).toLocaleString("ru-RU")} авто` : "Показать авто"}
       </button>
 
-      {showPromo ? (
+      {reviewMode ? null : showPromo ? (
         <PromoBannerCard
           campaign={promoCampaign}
           placement={promoPlacement}

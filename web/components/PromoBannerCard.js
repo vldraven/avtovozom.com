@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { promoCtaHref, trackPromoClick } from "../lib/promo";
 import { mediaSrc } from "../lib/media";
+import { useSiteMode } from "../lib/siteMode";
 
 function imageSrc(url) {
   if (!url) return "";
@@ -19,6 +20,8 @@ export default function PromoBannerCard({
   variant = "sidebar",
   className = "",
 }) {
+  const { reviewMode } = useSiteMode();
+  if (reviewMode) return null;
   if (!campaign || !placement) return null;
   const href = promoCtaHref(campaign);
   const accent = campaign.accent_color || "#d9f43a";

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
 from sqlalchemy import case, delete, func, or_, select
@@ -24,6 +24,8 @@ from .blog_content import (
 )
 from .db import get_db
 from .media_storage import save_blog_image
+from .pd_consent import ensure_distribution_consent
+from .site_mode import assert_user_allowed
 from .models import (
     BlogAuthorProfile,
     BlogComment,
@@ -76,6 +78,8 @@ class PostWriteIn(BaseModel):
 class CommentIn(BaseModel):
     body: str = ""
     parent_id: int | None = None
+    distribution_consent: bool = False
+    consent_version: str = ""
 
 
 class RejectIn(BaseModel):
@@ -92,6 +96,8 @@ class SectionWriteIn(BaseModel):
 
 class BioIn(BaseModel):
     bio: str = ""
+    distribution_consent: bool = False
+    consent_version: str = ""
 
 
 def ensure_blog_sections(db: Session) -> None:
@@ -138,6 +144,7 @@ def get_current_user(
     user = _user_from_token(db, token)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    assert_user_allowed(db, user)
     return user
 
 
@@ -909,9 +916,23 @@ def get_my_blog_profile(db: Session = Depends(get_db), user: User = Depends(get_
 
 
 @router.put("/me/profile")
-def update_bio(payload: BioIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def update_bio(
+    payload: BioIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     profile = _ensure_author(db, user)
-    profile.bio = (payload.bio or "").strip()[:500]
+    bio = (payload.bio or "").strip()[:500]
+    if bio:
+        ensure_distribution_consent(
+            db,
+            request,
+            user=user,
+            distribution_consent=payload.distribution_consent,
+            consent_version=payload.consent_version,
+        )
+    profile.bio = bio
     db.commit()
     return _author_card(user, profile, as_editorial=False, bio=profile.bio)
 
@@ -920,6 +941,7 @@ def update_bio(payload: BioIn, db: Session = Depends(get_db), user: User = Depen
 def add_comment(
     slug: str,
     payload: CommentIn,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -929,6 +951,13 @@ def add_comment(
     body = (payload.body or "").strip()
     if len(body) < 2 or len(body) > 2000:
         raise HTTPException(status_code=400, detail="Комментарий — от 2 до 2000 символов.")
+    ensure_distribution_consent(
+        db,
+        request,
+        user=user,
+        distribution_consent=payload.distribution_consent,
+        consent_version=payload.consent_version,
+    )
     parent_id = None
     if payload.parent_id:
         parent = db.get(BlogComment, payload.parent_id)

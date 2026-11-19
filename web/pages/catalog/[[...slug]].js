@@ -59,6 +59,7 @@ import { scheduleListScrollRestore } from "../../lib/listScrollRestore";
 import { getListingPageCache, setListingPageCache } from "../../lib/listingPageCache";
 import { fetchCatalogTreeCached, setCatalogMetaCache } from "../../lib/catalogMetaCache";
 import { absoluteUrl } from "../../lib/siteUrl";
+import { useSiteMode } from "../../lib/siteMode";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -95,6 +96,7 @@ const CATALOG_LIST_CACHE_NS = "catalog";
 
 export default function CatalogTreePage({ initialPayload = null }) {
   const router = useRouter();
+  const { reviewMode } = useSiteMode();
   const lastExplicitScrollSaveRef = useRef({ path: "", at: 0 });
   const listInitial = initialPayload?.mode === "list" ? initialPayload : null;
   const skipCarsFetchKeyRef = useRef(listInitial?.fetchKey ?? null);
@@ -988,9 +990,11 @@ export default function CatalogTreePage({ initialPayload = null }) {
       <SiteHeader className="home-only-mobile" tagline="Доставка автомобилей из Китая и Кореи">
         {!token ? (
           <>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
-              Войти
-            </button>
+            {reviewMode ? null : (
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
+                Войти
+              </button>
+            )}
             <TelegramChannelHeaderLink />
           </>
         ) : (
@@ -1230,9 +1234,11 @@ export default function CatalogTreePage({ initialPayload = null }) {
                           <Link href="/catalog" className="btn btn-secondary btn-sm">
                             Сбросить фильтры
                           </Link>
+                          {reviewMode ? null : (
                           <Link href="/request-quote" className="btn btn-primary btn-sm">
                             Заявка на подбор
                           </Link>
+                          )}
                         </div>
                         {similarCars.length > 0 ? (
                           <div className="car-detail-similar ui-state__similar">
@@ -1302,7 +1308,7 @@ export default function CatalogTreePage({ initialPayload = null }) {
                               <CarTurnkeyPrice car={car} variant="catalog" />
                             </div>
                           </Link>
-                          {me?.role !== "dealer" ? (
+                          {me?.role !== "dealer" && !reviewMode ? (
                             <div className="catalog-card__actions">
                               <button
                                 type="button"
@@ -1366,12 +1372,14 @@ export default function CatalogTreePage({ initialPayload = null }) {
                           </Link>
                         ))}
                       </div>
+                      {reviewMode ? null : (
                       <p className="catalog-hub-links__cta">
                         Не нашли подходящего авто? —{" "}
                         <Link href="/request-quote" className="catalog-hub-links__cta-link">
                           Опишите нам свой запрос
                         </Link>
                       </p>
+                      )}
                     </nav>
                   ) : null}
                 </div>

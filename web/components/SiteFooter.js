@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import CookieSettingsLink from "./CookieSettingsLink";
 import { COMPANY } from "../lib/companyInfo";
 import { TELEGRAM_CHANNEL_URL } from "../lib/telegramChannel";
 
@@ -35,7 +36,9 @@ export default function SiteFooter() {
             <Link href="/about">О компании</Link>
             <Link href="/contacts">Контакты</Link>
             <Link href="/privacy">Политика ПДн</Link>
+            <Link href="/consent">Согласие</Link>
             <Link href="/terms">Соглашение</Link>
+            <CookieSettingsLink />
             <a href={`mailto:${COMPANY.email}`}>{COMPANY.email}</a>
             <a href={TELEGRAM_CHANNEL_URL} target="_blank" rel="noopener noreferrer">
               Telegram

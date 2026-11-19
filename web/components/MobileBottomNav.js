@@ -7,6 +7,7 @@ import { canCreateListings } from "../lib/roles";
 import HeaderFavoritesLink from "./HeaderFavoritesLink";
 import HeaderMessagesLink from "./HeaderMessagesLink";
 import HeaderProfileLink from "./HeaderProfileLink";
+import { useSiteMode } from "../lib/siteMode";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -74,6 +75,7 @@ function dockAuthHref(path) {
 
 export default function MobileBottomNav() {
   const router = useRouter();
+  const { reviewMode } = useSiteMode();
   const [token, setToken] = useState("");
   const [me, setMe] = useState(null);
 
@@ -208,9 +210,9 @@ export default function MobileBottomNav() {
           <span className="mobile-dock__label">Блог</span>
         </Link>
 
-        {token ? (
+        {reviewMode ? null : token ? (
           <HeaderMessagesLink token={token} variant="dock" />
-        ) : (
+        ) : reviewMode ? null : (
           <Link href="/messages" className="mobile-dock__item">
             <span className="mobile-dock__icon">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -226,9 +228,9 @@ export default function MobileBottomNav() {
           </Link>
         )}
 
-        {token ? (
+        {reviewMode ? null : token ? (
           <HeaderFavoritesLink token={token} variant="dock" />
-        ) : (
+        ) : reviewMode ? null : (
           <Link href={dockAuthHref("/favorites")} className="mobile-dock__item">
             <span className="mobile-dock__icon">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -260,7 +262,7 @@ export default function MobileBottomNav() {
 
         {token ? (
           <HeaderProfileLink token={token} me={me} layout="dock" />
-        ) : (
+        ) : reviewMode ? null : (
           <Link href={dockAuthHref(authNext)} className="mobile-dock__item">
             <span className="mobile-dock__icon">
               <LoginIcon />

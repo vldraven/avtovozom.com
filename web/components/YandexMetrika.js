@@ -2,6 +2,7 @@ import Script from "next/script";
 import { useEffect, useState } from "react";
 
 import { getCookieConsent } from "../lib/cookieConsent";
+import { useSiteMode } from "../lib/siteMode";
 
 /**
  * Номер счётчика из кабинета Метрики (только цифры).
@@ -16,6 +17,7 @@ function getCounterId() {
 
 export default function YandexMetrika() {
   const counterId = getCounterId();
+  const { reviewMode, reviewKnown } = useSiteMode();
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export default function YandexMetrika() {
     };
   }, []);
 
-  if (!counterId || !allowed) return null;
+  if (!counterId || !allowed || !reviewKnown || reviewMode) return null;
 
   const inline = `
 (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
@@ -40,7 +42,7 @@ k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNo
 
 ym(${counterId}, "init", {
   ssr:true,
-  webvisor:true,
+  webvisor:false,
   clickmap:true,
   ecommerce:"dataLayer",
   referrer: document.referrer,

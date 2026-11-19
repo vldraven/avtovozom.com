@@ -34,6 +34,7 @@ import {
   setCatalogMetaCache,
 } from "../lib/catalogMetaCache";
 import { absoluteUrl } from "../lib/siteUrl";
+import { useSiteMode } from "../lib/siteMode";
 import { getServerApiBase, serverFetch } from "../lib/serverApiUrl";
 import { trimCatalogTreeForSsr } from "../lib/catalogTreeSsr";
 import {
@@ -195,6 +196,7 @@ function homeHasSsrListSeed(initialData) {
 
 export default function Home({ initialData = null, initialPromo = null }) {
   const router = useRouter();
+  const { reviewMode } = useSiteMode();
   const lastExplicitHomeScrollSaveRef = useRef({ path: "", at: 0 });
   const cacheSeed = readHomeListCacheSeed();
   const skipHomeListFetchOnceRef = useRef(
@@ -1521,9 +1523,11 @@ export default function Home({ initialData = null, initialPromo = null }) {
             </Link>
             {!token ? (
               <>
-                <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
-                  Войти
-                </button>
+                {reviewMode ? null : (
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push("/auth")}>
+                    Войти
+                  </button>
+                )}
                 <TelegramChannelHeaderLink />
               </>
             ) : (
@@ -1556,6 +1560,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
             <HeaderMessagesLink token={token} />
             <HeaderFavoritesLink token={token} />
             {!token ? (
+              reviewMode ? null : (
               <>
                 <Link href="/auth" className="btn home-d-btn-login">
                   Войти
@@ -1564,6 +1569,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
                   Регистрация
                 </Link>
               </>
+              )
             ) : (
               <>
                 <HeaderProfileLink token={token} me={me} />
@@ -1603,17 +1609,21 @@ export default function Home({ initialData = null, initialPromo = null }) {
                   Частые вопросы
                 </Link>
                 {!token ? (
+                  reviewMode ? null : (
                   <Link href="/auth" className="site-header-mobile-menu__link">
                     Войти
                   </Link>
+                  )
                 ) : (
                   <>
                     <Link href="/profile" className="site-header-mobile-menu__link">
                       Профиль
                     </Link>
+                    {reviewMode ? null : (
                     <Link href="/favorites" className="site-header-mobile-menu__link">
                       Избранное
                     </Link>
+                    )}
                     {canCreateListings(me?.role) ? (
                       <Link href="/staff/new-listing" className="site-header-mobile-menu__link">
                         Добавить объявление
@@ -1635,9 +1645,11 @@ export default function Home({ initialData = null, initialPromo = null }) {
               <div className="home-m-top__row">
                 <SiteLogo className="home-m-top__logo" />
                 {!token ? (
+                  reviewMode ? null : (
                   <Link href="/auth" className="home-m-top__login">
                     Войти
                   </Link>
+                  )
                 ) : (
                   <div className="home-m-top__auth">
                     <HeaderMessagesLink token={token} />
@@ -1710,6 +1722,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
                     "Скидка на подбор, сопровождение сделки, таможенное оформление, получение СБКТС и ЭПТС."
                   : "Подбор, выкуп, доставка и таможенное оформление в России. Весь процесс — в личном кабинете."}
               </p>
+              {!reviewMode ? (
               <div className="home-m-hero__cta-row">
                 <Link
                   href={homePromoOn ? homePromoHref : "/request-quote"}
@@ -1722,6 +1735,13 @@ export default function Home({ initialData = null, initialPromo = null }) {
                   Каталог
                 </Link>
               </div>
+              ) : (
+              <div className="home-m-hero__cta-row">
+                <Link href="/catalog" className="btn btn-primary home-m-hero__cta">
+                  Каталог
+                </Link>
+              </div>
+              )}
             </section>
 
             {activeDeal ? (
@@ -1761,12 +1781,14 @@ export default function Home({ initialData = null, initialPromo = null }) {
                 </span>
                 <span className="home-quick-tile__label">Калькулятор</span>
               </Link>
+              {reviewMode ? null : (
               <Link href="/request-quote" className="home-quick-tile">
                 <span className="home-quick-tile__icon" aria-hidden>
                   ✎
                 </span>
                 <span className="home-quick-tile__label">Заявка</span>
               </Link>
+              )}
               <Link href="/faq" className="home-quick-tile">
                 <span className="home-quick-tile__icon" aria-hidden>
                   ?
@@ -1840,9 +1862,11 @@ export default function Home({ initialData = null, initialPromo = null }) {
                     <Link href="/catalog" className="btn btn-secondary btn-sm">
                       Каталог
                     </Link>
+                    {reviewMode ? null : (
                     <Link href="/request-quote" className="btn btn-primary btn-sm">
                       Заявка
                     </Link>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1861,7 +1885,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
               )}
             </section>
 
-            {!token ? (
+            {!token && !reviewMode ? (
               <aside className="home-m-auth-card">
                 <h2 className="home-m-auth-card__title">Войдите, чтобы вести сделку</h2>
                 <p className="home-m-auth-card__text">
@@ -2003,6 +2027,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
                     <span>за расчёт и отчёты</span>
                   </div>
                 </div>
+                {reviewMode ? null : (
                 <Link
                   href={homePromoOn ? homePromoHref : "/request-quote"}
                   className={`btn home-d-stats__quote${homePromoOn ? " home-d-stats__quote--promo" : ""}`}
@@ -2012,6 +2037,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
                     ? promoCampaign.cta_label || "Оставить заявку"
                     : "Рассчитать стоимость"}
                 </Link>
+                )}
               </div>
             </section>
 
@@ -2065,9 +2091,11 @@ export default function Home({ initialData = null, initialPromo = null }) {
                     <Link href="/catalog" className="btn btn-secondary btn-sm">
                       Каталог
                     </Link>
+                    {reviewMode ? null : (
                     <Link href="/request-quote" className="btn btn-primary btn-sm">
                       Заявка
                     </Link>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -2128,6 +2156,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
                   ))}
                 </div>
               </section>
+              {reviewMode ? null : (
               <aside className="home-d-steps-cta">
                 <p className="home-d-steps-cta__title">Не нашли нужное авто?</p>
                 <p className="home-d-steps-cta__text">
@@ -2137,6 +2166,7 @@ export default function Home({ initialData = null, initialPromo = null }) {
                   Подобрать автомобиль
                 </Link>
               </aside>
+              )}
             </div>
 
             {popularCars.length > 0 ? (

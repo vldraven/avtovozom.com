@@ -7,6 +7,9 @@ import AdminRequestsWidget from "../components/AdminRequestsWidget";
 import DealerOpenRequests from "../components/DealerOpenRequests";
 import HeaderMessagesLink from "../components/HeaderMessagesLink";
 import PinSetupPanel from "../components/PinSetupPanel";
+import { PdDistributionConsent } from "../components/PdConsentCheckbox";
+import ReviewModeToggle from "../components/ReviewModeToggle";
+import { PD_CONSENT_VERSION } from "../lib/pdConsent";
 import {
   canUseWebAuthn,
   clearToken,
@@ -61,6 +64,8 @@ export default function ProfilePage() {
   const [phone, setPhone] = useState("");
   const [authorBio, setAuthorBio] = useState("");
   const [authorBioReady, setAuthorBioReady] = useState(false);
+  const [distributionConsent, setDistributionConsent] = useState(false);
+  const [distributionGranted, setDistributionGranted] = useState(false);
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -160,6 +165,13 @@ export default function ProfilePage() {
       const bioData = await bioRes.json();
       setAuthorBio(bioData.bio || "");
       setAuthorBioReady(true);
+    }
+    const consentRes = await fetch(`${API_URL}/public/pd-consents/status`, {
+      headers: { Authorization: `Bearer ${access}` },
+    });
+    if (consentRes.ok) {
+      const consentData = await consentRes.json().catch(() => ({}));
+      setDistributionGranted(Boolean(consentData.blog_distribution));
     }
     await loadRoleData(access, data.role);
     await refreshPinState();
@@ -263,17 +275,34 @@ export default function ProfilePage() {
       return;
     }
     if (authorBioReady) {
-      const bioRes = await fetch(`${API_URL}/blog/me/profile`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ bio: authorBio }),
-      });
-      if (!bioRes.ok) {
-        setError("Профиль сохранён, но текст «О себе» записать не удалось");
+      const bioText = authorBio.trim();
+      if (bioText && !distributionGranted && !distributionConsent) {
+        setError("Отметьте согласие на публикацию имени и текста «О себе».");
         const data = await res.json();
         setMe(data);
         return;
       }
+      const bioRes = await fetch(`${API_URL}/blog/me/profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          bio: authorBio,
+          distribution_consent: distributionGranted || distributionConsent,
+          consent_version: PD_CONSENT_VERSION,
+        }),
+      });
+      if (!bioRes.ok) {
+        const bioErr = await bioRes.json().catch(() => ({}));
+        setError(
+          typeof bioErr.detail === "string"
+            ? bioErr.detail
+            : "Профиль сохранён, но текст «О себе» записать не удалось"
+        );
+        const data = await res.json();
+        setMe(data);
+        return;
+      }
+      if (bioText) setDistributionGranted(true);
     }
     setMessage("Профиль обновлен");
     const data = await res.json();
@@ -715,17 +744,24 @@ export default function ProfilePage() {
                       onChange={(e) => setPhone(e.target.value)}
                     />
                   </label>
+                  {authorBio.trim() && !distributionGranted ? (
+                    <PdDistributionConsent
+                      checked={distributionConsent}
+                      onChange={setDistributionConsent}
+                      id="profile-distribution-consent"
+                    />
+                  ) : null}
                   <label className="muted form-label">
                     О себе
                     <textarea
-                      className="input"
+                      className="input ym-disable-keys"
                       rows={4}
                       maxLength={500}
                       placeholder="Коротко для страницы автора в блоге"
                       value={authorBio}
                       onChange={(e) => setAuthorBio(e.target.value)}
                     />
-                    <span className="muted">Этот текст виден на вашей странице автора, а не в каждой статье.</span>
+                    <span className="muted">Этот текст и имя видны на публичной странице автора.</span>
                   </label>
                   <button type="button" className="btn btn-primary" onClick={saveProfile}>
                     Сохранить профиль
@@ -864,6 +900,7 @@ export default function ProfilePage() {
                   <p className="muted section-title--flush-top">
                     Список пользователей, создание, редактирование и сброс пароля.
                   </p>
+                  <ReviewModeToggle />
                   <Link href="/staff/admin-users" className="btn btn-primary btn-inline">
                     Открыть управление УЗ
                   </Link>
@@ -879,6 +916,9 @@ export default function ProfilePage() {
                     </Link>
                     <Link href="/staff/admin-blog" className="btn btn-secondary btn-inline">
                       Блог: разделы и модерация
+                    </Link>
+                    <Link href="/staff/pd-consents" className="btn btn-secondary btn-inline">
+                      Журнал согласий
                     </Link>
                     <Link href="/staff/admin-promo" className="btn btn-secondary btn-inline">
                       Промо-баннеры

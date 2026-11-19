@@ -26,3 +26,8 @@ export function setCookieConsent(value) {
   }
   window.dispatchEvent(new CustomEvent("avtovozom:cookie-consent", { detail: value }));
 }
+
+export function requestCookieSettings() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("avtovozom:cookie-settings"));
+}

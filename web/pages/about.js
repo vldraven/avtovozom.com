@@ -6,6 +6,7 @@ import MaxIcon from "../components/MaxIcon";
 import { COMPANY, phoneHref } from "../lib/companyInfo";
 import { breadcrumbListJsonLd, jsonLdScriptProps } from "../lib/schema";
 import { absoluteUrl } from "../lib/siteUrl";
+import { useSiteMode } from "../lib/siteMode";
 import { getServerApiBase, serverFetch } from "../lib/serverApiUrl";
 
 const CANONICAL_PATH = "/about";
@@ -67,6 +68,7 @@ export async function getStaticProps() {
 }
 
 export default function AboutPage({ listingsCount = 0 }) {
+  const { reviewMode } = useSiteMode();
   const jsonLd = breadcrumbListJsonLd([
     { label: "Главная", href: "/" },
     { label: "О компании" },
@@ -209,9 +211,11 @@ export default function AboutPage({ listingsCount = 0 }) {
               <Link href="/catalog" className="btn btn-ghost">
                 Смотреть каталог
               </Link>
+              {reviewMode ? null : (
               <Link href="/request-quote" className="btn btn-ghost">
                 Заявка на расчёт
               </Link>
+              )}
               <Link href="/contacts" className="btn btn-ghost">
                 Контакты и реквизиты
               </Link>

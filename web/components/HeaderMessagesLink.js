@@ -2,6 +2,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useState } from "react";
 
+import { useSiteMode } from "../lib/siteMode";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const messagesIcon = (
@@ -58,6 +60,8 @@ export default function HeaderMessagesLink({ token, variant = "header" }) {
   }, [token, refresh]);
 
   const active = router.pathname === "/messages";
+  const { reviewMode } = useSiteMode();
+  if (reviewMode) return null;
 
   if (variant === "dock") {
     return (

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
 
+import { useSiteMode } from "../lib/siteMode";
+
 const heartIcon = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
     <path
@@ -21,6 +23,8 @@ export default function HeaderFavoritesLink({ token, variant = "header" }) {
   const router = useRouter();
 
   const active = router.pathname === "/favorites";
+  const { reviewMode } = useSiteMode();
+  if (reviewMode) return null;
 
   if (variant === "dock") {
     return (

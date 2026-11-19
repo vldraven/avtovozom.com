@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SiteHeader from "../components/SiteHeader";
+import { useSiteMode } from "../lib/siteMode";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -12,6 +13,11 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const { reviewMode } = useSiteMode();
+
+  useEffect(() => {
+    if (reviewMode) router.replace("/");
+  }, [reviewMode, router]);
 
   async function submit(e) {
     e.preventDefault();
@@ -43,11 +49,14 @@ export default function ResetPasswordPage() {
         <div className="container page-narrow page-narrow--auth">
           <header className="auth-page-hero">
             <h1 className="section-title auth-page-hero__title">Создать новый пароль</h1>
-            <p className="auth-page-hero__lead muted">Задайте надёжный пароль — минимум 8 символов.</p>
+              <p className="auth-page-hero__lead muted">
+                Задайте надёжный пароль — минимум 8 символов. Ссылка пришла на email аккаунта, чтобы
+                выполнить ваш запрос на восстановление.
+              </p>
           </header>
           {message ? <div className="alert alert--success">{message}</div> : null}
           {error ? <div className="alert alert--danger">{error}</div> : null}
-          {!token ? (
+          {reviewMode ? null : !token ? (
             <div className="panel auth-panel">
               <p className="muted">Ссылка восстановления некорректна или устарела.</p>
               <Link href="/auth?mode=forgot" className="btn btn-primary">
